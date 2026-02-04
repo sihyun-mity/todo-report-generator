@@ -17,6 +17,7 @@
     "@tailwindcss/cli": "^4.1.18",
     "clsx": "^2.1.1",
     "gsap": "^3.12.7",
+    "lucide-react": "^0.563.0",
     "mobile-detect": "^1.4.5",
     "next": "^16.1.6",
     "query-string": "^9.3.1",
