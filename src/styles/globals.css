@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@import 'tailwindcss-safe-area';
+@import './colors.css';
+@import './fonts.css';
+@import './gsap.css';
+@import './layout.css';
+@import './utility.css';
+@import './variables.css';
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
