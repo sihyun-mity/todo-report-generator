@@ -1,0 +1,237 @@
+'use client';
+
+import React, { useState } from 'react';
+import { Copy, Check, AlertCircle } from 'lucide-react';
+import { cn } from '@/utils/class';
+import { Project, Task, TargetType } from './types';
+import ProjectList from './project-list';
+
+export default function ReportForm() {
+  const [todayProjects, setTodayProjects] = useState<Project[]>([
+    { id: '1', name: '', tasks: [{ id: '1-1', content: '', progress: 0 }] },
+  ]);
+  const [tomorrowProjects, setTomorrowProjects] = useState<Project[]>([
+    { id: '2', name: '', tasks: [{ id: '2-1', content: '', progress: 0 }] },
+  ]);
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  const now = new Date();
+  const [reportDate, setReportDate] = useState({
+    month: String(now.getMonth() + 1),
+    day: String(now.getDate()),
+  });
+
+  const addProject = (target: TargetType) => {
+    const newProject: Project = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: '',
+      tasks: [{ id: Math.random().toString(36).substr(2, 9), content: '', progress: 0 }],
+    };
+    if (target === 'today') {
+      setTodayProjects([...todayProjects, newProject]);
+    } else {
+      setTomorrowProjects([...tomorrowProjects, newProject]);
+    }
+  };
+
+  const removeProject = (target: TargetType, projectId: string) => {
+    if (target === 'today') {
+      setTodayProjects(todayProjects.filter((p) => p.id !== projectId));
+    } else {
+      setTomorrowProjects(tomorrowProjects.filter((p) => p.id !== projectId));
+    }
+  };
+
+  const addTask = (target: TargetType, projectId: string) => {
+    const newTask: Task = {
+      id: Math.random().toString(36).substr(2, 9),
+      content: '',
+      progress: 0,
+    };
+    const setter = target === 'today' ? setTodayProjects : setTomorrowProjects;
+    const projects = target === 'today' ? todayProjects : tomorrowProjects;
+
+    setter(
+      projects.map((p) => {
+        if (p.id === projectId) {
+          return { ...p, tasks: [...p.tasks, newTask] };
+        }
+        return p;
+      })
+    );
+  };
+
+  const removeTask = (target: TargetType, projectId: string, taskId: string) => {
+    const setter = target === 'today' ? setTodayProjects : setTomorrowProjects;
+    const projects = target === 'today' ? todayProjects : tomorrowProjects;
+
+    setter(
+      projects.map((p) => {
+        if (p.id === projectId) {
+          if (p.tasks.length <= 1) return p;
+          return { ...p, tasks: p.tasks.filter((t) => t.id !== taskId) };
+        }
+        return p;
+      })
+    );
+  };
+
+  const updateProjectName = (target: TargetType, projectId: string, name: string) => {
+    const setter = target === 'today' ? setTodayProjects : setTomorrowProjects;
+    const projects = target === 'today' ? todayProjects : tomorrowProjects;
+    setter(projects.map((p) => (p.id === projectId ? { ...p, name } : p)));
+  };
+
+  const updateTask = (target: TargetType, projectId: string, taskId: string, updates: Partial<Task>) => {
+    const setter = target === 'today' ? setTodayProjects : setTomorrowProjects;
+    const projects = target === 'today' ? todayProjects : tomorrowProjects;
+    setter(
+      projects.map((p) => {
+        if (p.id === projectId) {
+          return {
+            ...p,
+            tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+          };
+        }
+        return p;
+      })
+    );
+  };
+
+  const generateReportText = () => {
+    let text = `${reportDate.month}월 ${reportDate.day}일 일일 업무 보고 드립니다.\n\n`;
+
+    text += `금일 업무 진행 현황\n`;
+    todayProjects.forEach((p) => {
+      text += `    * ${p.name || '프로젝트명'}\n`;
+      p.tasks.forEach((t) => {
+        text += `        - ${t.content || '작업 내용'} (${t.progress}%)\n`;
+      });
+    });
+
+    text += `\n익일 업무 진행 예정\n`;
+    tomorrowProjects.forEach((p) => {
+      text += `    * ${p.name || '프로젝트명'}\n`;
+      p.tasks.forEach((t) => {
+        text += `        - ${t.content || '작업 내용'} (${t.progress}%)\n`;
+      });
+    });
+
+    return text;
+  };
+
+  const copyToClipboard = async () => {
+    setCopyError(null);
+    const text = generateReportText();
+
+    try {
+      // 권한 확인 시도
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const result = await navigator.permissions.query({
+            name: 'clipboard-write' as PermissionName,
+          });
+          if (result.state === 'denied') {
+            setCopyError('클립보드 쓰기 권한이 거부되었습니다. 브라우저 설정을 확인해주세요.');
+            return;
+          }
+        } catch {
+          // 일부 브라우저에서는 clipboard-write 쿼리를 지원하지 않을 수 있음 (무시하고 진행)
+        }
+      }
+
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      setCopyError('복사에 실패했습니다. 직접 선택하여 복사해주세요.');
+    }
+  };
+
+  return (
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 sm:p-6 lg:flex-row lg:p-12">
+      <div className="flex-1 overflow-hidden">
+        <header className="mb-10">
+          <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
+            일일 업무 보고 생성기
+          </h1>
+          <div className="flex items-center gap-2 text-zinc-500">
+            <input
+              type="text"
+              value={reportDate.month}
+              onChange={(e) => setReportDate({ ...reportDate, month: e.target.value })}
+              className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <span>월</span>
+            <input
+              type="text"
+              value={reportDate.day}
+              onChange={(e) => setReportDate({ ...reportDate, day: e.target.value })}
+              className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <span>일 보고서</span>
+          </div>
+        </header>
+
+        <ProjectList
+          title="금일 업무 진행 현황"
+          projects={todayProjects}
+          onAddProject={() => addProject('today')}
+          onRemoveProject={(id) => removeProject('today', id)}
+          onUpdateProjectName={(id, name) => updateProjectName('today', id, name)}
+          onAddTask={(id) => addTask('today', id)}
+          onUpdateTask={(pid, tid, updates) => updateTask('today', pid, tid, updates)}
+          onRemoveTask={(pid, tid) => removeTask('today', pid, tid)}
+        />
+        <ProjectList
+          title="익일 업무 진행 예정"
+          projects={tomorrowProjects}
+          onAddProject={() => addProject('tomorrow')}
+          onRemoveProject={(id) => removeProject('tomorrow', id)}
+          onUpdateProjectName={(id, name) => updateProjectName('tomorrow', id, name)}
+          onAddTask={(id) => addTask('tomorrow', id)}
+          onUpdateTask={(pid, tid, updates) => updateTask('tomorrow', pid, tid, updates)}
+          onRemoveTask={(pid, tid) => removeTask('tomorrow', pid, tid)}
+        />
+      </div>
+
+      <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <h2 className="mb-4 text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
+          <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-black dark:text-zinc-300">
+            {generateReportText()}
+          </pre>
+
+          <button
+            onClick={copyToClipboard}
+            className={cn(
+              'mb-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-3 font-semibold transition-all',
+              copied
+                ? 'bg-green-500 text-white'
+                : 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200'
+            )}
+          >
+            {copied ? (
+              <>
+                <Check size={18} /> 복사 완료!
+              </>
+            ) : (
+              <>
+                <Copy size={18} /> 복사하기
+              </>
+            )}
+          </button>
+
+          {copyError && (
+            <div className="mt-2 flex items-start gap-2 rounded-md bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-400">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>{copyError}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
