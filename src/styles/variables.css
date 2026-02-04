@@ -1,0 +1,15 @@
+/* Base (light) */
+:root {
+  /* Colors */
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+/* Dark */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Colors */
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}

@@ -1,0 +1,13 @@
+.container {
+  &:hover {
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+
+      * {
+        cursor: grabbing;
+      }
+    }
+  }
+}

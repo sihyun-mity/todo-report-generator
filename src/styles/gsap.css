@@ -1,0 +1,3 @@
+.fade-in-item {
+  @apply translate-y-[50px] opacity-0;
+}

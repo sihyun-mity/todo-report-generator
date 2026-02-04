@@ -1,0 +1,26 @@
+@utility scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*noinspection CssOverwrittenProperties*/
+@utility h-screen-enhanced {
+  height: 100vh; /* Fallback */
+  height: 100dvh;
+}
+
+/*noinspection CssOverwrittenProperties*/
+@utility min-h-screen-enhanced {
+  min-height: 100vh; /* Fallback */
+  min-height: 100dvh;
+}
+
+/*noinspection CssOverwrittenProperties*/
+@utility max-h-screen-enhanced {
+  max-height: 100vh; /* Fallback */
+  max-height: 100dvh;
+}
