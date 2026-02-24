@@ -7,7 +7,6 @@ import localFont from 'next/font/local';
 
 export const metadata: Metadata = staticMetadata({
   title: '일일 업무 보고 생성기',
-  description: '반박 시 님 말 다 맞음',
 });
 
 export const viewport: Viewport = {
