@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, Check, Copy } from 'lucide-react';
 import { useIsClient, useLocalStorage } from 'usehooks-ts';
 import { cn } from '@/utils/class';
@@ -19,6 +19,20 @@ export default function ReportForm() {
   const [copyError, setCopyError] = useState<string | null>(null);
   const [history, setHistory] = useLocalStorage<ReportHistoryItem[]>('report-history', []);
   const isClient = useIsClient();
+
+  useEffect(() => {
+    if (isClient && history.length > 0) {
+      // 익일 업무 진행 예정 데이터가 정상적으로 존재하는 마지막(최신) 데이터 찾기
+      const lastValidReport = history.find((item) => {
+        return item.tomorrowProjects.some((p) => p.name.trim() !== '' || p.tasks.some((t) => t.content.trim() !== ''));
+      });
+
+      if (lastValidReport) {
+        setTodayProjects(JSON.parse(JSON.stringify(lastValidReport.tomorrowProjects)));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient]);
 
   const now = new Date();
   const [reportDate, setReportDate] = useState({
