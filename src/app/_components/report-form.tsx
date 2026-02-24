@@ -196,6 +196,30 @@ export default function ReportForm() {
     setHistory(history.filter((item) => item.id !== id));
   };
 
+  const isProjectNotEmpty = (p: Project) => p.name.trim() !== '' || p.tasks.some((t) => t.content.trim() !== '');
+
+  const isProjectValid = (p: Project) => {
+    // 프로젝트명이 있으면 반드시 하나 이상의 유효한 태스크가 있어야 함
+    if (p.name.trim() !== '') {
+      return p.tasks.some((t) => t.content.trim() !== '');
+    }
+    // 프로젝트명이 없는데 태스크 내용만 있는 경우도 일단은 유효하지 않은 것으로 간주 (정책상 프로젝트당 태스크 필수)
+    return false;
+  };
+
+  const hasAnyData = todayProjects.some(isProjectNotEmpty) || tomorrowProjects.some(isProjectNotEmpty);
+
+  // 모든 '입력 시도 중인' 프로젝트가 유효한지 확인
+  const allAttemptedProjectsValid =
+    todayProjects.every((p) =>
+      p.name.trim() === '' && p.tasks.every((t) => t.content.trim() === '') ? true : isProjectValid(p)
+    ) &&
+    tomorrowProjects.every((p) =>
+      p.name.trim() === '' && p.tasks.every((t) => t.content.trim() === '') ? true : isProjectValid(p)
+    );
+
+  const isCopyDisabled = !hasAnyData || !allAttemptedProjectsValid;
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 sm:p-6 lg:flex-row lg:p-12">
       <div className="flex-1 overflow-hidden">
@@ -252,11 +276,14 @@ export default function ReportForm() {
 
           <button
             onClick={copyToClipboard}
+            disabled={isCopyDisabled}
             className={cn(
               'mb-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-3 font-semibold transition-all',
               copied
                 ? 'bg-green-500 text-white'
-                : 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200'
+                : isCopyDisabled
+                  ? 'cursor-not-allowed bg-zinc-300 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-600'
+                  : 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200'
             )}
           >
             {copied ? (
