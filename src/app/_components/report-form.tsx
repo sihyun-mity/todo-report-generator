@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Check, Copy } from 'lucide-react';
+import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
 import { useIsClient, useLocalStorage } from 'usehooks-ts';
 import { cn } from '@/utils/class';
 import { Project, ReportHistoryItem, TargetType, Task } from './types';
@@ -196,6 +196,28 @@ export default function ReportForm() {
     setHistory(history.filter((item) => item.id !== id));
   };
 
+  const resetForm = () => {
+    if (confirm('작성 중인 내용이 모두 초기화됩니다. 계속하시겠습니까?')) {
+      const initialToday: Project[] = [
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          name: '',
+          tasks: [{ id: Math.random().toString(36).substr(2, 9), content: '', progress: 0 }],
+        },
+      ];
+      const initialTomorrow: Project[] = [
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          name: '',
+          tasks: [{ id: Math.random().toString(36).substr(2, 9), content: '', progress: 0 }],
+        },
+      ];
+      setTodayProjects(initialToday);
+      setTomorrowProjects(initialTomorrow);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   const isProjectNotEmpty = (p: Project) => p.name.trim() !== '' || p.tasks.some((t) => t.content.trim() !== '');
 
   const isProjectValid = (p: Project) => {
@@ -297,6 +319,19 @@ export default function ReportForm() {
                 <Copy size={18} /> 복사하기
               </>
             )}
+          </button>
+
+          <button
+            onClick={resetForm}
+            disabled={!hasAnyData}
+            className={cn(
+              'flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-all',
+              !hasAnyData
+                ? 'cursor-not-allowed text-zinc-400 dark:text-zinc-600'
+                : 'text-zinc-600 hover:bg-zinc-200/50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-red-400'
+            )}
+          >
+            <RotateCcw size={16} /> 작성 내용 초기화
           </button>
 
           {copyError && (
