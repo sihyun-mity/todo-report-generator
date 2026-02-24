@@ -117,6 +117,87 @@ export default function ReportForm() {
     );
   };
 
+  const importIncompleteTasks = () => {
+    const incompleteProjects: Project[] = todayProjects
+      .map((p) => {
+        // 이미 익일 업무에 해당 프로젝트명이 존재하는지 확인
+        const existingProjectInTomorrow = tomorrowProjects.find(
+          (tp) => tp.name.trim() !== '' && tp.name.trim() === p.name.trim()
+        );
+
+        const incompleteTasks = p.tasks
+          .filter((t) => {
+            const isContentNotEmpty = t.content.trim() !== '';
+            const isIncomplete = t.progress < 100;
+
+            if (!isContentNotEmpty || !isIncomplete) return false;
+
+            // 이미 익일 업무의 해당 프로젝트 내에 동일한 내용의 작업이 있는지 확인
+            if (existingProjectInTomorrow) {
+              const isAlreadyImported = existingProjectInTomorrow.tasks.some(
+                (tt) => tt.content.trim() === t.content.trim()
+              );
+              if (isAlreadyImported) return false;
+            }
+
+            return true;
+          })
+          .map((t) => ({
+            ...t,
+            id: Math.random().toString(36).substr(2, 9),
+            // 기존 작업률도 같이 옮겨줌
+          }));
+
+        if (incompleteTasks.length > 0) {
+          // 만약 익일 업무에 동일한 프로젝트가 이미 있다면, 해당 프로젝트에 태스크만 추가하기 위해
+          // 여기서는 '새로운' 프로젝트 객체로 반환하되, 나중에 합칠 때 처리하거나
+          // 일단 구조를 유지하기 위해 기존처럼 반환하되 id만 새로 생성
+          return {
+            ...p,
+            id: Math.random().toString(36).substr(2, 9),
+            tasks: incompleteTasks,
+          };
+        }
+        return null;
+      })
+      .filter((p): p is Project => p !== null);
+
+    if (incompleteProjects.length === 0) {
+      alert('가져올 새로운 미완료 업무가 없거나 이미 모두 가져왔습니다.');
+      return;
+    }
+
+    // 기존 익일 업무 목록이 비어있거나(기본값만 있는 경우) 덮어씌울지 확인
+    const isEmptyTomorrow =
+      tomorrowProjects.length === 1 &&
+      tomorrowProjects[0].name.trim() === '' &&
+      tomorrowProjects[0].tasks.every((t) => t.content.trim() === '');
+
+    if (isEmptyTomorrow) {
+      setTomorrowProjects(incompleteProjects);
+    } else {
+      // 중복 프로젝트 처리: 이미 존재하는 프로젝트면 태스크만 추가, 없으면 새 프로젝트 추가
+      const updatedTomorrow = [...tomorrowProjects];
+
+      incompleteProjects.forEach((newP) => {
+        const existingIdx = updatedTomorrow.findIndex(
+          (tp) => tp.name.trim() !== '' && tp.name.trim() === newP.name.trim()
+        );
+
+        if (existingIdx > -1) {
+          updatedTomorrow[existingIdx] = {
+            ...updatedTomorrow[existingIdx],
+            tasks: [...updatedTomorrow[existingIdx].tasks, ...newP.tasks],
+          };
+        } else {
+          updatedTomorrow.push(newP);
+        }
+      });
+
+      setTomorrowProjects(updatedTomorrow);
+    }
+  };
+
   const generateReportText = () => {
     let text = `${reportDate.month}월 ${reportDate.day}일 일일 업무 보고 드립니다.\n\n`;
 
@@ -288,6 +369,7 @@ export default function ReportForm() {
           onAddTask={(id) => addTask('tomorrow', id)}
           onUpdateTask={(pid, tid, updates) => updateTask('tomorrow', pid, tid, updates)}
           onRemoveTask={(pid, tid) => removeTask('tomorrow', pid, tid)}
+          onImportIncomplete={importIncompleteTasks}
         />
       </div>
 
