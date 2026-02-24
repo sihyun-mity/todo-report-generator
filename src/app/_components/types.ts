@@ -11,3 +11,13 @@ export interface Project {
 }
 
 export type TargetType = 'today' | 'tomorrow';
+
+export interface ReportHistoryItem {
+  id: string;
+  month: string;
+  day: string;
+  content: string;
+  todayProjects: Project[];
+  tomorrowProjects: Project[];
+  timestamp: number;
+}
