@@ -21,6 +21,7 @@ const ProjectItem = ({ project, onUpdateName, onRemove, onAddTask, onUpdateTask,
           placeholder="프로젝트명"
           value={project.name}
           onChange={(e) => onUpdateName(e.target.value)}
+          onBlur={(e) => onUpdateName(e.target.value.trim())}
           className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:text-zinc-100"
         />
         <button
