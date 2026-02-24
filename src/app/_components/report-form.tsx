@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Copy, Check, AlertCircle } from 'lucide-react';
+import { AlertCircle, Check, Copy } from 'lucide-react';
+import { useIsClient, useLocalStorage } from 'usehooks-ts';
 import { cn } from '@/utils/class';
-import { Project, Task, TargetType } from './types';
+import { Project, ReportHistoryItem, TargetType, Task } from './types';
 import ProjectList from './project-list';
+import { ReportHistory } from '@/app/_components';
 
 export default function ReportForm() {
   const [todayProjects, setTodayProjects] = useState<Project[]>([
@@ -15,6 +17,8 @@ export default function ReportForm() {
   ]);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [history, setHistory] = useLocalStorage<ReportHistoryItem[]>('report-history', []);
+  const isClient = useIsClient();
 
   const now = new Date();
   const [reportDate, setReportDate] = useState({
@@ -143,11 +147,39 @@ export default function ReportForm() {
 
       await navigator.clipboard.writeText(text);
       setCopied(true);
+
+      // 로컬 스토리지에 저장
+      const newHistoryItem: ReportHistoryItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        month: reportDate.month,
+        day: reportDate.day,
+        content: text,
+        todayProjects: JSON.parse(JSON.stringify(todayProjects)),
+        tomorrowProjects: JSON.parse(JSON.stringify(tomorrowProjects)),
+        timestamp: Date.now(),
+      };
+      setHistory([newHistoryItem, ...history].slice(0, 50)); // 최대 50개까지 저장
+
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy: ', err);
       setCopyError('복사에 실패했습니다. 직접 선택하여 복사해주세요.');
     }
+  };
+
+  const loadHistory = (item: ReportHistoryItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) {
+      setReportDate({ month: item.month, day: item.day });
+      setTodayProjects(item.todayProjects);
+      setTomorrowProjects(item.tomorrowProjects);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const deleteHistory = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHistory(history.filter((item) => item.id !== id));
   };
 
   return (
@@ -231,6 +263,10 @@ export default function ReportForm() {
             </div>
           )}
         </div>
+
+        {history.length > 0 && isClient && (
+          <ReportHistory history={history} loadHistoryAction={loadHistory} deleteHistoryAction={deleteHistory} />
+        )}
       </div>
     </div>
   );
