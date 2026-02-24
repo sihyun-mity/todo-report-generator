@@ -18,6 +18,7 @@ const TaskItem = ({ task, onUpdate, onRemove, canRemove }: TaskItemProps) => {
         placeholder="작업 내용"
         value={task.content}
         onChange={(e) => onUpdate({ content: e.target.value })}
+        onBlur={(e) => onUpdate({ content: e.target.value.trim() })}
         className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-800 dark:text-zinc-200"
       />
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">

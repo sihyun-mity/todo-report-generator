@@ -232,6 +232,7 @@ export default function ReportForm() {
               type="text"
               value={reportDate.month}
               onChange={(e) => setReportDate({ ...reportDate, month: e.target.value })}
+              onBlur={(e) => setReportDate({ ...reportDate, month: e.target.value.trim() })}
               className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
             />
             <span>월</span>
@@ -239,6 +240,7 @@ export default function ReportForm() {
               type="text"
               value={reportDate.day}
               onChange={(e) => setReportDate({ ...reportDate, day: e.target.value })}
+              onBlur={(e) => setReportDate({ ...reportDate, day: e.target.value.trim() })}
               className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
             />
             <span>일 보고서</span>
