@@ -324,7 +324,7 @@ export default function ReportForm() {
   const isCopyDisabled = !hasAnyData || !allAttemptedProjectsValid;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 sm:p-6 lg:flex-row lg:p-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 sm:p-6 lg:flex-row lg:p-12">
       <div className="flex-1 overflow-hidden">
         <header className="mb-10">
           <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
