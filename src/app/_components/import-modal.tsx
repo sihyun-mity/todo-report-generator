@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Clipboard, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseReportText } from '@/utils/parser';
@@ -8,6 +8,7 @@ import { Project } from './types';
 import { cn } from '@/utils/class';
 import { Portal } from '@/components';
 import { useOnClickOutside } from '@/hooks';
+import { useScrollLock } from 'usehooks-ts';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
   const [text, setText] = useState('');
   const [parsedData, setParsedData] = useState<ReturnType<typeof parseReportText>>(null);
   const ref = useRef<HTMLDivElement | null>(null);
+  const { lock, unlock } = useScrollLock({ autoLock: false });
 
   const handleClose = () => {
     setText('');
@@ -61,13 +63,23 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
     }
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      lock();
+    } else {
+      unlock();
+    }
+
+    return () => unlock();
+  }, [isOpen, lock, unlock]);
+
   if (!isOpen) return null;
 
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6">
         <div
-          className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+          className="flex max-h-[90%] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
           ref={ref}
         >
           {/* Header */}
