@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { ReactNode, Suspense } from 'react';
 import '@/styles/globals.css';
-import { MobileDetector } from '@/components';
+import { MobileDetector, ToasterProvider } from '@/components';
 import { cn, staticMetadata } from '@/utils';
 import localFont from 'next/font/local';
 
@@ -35,6 +35,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         )}
       >
         <Suspense>{children}</Suspense>
+
+        <ToasterProvider />
+
         <MobileDetector />
 
         {/* For Portal Component */}

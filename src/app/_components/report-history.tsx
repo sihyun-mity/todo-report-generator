@@ -1,6 +1,7 @@
 'use client';
 
 import { Copy, History, RotateCcw, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { ReportHistoryItem } from '@/app/_components/types';
 import { MouseEvent } from 'react';
 
@@ -33,7 +34,7 @@ export default function ReportHistory({ history, loadHistoryAction, deleteHistor
                   onClick={(e) => {
                     e.stopPropagation();
                     navigator.clipboard.writeText(item.content);
-                    alert('내용이 클립보드에 복사되었습니다.');
+                    toast.success('내용이 클립보드에 복사되었습니다.');
                   }}
                   className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
                   title="다시 복사"
