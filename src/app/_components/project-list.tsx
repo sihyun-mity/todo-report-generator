@@ -53,6 +53,7 @@ const ProjectList = ({
           project={project}
           onUpdateName={(name) => onUpdateProjectName(project.id, name)}
           onRemove={() => onRemoveProject(project.id)}
+          canRemove={projects.length > 1}
           onAddTask={() => onAddTask(project.id)}
           onUpdateTask={(taskId, updates) => onUpdateTask(project.id, taskId, updates)}
           onRemoveTask={(taskId) => onRemoveTask(project.id, taskId)}
