@@ -2,14 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
+import { AlertCircle, Check, Copy, Download, RotateCcw } from 'lucide-react';
 import { useIsClient, useLocalStorage } from 'usehooks-ts';
 import { cn } from '@/utils/class';
 import { Project, ReportHistoryItem, TargetType, Task } from './types';
 import ProjectList from './project-list';
-import { ReportHistory } from '@/app/_components';
+import { ImportModal, ReportHistory } from '@/app/_components';
 
 export default function ReportForm() {
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [todayProjects, setTodayProjects] = useState<Project[]>([
     { id: '1', name: '', tasks: [{ id: '1-1', content: '', progress: 0 }] },
   ]);
@@ -202,11 +203,16 @@ export default function ReportForm() {
     toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
-  const generateReportText = () => {
-    let text = `${reportDate.month}월 ${reportDate.day}일 일일 업무 보고 드립니다.\n\n`;
+  const generateReportTextFromData = (data: {
+    month: string;
+    day: string;
+    todayProjects: Project[];
+    tomorrowProjects: Project[];
+  }) => {
+    let text = `${data.month}월 ${data.day}일 일일 업무 보고 드립니다.\n\n`;
 
     text += `금일 업무 진행 현황\n`;
-    todayProjects.forEach((p) => {
+    data.todayProjects.forEach((p) => {
       text += `    * ${p.name || '프로젝트명'}\n`;
       p.tasks.forEach((t) => {
         text += `        - ${t.content || '작업 내용'} (${t.progress}%)\n`;
@@ -214,7 +220,7 @@ export default function ReportForm() {
     });
 
     text += `\n익일 업무 진행 예정\n`;
-    tomorrowProjects.forEach((p) => {
+    data.tomorrowProjects.forEach((p) => {
       text += `    * ${p.name || '프로젝트명'}\n`;
       p.tasks.forEach((t) => {
         text += `        - ${t.content || '작업 내용'} (${t.progress}%)\n`;
@@ -222,6 +228,15 @@ export default function ReportForm() {
     });
 
     return text;
+  };
+
+  const generateReportText = () => {
+    return generateReportTextFromData({
+      month: reportDate.month,
+      day: reportDate.day,
+      todayProjects,
+      tomorrowProjects,
+    });
   };
 
   const copyToClipboard = async () => {
@@ -328,6 +343,46 @@ export default function ReportForm() {
 
   const isCopyDisabled = !hasAnyData || !allAttemptedProjectsValid;
 
+  const handleImportApply = (data: {
+    month: string;
+    day: string;
+    todayProjects: Project[];
+    tomorrowProjects: Project[];
+  }) => {
+    if (hasAnyData) {
+      if (!confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) {
+        return;
+      }
+    }
+
+    const importMonth = parseInt(data.month);
+    const importDay = parseInt(data.day);
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+    const isEarlier = importMonth < currentMonth || (importMonth === currentMonth && importDay < currentDay);
+
+    if (isEarlier) {
+      const newHistoryItem: ReportHistoryItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        month: data.month,
+        day: data.day,
+        content: generateReportTextFromData(data),
+        todayProjects: JSON.parse(JSON.stringify(data.todayProjects)),
+        tomorrowProjects: JSON.parse(JSON.stringify(data.tomorrowProjects)),
+        timestamp: Date.now(),
+      };
+      setHistory([newHistoryItem, ...history].slice(0, 50));
+      toast.success(`${data.month}월 ${data.day}일 기록을 이전 기록에 추가했습니다.`);
+    }
+
+    setReportDate({ month: data.month, day: data.day });
+    setTodayProjects(data.todayProjects);
+    setTomorrowProjects(data.tomorrowProjects);
+    toast.success('텍스트 분석 내용을 적용했습니다.');
+    setIsImportModalOpen(false);
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 sm:p-6 lg:flex-row lg:p-12">
       <div className="flex-1 overflow-hidden">
@@ -335,23 +390,32 @@ export default function ReportForm() {
           <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
             일일 업무 보고 생성기
           </h1>
-          <div className="flex items-center gap-2 text-zinc-500">
-            <input
-              type="text"
-              value={reportDate.month}
-              onChange={(e) => setReportDate({ ...reportDate, month: e.target.value })}
-              onBlur={(e) => setReportDate({ ...reportDate, month: e.target.value.trim() })}
-              className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <span>월</span>
-            <input
-              type="text"
-              value={reportDate.day}
-              onChange={(e) => setReportDate({ ...reportDate, day: e.target.value })}
-              onBlur={(e) => setReportDate({ ...reportDate, day: e.target.value.trim() })}
-              className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <span>일 보고서</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-zinc-500">
+              <input
+                type="text"
+                value={reportDate.month}
+                onChange={(e) => setReportDate({ ...reportDate, month: e.target.value })}
+                onBlur={(e) => setReportDate({ ...reportDate, month: e.target.value.trim() })}
+                className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span>월</span>
+              <input
+                type="text"
+                value={reportDate.day}
+                onChange={(e) => setReportDate({ ...reportDate, day: e.target.value })}
+                onBlur={(e) => setReportDate({ ...reportDate, day: e.target.value.trim() })}
+                className="w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span>일 보고서</span>
+            </div>
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              <Download size={14} />
+              가져오기
+            </button>
           </div>
         </header>
 
@@ -433,6 +497,8 @@ export default function ReportForm() {
           <ReportHistory history={history} loadHistoryAction={loadHistory} deleteHistoryAction={deleteHistory} />
         )}
       </div>
+
+      <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
     </div>
   );
 }
