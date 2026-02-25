@@ -10,9 +10,18 @@ interface ProjectItemProps {
   onAddTask: () => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (taskId: string) => void;
+  canRemove: boolean;
 }
 
-const ProjectItem = ({ project, onUpdateName, onRemove, onAddTask, onUpdateTask, onRemoveTask }: ProjectItemProps) => {
+const ProjectItem = ({
+  project,
+  onUpdateName,
+  onRemove,
+  onAddTask,
+  onUpdateTask,
+  onRemoveTask,
+  canRemove,
+}: ProjectItemProps) => {
   return (
     <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
       <div className="mb-4 flex items-center gap-2">
@@ -26,8 +35,9 @@ const ProjectItem = ({ project, onUpdateName, onRemove, onAddTask, onUpdateTask,
         />
         <button
           onClick={onRemove}
-          className="cursor-pointer rounded-md p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
-          title="프로젝트 삭제"
+          disabled={!canRemove}
+          className="cursor-pointer rounded-md p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-red-950/30"
+          title={canRemove ? '프로젝트 삭제' : '최소 하나의 프로젝트가 필요합니다'}
         >
           <Trash2 size={18} />
         </button>
