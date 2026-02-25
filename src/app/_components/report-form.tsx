@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
 import { useIsClient, useLocalStorage } from 'usehooks-ts';
 import { cn } from '@/utils/class';
@@ -29,6 +30,7 @@ export default function ReportForm() {
 
       if (lastValidReport) {
         setTodayProjects(JSON.parse(JSON.stringify(lastValidReport.tomorrowProjects)));
+        toast.success('이전 업무의 진행 예정 내용을 가져왔습니다.');
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,7 +165,7 @@ export default function ReportForm() {
       .filter((p): p is Project => p !== null);
 
     if (incompleteProjects.length === 0) {
-      alert('가져올 새로운 미완료 업무가 없거나 이미 모두 가져왔습니다.');
+      toast.error('가져올 새로운 미완료 업무가 없습니다.');
       return;
     }
 
@@ -196,6 +198,8 @@ export default function ReportForm() {
 
       setTomorrowProjects(updatedTomorrow);
     }
+
+    toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
   const generateReportText = () => {
@@ -242,6 +246,7 @@ export default function ReportForm() {
 
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      toast.success('내용이 클립보드에 복사되었습니다.');
 
       // 로컬 스토리지에 저장
       const newHistoryItem: ReportHistoryItem = {

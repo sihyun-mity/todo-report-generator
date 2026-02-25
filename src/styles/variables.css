@@ -3,6 +3,11 @@
   /* Colors */
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Toast */
+  --toast-bg: #ffffff;
+  --toast-color: #171717;
+  --toast-border: #e4e4e7;
 }
 
 /* Dark */
@@ -11,5 +16,10 @@
     /* Colors */
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    /* Toast */
+    --toast-bg: #18181b;
+    --toast-color: #ededed;
+    --toast-border: #27272a;
   }
 }
