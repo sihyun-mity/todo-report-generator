@@ -165,7 +165,7 @@ export default function ReportForm() {
       .filter((p): p is Project => p !== null);
 
     if (incompleteProjects.length === 0) {
-      toast.error('가져올 새로운 미완료 업무가 없거나 이미 모두 가져왔습니다.');
+      toast.error('가져올 새로운 미완료 업무가 없습니다.');
       return;
     }
 
@@ -198,6 +198,8 @@ export default function ReportForm() {
 
       setTomorrowProjects(updatedTomorrow);
     }
+
+    toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
   const generateReportText = () => {
