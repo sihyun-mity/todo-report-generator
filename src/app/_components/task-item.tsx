@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Task } from './types';
 
@@ -7,13 +9,23 @@ interface TaskItemProps {
   onUpdate: (updates: Partial<Task>) => void;
   onRemove: () => void;
   canRemove: boolean;
+  autoFocus?: boolean;
 }
 
-const TaskItem = ({ task, onUpdate, onRemove, canRemove }: TaskItemProps) => {
+const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [autoFocus]);
+
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
       <span className="shrink-0 text-zinc-400">-</span>
       <input
+        ref={inputRef}
         type="text"
         placeholder="작업 내용"
         value={task.content}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { MouseEvent, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { AlertCircle, Check, Copy, Download, RotateCcw } from 'lucide-react';
 import { useIsClient, useLocalStorage } from 'usehooks-ts';
@@ -43,9 +43,9 @@ export default function ReportForm() {
     day: String(now.getDate()),
   });
 
-  const addProject = (target: TargetType) => {
+  const addProject = (target: TargetType, projectId: string) => {
     const newProject: Project = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: projectId,
       name: '',
       tasks: [{ id: Math.random().toString(36).substr(2, 9), content: '', progress: 0 }],
     };
@@ -64,9 +64,9 @@ export default function ReportForm() {
     }
   };
 
-  const addTask = (target: TargetType, projectId: string) => {
+  const addTask = (target: TargetType, projectId: string, taskId: string) => {
     const newTask: Task = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: taskId,
       content: '',
       progress: 0,
     };
@@ -282,7 +282,7 @@ export default function ReportForm() {
     }
   };
 
-  const loadHistory = (item: ReportHistoryItem, e: React.MouseEvent) => {
+  const loadHistory = (item: ReportHistoryItem, e: MouseEvent) => {
     e.stopPropagation();
     if (confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) {
       setReportDate({ month: item.month, day: item.day });
@@ -292,7 +292,7 @@ export default function ReportForm() {
     }
   };
 
-  const deleteHistory = (id: string, e: React.MouseEvent) => {
+  const deleteHistory = (id: string, e: MouseEvent) => {
     e.stopPropagation();
     setHistory(history.filter((item) => item.id !== id));
   };
@@ -422,20 +422,20 @@ export default function ReportForm() {
         <ProjectList
           title="금일 업무 진행 현황"
           projects={todayProjects}
-          onAddProject={() => addProject('today')}
+          onAddProject={(id) => addProject('today', id)}
           onRemoveProject={(id) => removeProject('today', id)}
           onUpdateProjectName={(id, name) => updateProjectName('today', id, name)}
-          onAddTask={(id) => addTask('today', id)}
+          onAddTask={(pid, tid) => addTask('today', pid, tid)}
           onUpdateTask={(pid, tid, updates) => updateTask('today', pid, tid, updates)}
           onRemoveTask={(pid, tid) => removeTask('today', pid, tid)}
         />
         <ProjectList
           title="익일 업무 진행 예정"
           projects={tomorrowProjects}
-          onAddProject={() => addProject('tomorrow')}
+          onAddProject={(id) => addProject('tomorrow', id)}
           onRemoveProject={(id) => removeProject('tomorrow', id)}
           onUpdateProjectName={(id, name) => updateProjectName('tomorrow', id, name)}
-          onAddTask={(id) => addTask('tomorrow', id)}
+          onAddTask={(pid, tid) => addTask('tomorrow', pid, tid)}
           onUpdateTask={(pid, tid, updates) => updateTask('tomorrow', pid, tid, updates)}
           onRemoveTask={(pid, tid) => removeTask('tomorrow', pid, tid)}
           onImportIncomplete={importIncompleteTasks}
