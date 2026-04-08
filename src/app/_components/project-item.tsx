@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Project, Task } from './types';
 import TaskItem from './task-item';
@@ -7,10 +9,11 @@ interface ProjectItemProps {
   project: Project;
   onUpdateName: (name: string) => void;
   onRemove: () => void;
-  onAddTask: () => void;
+  onAddTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (taskId: string) => void;
   canRemove: boolean;
+  autoFocus?: boolean;
 }
 
 const ProjectItem = ({
@@ -21,11 +24,28 @@ const ProjectItem = ({
   onUpdateTask,
   onRemoveTask,
   canRemove,
+  autoFocus,
 }: ProjectItemProps) => {
+  const [lastAddedTaskId, setLastAddedTaskId] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus && nameInputRef.current) {
+      nameInputRef.current.focus();
+    }
+  }, [autoFocus]);
+
+  const handleAddTask = () => {
+    const newTaskId = Math.random().toString(36).substr(2, 9);
+    setLastAddedTaskId(newTaskId);
+    onAddTask(newTaskId);
+  };
+
   return (
     <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
       <div className="mb-4 flex items-center gap-2">
         <input
+          ref={nameInputRef}
           type="text"
           placeholder="프로젝트명"
           value={project.name}
@@ -50,10 +70,11 @@ const ProjectItem = ({
             onUpdate={(updates) => onUpdateTask(task.id, updates)}
             onRemove={() => onRemoveTask(task.id)}
             canRemove={project.tasks.length > 1}
+            autoFocus={task.id === lastAddedTaskId}
           />
         ))}
         <button
-          onClick={onAddTask}
+          onClick={handleAddTask}
           className="ml-2 flex cursor-pointer items-center gap-1 text-sm font-medium text-blue-500 transition-colors hover:text-blue-600 sm:ml-4"
         >
           <Plus size={14} /> 작업 추가

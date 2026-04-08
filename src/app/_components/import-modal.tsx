@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Clipboard, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseReportText } from '@/utils/parser';
@@ -30,7 +30,7 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
 
   useOnClickOutside(ref, handleClose);
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
     if (newText.trim()) {
