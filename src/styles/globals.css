@@ -7,6 +7,8 @@
 @import './utility.css';
 @import './variables.css';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 body {
   -webkit-tap-highlight-color: transparent;
 }

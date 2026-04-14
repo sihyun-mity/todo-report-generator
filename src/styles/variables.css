@@ -10,16 +10,14 @@
   --toast-border: #e4e4e7;
 }
 
-/* Dark */
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Colors */
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Dark mode variables */
+.dark {
+  /* Colors */
+  --background: #0a0a0a;
+  --foreground: #ededed;
 
-    /* Toast */
-    --toast-bg: #18181b;
-    --toast-color: #ededed;
-    --toast-border: #27272a;
-  }
+  /* Toast */
+  --toast-bg: #18181b;
+  --toast-color: #ededed;
+  --toast-border: #27272a;
 }
