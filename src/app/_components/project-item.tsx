@@ -42,7 +42,7 @@ const ProjectItem = ({
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
+    <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-700/50">
       <div className="mb-4 flex items-center gap-2">
         <input
           ref={nameInputRef}
@@ -51,7 +51,7 @@ const ProjectItem = ({
           value={project.name}
           onChange={(e) => onUpdateName(e.target.value)}
           onBlur={(e) => onUpdateName(e.target.value.trim())}
-          className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:text-zinc-100"
+          className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700/50 dark:bg-input/40 dark:text-zinc-100 dark:focus:border-blue-500/50"
         />
         <button
           onClick={onRemove}

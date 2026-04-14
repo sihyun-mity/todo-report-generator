@@ -39,7 +39,7 @@ export default function ReportHistory({ history, loadHistoryAction, deleteHistor
           <div
             key={item.id}
             onClick={(e) => loadHistoryAction(item, e)}
-            className="group relative flex cursor-pointer flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 transition-all hover:border-blue-200 hover:bg-blue-50 dark:border-zinc-800 dark:bg-black/20 dark:hover:border-blue-900/50 dark:hover:bg-blue-900/10"
+            className="group relative flex cursor-pointer flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 transition-all hover:border-blue-200 hover:bg-blue-50 dark:border-zinc-800 dark:bg-[#25262b]/20 dark:hover:border-blue-900/50 dark:hover:bg-blue-900/10"
           >
             <div className="mb-1 flex items-center justify-between">
               <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
