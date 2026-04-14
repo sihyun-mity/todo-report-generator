@@ -8,6 +8,7 @@ import { cn } from '@/utils/class';
 import { Project, ReportHistoryItem, TargetType, Task } from './types';
 import ProjectList from './project-list';
 import { ImportModal, ReportHistory } from '@/app/_components';
+import { ThemeToggle } from '@/components';
 
 export default function ReportForm() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -443,6 +444,9 @@ export default function ReportForm() {
       </div>
 
       <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
+        <div className="mb-2 flex justify-end">
+          <ThemeToggle />
+        </div>
         <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
           <h2 className="mb-4 text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
           <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-black dark:text-zinc-300">
