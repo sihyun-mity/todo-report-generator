@@ -24,7 +24,7 @@ export function ThemeToggle() {
 
   if (!isClient) {
     return (
-      <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700/50 dark:bg-card/50">
         <div className="p-1.5">
           <Sun size={16} className="text-transparent" />
         </div>
@@ -39,13 +39,13 @@ export function ThemeToggle() {
   }
 
   return (
-    <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700/50 dark:bg-card/50">
       <button
         onClick={() => handleSetTheme('light')}
         className={cn(
           'rounded-md p-1.5 transition-all',
           theme === 'light'
-            ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+            ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
         )}
         title="라이트 모드"
@@ -57,7 +57,7 @@ export function ThemeToggle() {
         className={cn(
           'rounded-md p-1.5 transition-all',
           theme === 'dark'
-            ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+            ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
         )}
         title="다크 모드"
@@ -69,7 +69,7 @@ export function ThemeToggle() {
         className={cn(
           'rounded-md p-1.5 transition-all',
           theme === 'system'
-            ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+            ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
         )}
         title="시스템 설정"

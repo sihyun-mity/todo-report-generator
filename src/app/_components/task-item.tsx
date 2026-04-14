@@ -31,7 +31,7 @@ const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemPr
         value={task.content}
         onChange={(e) => onUpdate({ content: e.target.value })}
         onBlur={(e) => onUpdate({ content: e.target.value.trim() })}
-        className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-800 dark:text-zinc-200"
+        className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
       />
       <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         <input
@@ -47,7 +47,7 @@ const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemPr
               onUpdate({ progress: Math.min(100, Math.max(0, val)) });
             }
           }}
-          className="w-12 rounded-md border border-zinc-200 bg-transparent px-1 py-1.5 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-16 sm:px-2 dark:border-zinc-800 dark:text-zinc-200"
+          className="w-12 rounded-md border border-zinc-200 bg-transparent px-1 py-1.5 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-16 sm:px-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
         />
         <span className="text-xs text-zinc-500 sm:text-sm">%</span>
       </div>

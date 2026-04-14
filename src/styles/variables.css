@@ -3,6 +3,8 @@
   /* Colors */
   --background: #ffffff;
   --foreground: #171717;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
 
   /* Toast */
   --toast-bg: #ffffff;
@@ -13,11 +15,13 @@
 /* Dark mode variables */
 .dark {
   /* Colors */
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #1a1b1e;
+  --foreground: #e1e1e6;
+  --card-bg: #25262b;
+  --input-bg: #25262b;
 
   /* Toast */
-  --toast-bg: #18181b;
-  --toast-color: #ededed;
-  --toast-border: #27272a;
+  --toast-bg: #25262b;
+  --toast-color: #e1e1e6;
+  --toast-border: #373a40;
 }

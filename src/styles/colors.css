@@ -1,4 +1,9 @@
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card-bg);
+  --color-input: var(--input-bg);
+  --color-toast-bg: var(--toast-bg);
+  --color-toast-color: var(--toast-color);
+  --color-toast-border: var(--toast-border);
 }

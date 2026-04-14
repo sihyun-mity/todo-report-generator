@@ -412,7 +412,7 @@ export default function ReportForm() {
             </div>
             <button
               onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card dark:text-zinc-300 dark:hover:bg-[#2c2e33]"
             >
               <Download size={14} />
               가져오기
@@ -447,9 +447,9 @@ export default function ReportForm() {
         <div className="mb-2 flex justify-end">
           <ThemeToggle />
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-700/50 dark:bg-card/50">
           <h2 className="mb-4 text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
-          <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-black dark:text-zinc-300">
+          <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-700/30 dark:bg-background/50 dark:text-zinc-200">
             {generateReportText()}
           </pre>
 
@@ -461,8 +461,8 @@ export default function ReportForm() {
               copied
                 ? 'bg-green-500 text-white'
                 : isCopyDisabled
-                  ? 'cursor-not-allowed bg-zinc-300 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-600'
-                  : 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200'
+                  ? 'cursor-not-allowed bg-zinc-300 text-zinc-500 dark:bg-zinc-700/30 dark:text-zinc-500'
+                  : 'bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-background dark:hover:bg-zinc-200'
             )}
           >
             {copied ? (
@@ -483,7 +483,7 @@ export default function ReportForm() {
               'flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-all',
               !hasAnyData
                 ? 'cursor-not-allowed text-zinc-400 dark:text-zinc-600'
-                : 'text-zinc-600 hover:bg-zinc-200/50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-red-400'
+                : 'text-zinc-600 hover:bg-zinc-200/50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-card/50 dark:hover:text-red-400'
             )}
           >
             <RotateCcw size={16} /> 작성 내용 초기화
