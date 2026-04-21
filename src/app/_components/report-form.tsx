@@ -9,6 +9,7 @@ import ReportHeader, { ReportDate } from './report-header';
 import ReportPreview from './report-preview';
 import ReportHistory from './report-history';
 import ImportModal from './import-modal';
+import ImportLocalDialog from './import-local-dialog';
 import { useProjects, useReportHistory } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -37,6 +38,9 @@ const getTodayDate = (): ReportDate => {
   return { month: String(now.getMonth() + 1), day: String(now.getDate()) };
 };
 
+// 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
+const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
+
 export default function ReportForm() {
   const isClient = useIsClient();
   const router = useRouter();
@@ -45,17 +49,48 @@ export default function ReportForm() {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const today = useProjects();
   const tomorrow = useProjects();
-  const { history, isLoaded: isHistoryLoaded, addHistory, deleteHistory, importFromLocalStorage } = useReportHistory();
+  const {
+    history,
+    isLoaded: isHistoryLoaded,
+    hasLocalBackup,
+    addHistory,
+    deleteHistory,
+    importFromLocalStorage,
+  } = useReportHistory();
 
-  // 현재 로그인 사용자 이메일 표시
+  // 현재 로그인 사용자 정보
   useEffect(() => {
     if (!isClient) return;
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email ?? null);
+      setUserId(data.user?.id ?? null);
+    });
   }, [isClient]);
+
+  // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음
+  const canImportLocal = isHistoryLoaded && history.length === 0 && hasLocalBackup;
+
+  // 최초 접속 1회 안내 dialog: 위 조건 + 해당 유저 대상 안내를 본 적이 없을 때
+  useEffect(() => {
+    if (!isClient || !canImportLocal || !userId) return;
+    if (localStorage.getItem(importPromptSeenKey(userId))) return;
+    setIsImportDialogOpen(true);
+  }, [isClient, canImportLocal, userId]);
+
+  const markImportPromptSeen = () => {
+    if (!userId) return;
+    try {
+      localStorage.setItem(importPromptSeenKey(userId), String(Date.now()));
+    } catch {
+      // storage 쿼터 초과 등은 무시
+    }
+  };
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -64,10 +99,25 @@ export default function ReportForm() {
     router.refresh();
   };
 
-  const handleImportLocal = async () => {
-    if (!confirm('브라우저에 저장된 기존 기록을 계정에 이전합니다. 같은 날짜 기록이 있으면 덮어쓰여집니다.')) return;
+  const runImportLocal = async () => {
     const { imported } = await importFromLocalStorage();
     if (imported > 0) toast.success(`${imported}개 기록을 이전했습니다.`);
+  };
+
+  const handleImportLocal = async () => {
+    if (!confirm('브라우저에 저장된 기존 기록을 계정에 이전합니다. 같은 날짜 기록이 있으면 덮어쓰여집니다.')) return;
+    await runImportLocal();
+  };
+
+  const handleDialogConfirm = async () => {
+    markImportPromptSeen();
+    setIsImportDialogOpen(false);
+    await runImportLocal();
+  };
+
+  const handleDialogDismiss = () => {
+    markImportPromptSeen();
+    setIsImportDialogOpen(false);
   };
 
   // 초기 로드 완료 후, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다 (1회만)
@@ -189,7 +239,7 @@ export default function ReportForm() {
           reportDate={reportDate}
           onChangeDate={setReportDate}
           onOpenImport={() => setIsImportModalOpen(true)}
-          onImportLocal={handleImportLocal}
+          onImportLocal={canImportLocal ? handleImportLocal : undefined}
           onLogout={handleLogout}
           userEmail={userEmail}
         />
@@ -238,6 +288,8 @@ export default function ReportForm() {
       </div>
 
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
+
+      <ImportLocalDialog isOpen={isImportDialogOpen} onConfirm={handleDialogConfirm} onDismiss={handleDialogDismiss} />
     </div>
   );
 }

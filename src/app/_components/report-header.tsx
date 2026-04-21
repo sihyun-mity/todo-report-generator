@@ -11,7 +11,7 @@ interface ReportHeaderProps {
   reportDate: ReportDate;
   onChangeDate: (date: ReportDate) => void;
   onOpenImport: () => void;
-  onImportLocal: () => void;
+  onImportLocal?: () => void;
   onLogout: () => void;
   userEmail?: string | null;
 }
@@ -67,10 +67,12 @@ const ReportHeader = ({
           <Download size={14} />
           가져오기
         </button>
-        <button onClick={onImportLocal} className={actionButtonClass} title="기존 로컬 저장 기록을 계정에 옮기기">
-          <HardDriveDownload size={14} />
-          로컬 기록 이전
-        </button>
+        {onImportLocal && (
+          <button onClick={onImportLocal} className={actionButtonClass} title="기존 로컬 저장 기록을 계정에 옮기기">
+            <HardDriveDownload size={14} />
+            로컬 기록 이전
+          </button>
+        )}
       </div>
     </header>
   );
