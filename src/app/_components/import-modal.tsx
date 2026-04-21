@@ -1,14 +1,15 @@
 'use client';
 
-import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Clipboard, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useScrollLock } from 'usehooks-ts';
 import { parseReportText } from '@/utils/parser';
-import { Project } from './types';
 import { cn } from '@/utils/class';
 import { Portal } from '@/components';
 import { useOnClickOutside } from '@/hooks';
-import { useScrollLock } from 'usehooks-ts';
+import { Project } from './types';
+import ProjectPreview from './project-preview';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ interface ImportModalProps {
 export default function ImportModal({ isOpen, onClose, onApply }: ImportModalProps) {
   const [text, setText] = useState('');
   const [parsedData, setParsedData] = useState<ReturnType<typeof parseReportText>>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const { lock, unlock } = useScrollLock({ autoLock: false });
 
   const handleClose = () => {
@@ -28,17 +29,12 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
     onClose();
   };
 
-  useOnClickOutside(ref, handleClose);
+  useOnClickOutside(modalRef, handleClose);
 
   const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
-    if (newText.trim()) {
-      const result = parseReportText(newText);
-      setParsedData(result);
-    } else {
-      setParsedData(null);
-    }
+    setParsedData(newText.trim() ? parseReportText(newText) : null);
   };
 
   const handlePasteFromClipboard = async () => {
@@ -58,18 +54,13 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
   };
 
   const handleApply = () => {
-    if (parsedData) {
-      onApply(parsedData);
-    }
+    if (parsedData) onApply(parsedData);
   };
 
+  // 모달이 열려 있는 동안 배경 스크롤을 잠근다
   useEffect(() => {
-    if (isOpen) {
-      lock();
-    } else {
-      unlock();
-    }
-
+    if (isOpen) lock();
+    else unlock();
     return () => unlock();
   }, [isOpen, lock, unlock]);
 
@@ -79,10 +70,9 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6">
         <div
+          ref={modalRef}
           className="flex max-h-[90%] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          ref={ref}
         >
-          {/* Header */}
           <div className="flex items-center justify-between border-b border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
             <h2 className="flex items-center gap-2 text-lg font-bold sm:text-xl">
               <Clipboard className="h-5 w-5 text-blue-500" />
@@ -96,7 +86,6 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
             </button>
           </div>
 
-          {/* Content */}
           <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
             <div className="space-y-2">
               <div className="flex items-end justify-between">
@@ -117,7 +106,6 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
               />
             </div>
 
-            {/* Preview Section */}
             <div className="space-y-3">
               <label className="text-sm font-medium text-zinc-500 dark:text-zinc-400">미리보기</label>
               {parsedData ? (
@@ -130,56 +118,12 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
                   </div>
 
                   <div className="grid grid-cols-1 gap-6 text-xs md:grid-cols-2">
-                    <div>
-                      <p className="mb-2 flex items-center gap-1.5 font-bold text-zinc-900 dark:text-zinc-100">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                        금일 업무 ({parsedData.todayProjects.filter((p) => p.name).length})
-                      </p>
-                      <div className="max-h-48 space-y-3 overflow-y-auto pr-2">
-                        {parsedData.todayProjects
-                          .filter((p) => p.name)
-                          .map((p, pIdx) => (
-                            <div key={pIdx} className="space-y-1">
-                              <p className="font-semibold text-zinc-700 dark:text-zinc-300">• {p.name}</p>
-                              <ul className="space-y-0.5 pl-3">
-                                {p.tasks.map((t, tIdx) => (
-                                  <li key={tIdx} className="text-zinc-500 dark:text-zinc-400">
-                                    - {t.content} ({t.progress}%)
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        {parsedData.todayProjects.filter((p) => p.name).length === 0 && (
-                          <p className="text-zinc-400 italic">내용 없음</p>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="mb-2 flex items-center gap-1.5 font-bold text-zinc-900 dark:text-zinc-100">
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                        익일 업무 ({parsedData.tomorrowProjects.filter((p) => p.name).length})
-                      </p>
-                      <div className="max-h-48 space-y-3 overflow-y-auto pr-2">
-                        {parsedData.tomorrowProjects
-                          .filter((p) => p.name)
-                          .map((p, pIdx) => (
-                            <div key={pIdx} className="space-y-1">
-                              <p className="font-semibold text-zinc-700 dark:text-zinc-300">• {p.name}</p>
-                              <ul className="space-y-0.5 pl-3">
-                                {p.tasks.map((t, tIdx) => (
-                                  <li key={tIdx} className="text-zinc-500 dark:text-zinc-400">
-                                    - {t.content} ({t.progress}%)
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        {parsedData.tomorrowProjects.filter((p) => p.name).length === 0 && (
-                          <p className="text-zinc-400 italic">내용 없음</p>
-                        )}
-                      </div>
-                    </div>
+                    <ProjectPreview title="금일 업무" dotClassName="bg-blue-500" projects={parsedData.todayProjects} />
+                    <ProjectPreview
+                      title="익일 업무"
+                      dotClassName="bg-green-500"
+                      projects={parsedData.tomorrowProjects}
+                    />
                   </div>
                 </div>
               ) : (
@@ -210,7 +154,6 @@ export default function ImportModal({ isOpen, onClose, onApply }: ImportModalPro
             </div>
           </div>
 
-          {/* Footer */}
           <div className="flex gap-3 border-t border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
             <button
               onClick={handleClose}

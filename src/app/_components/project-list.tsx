@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { createId } from '@/utils/id';
 import { Project, Task } from './types';
 import ProjectItem from './project-item';
 
@@ -30,8 +31,10 @@ const ProjectList = ({
 }: ProjectListProps) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
 
+  // 새로 추가된 프로젝트의 ID를 상위에서 받기 전에 미리 생성해두고,
+  // 같은 ID를 전달해 ProjectItem에서 autoFocus가 트리거되도록 한다
   const handleAddProject = () => {
-    const newProjectId = Math.random().toString(36).substr(2, 9);
+    const newProjectId = createId();
     setLastAddedProjectId(newProjectId);
     onAddProject(newProjectId);
   };

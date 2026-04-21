@@ -7,3 +7,6 @@ export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useScrollPage } from './useScrollPage';
 export { default as useSearchQuery } from './useSearchQuery';
 export { default as useScrollFadeIn } from './useScrollFadeIn';
+export { useProjects } from './useProjects';
+export type { UseProjectsReturn } from './useProjects';
+export { useReportHistory } from './useReportHistory';

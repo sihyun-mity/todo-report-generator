@@ -10,8 +10,6 @@ export interface Project {
   tasks: Task[];
 }
 
-export type TargetType = 'today' | 'tomorrow';
-
 export interface ReportHistoryItem {
   id: string;
   month: string;
