@@ -1,4 +1,6 @@
-import { Project, Task } from '../app/_components/types';
+import { Project, Task } from '@/app/_components/types';
+import { createId } from './id';
+import { createEmptyProject } from './report';
 
 interface ParsedReport {
   month: string;
@@ -7,106 +9,97 @@ interface ParsedReport {
   tomorrowProjects: Project[];
 }
 
+const SECTION_TODAY = '금일 업무 진행 현황';
+const SECTION_TOMORROW = '익일 업무 진행 예정';
+const DATE_REGEX = /(\d+)\s*월\s*(\d+)\s*일/;
+const PROJECT_LINE = /^\s*\*\s*(.+)$/;
+const TASK_LINE_WITH_PROGRESS = /^\s*-\s*(.+?)\s*\((\d+)%\)\s*$/;
+const TASK_LINE_NO_PROGRESS = /^\s*-\s*(.+)$/;
+
+type Section = 'today' | 'tomorrow' | null;
+
+// 텍스트로 작성된 보고서를 구조화된 데이터로 파싱
+// 지원 형식:
+//   N월 N일 ...
+//   금일 업무 진행 현황
+//       * 프로젝트명
+//           - 작업 내용 (NN%)
+//   익일 업무 진행 예정
+//       * 프로젝트명
+//           - 작업 내용
 export const parseReportText = (text: string): ParsedReport | null => {
   if (!text || text.trim() === '') return null;
 
-  const lines = text.split('\n').map((line) => line.trimEnd());
+  // 날짜 추출 (예: "2월 24일")
+  const dateMatch = text.match(DATE_REGEX);
+  const month = dateMatch?.[1] ?? '';
+  const day = dateMatch?.[2] ?? '';
 
-  let month = '';
-  let day = '';
   const todayProjects: Project[] = [];
   const tomorrowProjects: Project[] = [];
 
-  let currentSection: 'today' | 'tomorrow' | null = null;
+  let currentSection: Section = null;
   let currentProject: Project | null = null;
 
-  // 날짜 추출 (예: 2월 24일)
-  const dateRegex = /(\d+)\s*월\s*(\d+)\s*일/;
-  const dateMatch = text.match(dateRegex);
-  if (dateMatch) {
-    month = dateMatch[1];
-    day = dateMatch[2];
-  }
+  const lines = text.split('\n').map((line) => line.trimEnd());
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmedLine = line.trim();
+  for (const line of lines) {
+    const trimmed = line.trim();
 
-    if (trimmedLine.includes('금일 업무 진행 현황')) {
+    if (trimmed.includes(SECTION_TODAY)) {
       currentSection = 'today';
       currentProject = null;
       continue;
     }
-
-    if (trimmedLine.includes('익일 업무 진행 예정')) {
+    if (trimmed.includes(SECTION_TOMORROW)) {
       currentSection = 'tomorrow';
       currentProject = null;
       continue;
     }
-
     if (!currentSection) continue;
 
-    // 프로젝트 라인 (예: * 프로젝트명 또는 *프로젝트명)
-    const projectMatch = line.match(/^\s*[*]\s*(.+)$/);
+    // 프로젝트 라인: 새 프로젝트로 전환
+    const projectMatch = line.match(PROJECT_LINE);
     if (projectMatch) {
-      const projectName = projectMatch[1].trim();
-      currentProject = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: projectName,
-        tasks: [],
-      };
-
-      if (currentSection === 'today') {
-        todayProjects.push(currentProject);
-      } else {
-        tomorrowProjects.push(currentProject);
-      }
+      currentProject = { id: createId(), name: projectMatch[1].trim(), tasks: [] };
+      (currentSection === 'today' ? todayProjects : tomorrowProjects).push(currentProject);
       continue;
     }
 
-    // 태스크 라인 (예: - 태스크 내용 (100%) 또는 -태스크 내용(100%))
-    const taskMatch = line.match(/^\s*[-]\s*(.+?)\s*\((\d+)%\)\s*$/);
-    if (taskMatch && currentProject) {
-      const content = taskMatch[1].trim();
-      const progress = parseInt(taskMatch[2], 10);
+    if (!currentProject) continue;
 
-      const newTask: Task = {
-        id: Math.random().toString(36).substr(2, 9),
-        content,
-        progress,
+    // 태스크 라인: 진행률이 있으면 먼저 매칭, 없으면 0%로 처리
+    const progressMatch = line.match(TASK_LINE_WITH_PROGRESS);
+    if (progressMatch) {
+      const task: Task = {
+        id: createId(),
+        content: progressMatch[1].trim(),
+        progress: parseInt(progressMatch[2], 10),
       };
-      currentProject.tasks.push(newTask);
+      currentProject.tasks.push(task);
       continue;
     }
 
-    // 진행률이 없는 태스크 라인 처리 (예: - 태스크 내용)
-    const taskNoProgressMatch = line.match(/^\s*[-]\s*(.+)$/);
-    if (taskNoProgressMatch && currentProject) {
-      const content = taskNoProgressMatch[1].trim();
-      const newTask: Task = {
-        id: Math.random().toString(36).substr(2, 9),
-        content,
+    const noProgressMatch = line.match(TASK_LINE_NO_PROGRESS);
+    if (noProgressMatch) {
+      const task: Task = {
+        id: createId(),
+        content: noProgressMatch[1].trim(),
         progress: 0,
       };
-      currentProject.tasks.push(newTask);
+      currentProject.tasks.push(task);
     }
   }
 
-  // 데이터가 하나도 없으면 실패로 간주
-  if (todayProjects.length === 0 && tomorrowProjects.length === 0 && !month && !day) {
+  // 날짜와 프로젝트가 모두 비어 있으면 분석 실패로 간주
+  if (!month && !day && todayProjects.length === 0 && tomorrowProjects.length === 0) {
     return null;
   }
 
   return {
     month,
     day,
-    todayProjects:
-      todayProjects.length > 0
-        ? todayProjects
-        : [{ id: '1', name: '', tasks: [{ id: '1-1', content: '', progress: 0 }] }],
-    tomorrowProjects:
-      tomorrowProjects.length > 0
-        ? tomorrowProjects
-        : [{ id: '2', name: '', tasks: [{ id: '2-1', content: '', progress: 0 }] }],
+    todayProjects: todayProjects.length > 0 ? todayProjects : [createEmptyProject()],
+    tomorrowProjects: tomorrowProjects.length > 0 ? tomorrowProjects : [createEmptyProject()],
   };
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Task } from './types';
 
@@ -40,12 +40,10 @@ const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemPr
           max="100"
           value={task.progress}
           onChange={(e) => {
-            const val = parseInt(e.target.value);
-            if (isNaN(val)) {
-              onUpdate({ progress: 0 });
-            } else {
-              onUpdate({ progress: Math.min(100, Math.max(0, val)) });
-            }
+            // 빈 값/NaN은 0으로, 나머지는 0~100 범위로 클램프
+            const parsed = parseInt(e.target.value, 10);
+            const next = Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed));
+            onUpdate({ progress: next });
           }}
           className="w-12 rounded-md border border-zinc-200 bg-transparent px-1 py-1.5 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-16 sm:px-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
         />

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { createId } from '@/utils/id';
 import { Project, Task } from './types';
 import TaskItem from './task-item';
 
@@ -35,8 +36,9 @@ const ProjectItem = ({
     }
   }, [autoFocus]);
 
+  // 새 태스크의 ID를 먼저 생성하여 autoFocus 대상으로 기록
   const handleAddTask = () => {
-    const newTaskId = Math.random().toString(36).substr(2, 9);
+    const newTaskId = createId();
     setLastAddedTaskId(newTaskId);
     onAddTask(newTaskId);
   };
