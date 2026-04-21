@@ -33,6 +33,7 @@ export default function AuthForm({ mode }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const copy = COPY[mode];
@@ -40,6 +41,11 @@ export default function AuthForm({ mode }: Props) {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting) return;
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      toast.error('비밀번호 확인이 일치하지 않습니다.');
+      return;
+    }
 
     setIsSubmitting(true);
     const supabase = createClient();
@@ -51,16 +57,20 @@ export default function AuthForm({ mode }: Props) {
           toast.error(error.message);
           return;
         }
-        toast.success('회원가입이 완료되었습니다.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
-        toast.success('로그인되었습니다.');
+        toast.success(`${email}로 인증 메일을 발송했습니다. 메일의 링크를 눌러 인증을 완료한 뒤 로그인해주세요.`, {
+          duration: 6000,
+        });
+        router.push('/login');
+        router.refresh();
+        return;
       }
 
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success('로그인되었습니다.');
       router.push('/');
       router.refresh();
     } finally {
@@ -106,6 +116,29 @@ export default function AuthForm({ mode }: Props) {
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-zinc-700 dark:bg-zinc-950"
             />
           </div>
+
+          {mode === 'signup' && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400" htmlFor="confirm-password">
+                비밀번호 확인
+              </label>
+              <input
+                id="confirm-password"
+                name="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={6}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/50 aria-invalid:border-red-400 aria-invalid:focus:ring-red-400/50 dark:border-zinc-700 dark:bg-zinc-950"
+              />
+              {confirmPassword.length > 0 && confirmPassword !== password && (
+                <span className="mt-1 text-[11px] text-red-500">비밀번호가 일치하지 않습니다.</span>
+              )}
+            </div>
+          )}
 
           <button
             type="submit"
