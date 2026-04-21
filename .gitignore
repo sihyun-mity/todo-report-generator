@@ -39,3 +39,6 @@ next-env.d.ts
 .vscode/*
 !.vscode/launch.json
 .idea/*
+
+# Claude local settings (e.g. .claude/settings.local.json)
+.claude/**/*local*

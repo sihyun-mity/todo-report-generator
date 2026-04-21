@@ -1,6 +1,6 @@
 'use client';
 
-import { MouseEvent, useEffect, useMemo, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
 import { Project, ReportHistoryItem } from './types';
@@ -10,6 +10,8 @@ import ReportPreview from './report-preview';
 import ReportHistory from './report-history';
 import ImportModal from './import-modal';
 import { useProjects, useReportHistory } from '@/hooks';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 import {
   areAllAttemptedProjectsValid,
   cloneProjects,
@@ -37,26 +39,50 @@ const getTodayDate = (): ReportDate => {
 
 export default function ReportForm() {
   const isClient = useIsClient();
+  const router = useRouter();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [reportDate, setReportDate] = useState<ReportDate>(getTodayDate);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const today = useProjects();
   const tomorrow = useProjects();
-  const { history, addHistory, deleteHistory } = useReportHistory();
+  const { history, isLoaded: isHistoryLoaded, addHistory, deleteHistory, importFromLocalStorage } = useReportHistory();
 
-  // 최초 진입 시, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다
+  // 현재 로그인 사용자 이메일 표시
   useEffect(() => {
-    if (!isClient || history.length === 0) return;
+    if (!isClient) return;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, [isClient]);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  };
+
+  const handleImportLocal = async () => {
+    if (!confirm('브라우저에 저장된 기존 기록을 계정에 이전합니다. 같은 날짜 기록이 있으면 덮어쓰여집니다.')) return;
+    const { imported } = await importFromLocalStorage();
+    if (imported > 0) toast.success(`${imported}개 기록을 이전했습니다.`);
+  };
+
+  // 초기 로드 완료 후, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다 (1회만)
+  const didHydrateFromHistoryRef = useRef(false);
+  useEffect(() => {
+    if (!isClient || !isHistoryLoaded || didHydrateFromHistoryRef.current) return;
+    didHydrateFromHistoryRef.current = true;
+    if (history.length === 0) return;
     const lastValid = history.find((item) => item.tomorrowProjects.some(hasProjectContent));
     if (lastValid) {
       today.setProjects(cloneProjects(lastValid.tomorrowProjects));
       toast.success('이전 업무의 진행 예정 내용을 가져왔습니다.');
     }
-    // history는 계속 변하지만 최초 마운트 1회만 실행되어야 한다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClient]);
+  }, [isClient, isHistoryLoaded]);
 
   const reportText = useMemo(
     () =>
@@ -163,6 +189,9 @@ export default function ReportForm() {
           reportDate={reportDate}
           onChangeDate={setReportDate}
           onOpenImport={() => setIsImportModalOpen(true)}
+          onImportLocal={handleImportLocal}
+          onLogout={handleLogout}
+          userEmail={userEmail}
         />
 
         <ProjectList
