@@ -12,7 +12,6 @@ import ImportModal from './import-modal';
 import ImportLocalDialog from './import-local-dialog';
 import { useProjects, useReportHistory } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 import {
   areAllAttemptedProjectsValid,
   cloneProjects,
@@ -43,12 +42,10 @@ const importPromptSeenKey = (userId: string) => `report-history-import-prompt-se
 
 export default function ReportForm() {
   const isClient = useIsClient();
-  const router = useRouter();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [reportDate, setReportDate] = useState<ReportDate>(getTodayDate);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
@@ -63,14 +60,11 @@ export default function ReportForm() {
     importFromLocalStorage,
   } = useReportHistory();
 
-  // 현재 로그인 사용자 정보
+  // 로컬 기록 이전 안내 dialog의 유저별 seen 플래그용 id
   useEffect(() => {
     if (!isClient) return;
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? null);
-      setUserId(data.user?.id ?? null);
-    });
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, [isClient]);
 
   // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음
@@ -90,13 +84,6 @@ export default function ReportForm() {
     } catch {
       // storage 쿼터 초과 등은 무시
     }
-  };
-
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
   };
 
   const runImportLocal = async () => {
@@ -240,8 +227,6 @@ export default function ReportForm() {
           onChangeDate={setReportDate}
           onOpenImport={() => setIsImportModalOpen(true)}
           onImportLocal={canImportLocal ? handleImportLocal : undefined}
-          onLogout={handleLogout}
-          userEmail={userEmail}
         />
 
         <ProjectList
