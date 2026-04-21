@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
 import { Project, ReportHistoryItem } from '@/app/_components/types';
 import { cloneProjects, generateReportText, MAX_HISTORY_ITEMS } from '@/utils/report';
@@ -27,6 +27,20 @@ interface ReportRow {
 
 const LEGACY_STORAGE_KEY = 'report-history';
 
+// useSyncExternalStore용 helpers (SSR-safe)
+const subscribeNoop = () => () => {};
+const getHasLocalBackupSnapshot = () => {
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    return false;
+  }
+};
+const getHasLocalBackupServer = () => false;
+
 // month/day + 현재 연도 조합으로 report_date(YYYY-MM-DD) 계산
 const toReportDate = (month: string, day: string) => {
   const y = new Date().getFullYear();
@@ -52,6 +66,9 @@ export const useReportHistory = () => {
   const supabaseRef = useRef(createClient());
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // 로컬스토리지에 이전 가능한 기록이 있는지 (SSR-safe)
+  const hasLocalBackup = useSyncExternalStore(subscribeNoop, getHasLocalBackupSnapshot, getHasLocalBackupServer);
 
   // 초기 로드
   useEffect(() => {
@@ -199,5 +216,5 @@ export const useReportHistory = () => {
     return { imported: rows.length };
   }, []);
 
-  return { history, isLoaded, addHistory, deleteHistory, importFromLocalStorage };
+  return { history, isLoaded, hasLocalBackup, addHistory, deleteHistory, importFromLocalStorage };
 };

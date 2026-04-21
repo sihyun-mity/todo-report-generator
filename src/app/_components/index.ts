@@ -6,6 +6,16 @@ import ReportHeader from './report-header';
 import ReportHistory from './report-history';
 import ReportPreview from './report-preview';
 import ImportModal from './import-modal';
+import ImportLocalDialog from './import-local-dialog';
 
-export { ProjectList, ProjectPreview, ReportForm, ReportHeader, ReportHistory, ReportPreview, ImportModal };
+export {
+  ProjectList,
+  ProjectPreview,
+  ReportForm,
+  ReportHeader,
+  ReportHistory,
+  ReportPreview,
+  ImportModal,
+  ImportLocalDialog,
+};
 export type { Project };
