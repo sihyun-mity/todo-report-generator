@@ -11,6 +11,14 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const { pathname } = request.nextUrl;
+
+  // API 경로는 각 route handler가 자체적으로 인증·권한을 판단한다.
+  // 미들웨어는 redirect하지 않고 그대로 통과시켜야 비로그인 호출(패스키 로그인 등)에
+  // HTML redirect 대신 JSON 응답이 돌아간다.
+  if (pathname.startsWith('/api/')) {
+    return response;
+  }
+
   const isPublicPath = PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isAuthOnlyPath = AUTH_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isGuest = request.cookies.get(GUEST_MODE_COOKIE)?.value === '1';

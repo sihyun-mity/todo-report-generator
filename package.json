@@ -14,11 +14,14 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "@tailwindcss/cli": "^4.1.18",
     "clsx": "^2.1.1",
     "gsap": "^3.12.7",
+    "iron-session": "^8.0.4",
     "lucide-react": "^0.563.0",
     "mobile-detect": "^1.4.5",
     "next": "^16.2.3",
