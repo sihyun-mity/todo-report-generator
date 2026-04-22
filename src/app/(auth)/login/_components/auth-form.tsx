@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
+import { disableGuestMode, enableGuestMode } from '@/lib/guest';
 
 type Mode = 'login' | 'signup';
 
@@ -38,6 +39,13 @@ export default function AuthForm({ mode }: Props) {
 
   const copy = COPY[mode];
 
+  const handleGuestStart = () => {
+    enableGuestMode();
+    toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
+    router.push('/');
+    router.refresh();
+  };
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -70,6 +78,8 @@ export default function AuthForm({ mode }: Props) {
         toast.error(error.message);
         return;
       }
+      // 로그인 성공 시 게스트 모드 해제 (로컬 기록 이전 dialog가 자연스럽게 뜨도록)
+      disableGuestMode();
       toast.success('로그인되었습니다.');
       router.push('/');
       router.refresh();
@@ -154,6 +164,23 @@ export default function AuthForm({ mode }: Props) {
           <Link href={copy.altLink} className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
             {copy.altLinkLabel}
           </Link>
+        </p>
+
+        <div className="my-5 flex items-center gap-3 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
+          <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+          또는
+          <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGuestStart}
+          className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          게스트로 시작하기
+        </button>
+        <p className="mt-2 text-center text-[11px] text-zinc-500 dark:text-zinc-400">
+          로그인 없이 사용할 수 있어요. 기록은 이 브라우저에만 저장되며, 나중에 로그인하면 계정으로 이전할 수 있어요.
         </p>
       </div>
     </div>
