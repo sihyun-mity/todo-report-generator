@@ -137,7 +137,6 @@ export const useReportHistory = () => {
           .from('reports')
           .select('id, report_date, created_at, updated_at, content')
           .order('report_date', { ascending: false })
-          .limit(MAX_HISTORY_ITEMS)
           .returns<ReportRow[]>();
 
         if (cancelled) return;
@@ -233,7 +232,7 @@ export const useReportHistory = () => {
       const newItem = rowToItem(upserted);
       setHistory((prev) => {
         const filtered = prev.filter((item) => item.id !== newItem.id);
-        return [newItem, ...filtered].slice(0, MAX_HISTORY_ITEMS);
+        return [newItem, ...filtered];
       });
     },
     [mode]
@@ -313,7 +312,6 @@ export const useReportHistory = () => {
       .from('reports')
       .select('id, report_date, created_at, updated_at, content')
       .order('report_date', { ascending: false })
-      .limit(MAX_HISTORY_ITEMS)
       .returns<ReportRow[]>();
     if (refreshed) setHistory(refreshed.map(rowToItem));
 
