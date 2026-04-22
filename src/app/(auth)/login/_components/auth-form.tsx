@@ -110,6 +110,7 @@ export default function AuthForm({ mode }: Props) {
               type="email"
               autoComplete="email"
               required
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-zinc-700 dark:bg-zinc-950"
@@ -127,6 +128,7 @@ export default function AuthForm({ mode }: Props) {
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               minLength={6}
               required
+              placeholder={mode === 'signup' ? '6자 이상 입력해주세요' : '비밀번호를 입력해주세요'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-zinc-700 dark:bg-zinc-950"
@@ -145,6 +147,7 @@ export default function AuthForm({ mode }: Props) {
                 autoComplete="new-password"
                 minLength={6}
                 required
+                placeholder="비밀번호를 다시 입력해주세요"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
