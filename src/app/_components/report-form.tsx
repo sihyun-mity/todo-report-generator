@@ -12,6 +12,7 @@ import ImportModal from './import-modal';
 import ImportLocalDialog from './import-local-dialog';
 import { useProjects, useReportHistory } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
+import { isGuestMode } from '@/lib/guest';
 import {
   areAllAttemptedProjectsValid,
   cloneProjects,
@@ -63,8 +64,16 @@ export default function ReportForm() {
   // 로컬 기록 이전 안내 dialog의 유저별 seen 플래그용 id
   useEffect(() => {
     if (!isClient) return;
+    // 게스트는 Supabase 조회 불필요 — stale 토큰 refresh 오류 회피
+    if (isGuestMode()) {
+      setUserId(null);
+      return;
+    }
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    supabase.auth
+      .getUser()
+      .then(({ data }) => setUserId(data.user?.id ?? null))
+      .catch(() => setUserId(null));
   }, [isClient]);
 
   // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음

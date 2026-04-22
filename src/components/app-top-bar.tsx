@@ -16,16 +16,25 @@ export default function AppTopBar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
+  // 마운트 시점에 쿠키로 게스트 여부를 확정 — 이후 이메일 조회 결과와 함께 갱신
+  const [isGuest, setIsGuest] = useState<boolean>(() => isGuestMode());
 
   useEffect(() => {
+    // 게스트 쿠키가 있으면 Supabase 호출을 건너뛴다 — stale 토큰으로 인한 refresh 오류 방지
+    if (isGuest) return;
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      const userEmail = data.user?.email ?? null;
-      setEmail(userEmail);
-      setIsGuest(!userEmail && isGuestMode());
-    });
-  }, []);
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        const userEmail = data.user?.email ?? null;
+        setEmail(userEmail);
+        if (!userEmail) setIsGuest(isGuestMode());
+      })
+      .catch(() => {
+        setEmail(null);
+        setIsGuest(isGuestMode());
+      });
+  }, [isGuest]);
 
   useOnClickOutside(menuRef, () => setIsOpen(false));
 

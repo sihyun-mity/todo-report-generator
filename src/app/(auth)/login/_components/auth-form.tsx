@@ -39,7 +39,13 @@ export default function AuthForm({ mode }: Props) {
 
   const copy = COPY[mode];
 
-  const handleGuestStart = () => {
+  const handleGuestStart = async () => {
+    // 이전 로그인의 잔존 세션/리프레시 토큰을 정리해 background auto-refresh 오류 방지
+    try {
+      await createClient().auth.signOut({ scope: 'local' });
+    } catch {
+      // 무시 — 세션이 없는 경우 정상
+    }
     enableGuestMode();
     toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
     router.push('/');
