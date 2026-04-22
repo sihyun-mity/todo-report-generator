@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Home, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react';
+import { ChevronDown, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
@@ -96,6 +96,15 @@ export default function AppTopBar() {
                     <LogIn size={14} />
                     로그인 / 회원가입
                   </Link>
+                  <Link
+                    role="menuitem"
+                    href="/whats-new"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <Megaphone size={14} />
+                    새소식
+                  </Link>
                   <button
                     role="menuitem"
                     type="button"
@@ -120,6 +129,15 @@ export default function AppTopBar() {
                   >
                     <Settings size={14} />
                     계정 설정
+                  </Link>
+                  <Link
+                    role="menuitem"
+                    href="/whats-new"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <Megaphone size={14} />
+                    새소식
                   </Link>
                   <button
                     role="menuitem"
