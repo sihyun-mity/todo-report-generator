@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Megaphone, X } from 'lucide-react';
+import { useScrollLock } from 'usehooks-ts';
 import { Portal } from '@/components';
 import { createClient } from '@/lib/supabase/client';
 import NewsMarkdown from './NewsMarkdown';
@@ -21,6 +22,14 @@ const GUEST_STORAGE_KEY = 'trg:last-seen-news-id';
 
 export default function NewsDialog({ latestNews, userId, alreadyReadByUser }: Props) {
   const [open, setOpen] = useState(false);
+
+  // 다이얼로그가 열려 있는 동안 배경 스크롤 잠금 — import-modal 과 동일한 패턴
+  const { lock, unlock } = useScrollLock({ autoLock: false });
+  useEffect(() => {
+    if (open) lock();
+    else unlock();
+    return () => unlock();
+  }, [open, lock, unlock]);
 
   // 표시 여부: 로그인 유저는 DB 기준, 게스트는 localStorage 기준.
   // localStorage는 SSR에서 읽을 수 없어 클라이언트 마운트 후에만 확정 가능.
