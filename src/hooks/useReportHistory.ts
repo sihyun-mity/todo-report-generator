@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { Project, ReportHistoryItem } from '@/app/_components/types';
 import { cloneProjects, generateReportText, MAX_HISTORY_ITEMS } from '@/utils/report';
 import { createClient } from '@/lib/supabase/client';
+import { isGuestMode } from '@/lib/guest';
 
 interface AddHistoryArgs {
   month: string;
@@ -106,10 +107,27 @@ export const useReportHistory = () => {
     let cancelled = false;
 
     const load = async () => {
+      // 게스트 쿠키가 설정된 상태라면 Supabase 호출을 생략 — stale 토큰으로 인한 refresh 오류 회피
+      if (isGuestMode()) {
+        setMode('guest');
+        const items = loadLocalHistory()
+          .slice()
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, MAX_HISTORY_ITEMS);
+        if (cancelled) return;
+        setHistory(items);
+        setIsLoaded(true);
+        return;
+      }
+
       const supabase = supabaseRef.current;
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      let user: { id: string } | null = null;
+      try {
+        const result = await supabase.auth.getUser();
+        user = result.data.user;
+      } catch {
+        user = null;
+      }
 
       if (cancelled) return;
 

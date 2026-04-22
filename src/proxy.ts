@@ -10,6 +10,21 @@ const AUTH_ONLY_PATH_PREFIXES = ['/settings'];
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const { pathname } = request.nextUrl;
+  const isPublicPath = PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isAuthOnlyPath = AUTH_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isGuest = request.cookies.get(GUEST_MODE_COOKIE)?.value === '1';
+
+  // 게스트는 Supabase 세션 조회 자체를 건너뛴다 — stale refresh token이 있어도 오류로 이어지지 않게 함
+  if (isGuest) {
+    if (isAuthOnlyPath) {
+      const homeUrl = request.nextUrl.clone();
+      homeUrl.pathname = '/';
+      return NextResponse.redirect(homeUrl);
+    }
+    return response;
+  }
+
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
@@ -23,30 +38,21 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // refresh_token_not_found 등 stale 토큰 오류는 비로그인으로 간주하고 진행
+  let user: { id: string } | null = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    user = null;
+  }
 
-  const { pathname } = request.nextUrl;
-  const isPublicPath = PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  const isAuthOnlyPath = AUTH_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  const isGuest = request.cookies.get(GUEST_MODE_COOKIE)?.value === '1';
-
-  // 로그인도 게스트도 아닌 경우에만 로그인 페이지로 리다이렉트
-  if (!user && !isGuest && !isPublicPath) {
+  if (!user && !isPublicPath) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     return NextResponse.redirect(loginUrl);
   }
 
-  // 게스트가 계정 전용 경로(/settings 등)에 접근하려 하면 홈으로
-  if (!user && isGuest && isAuthOnlyPath) {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = '/';
-    return NextResponse.redirect(homeUrl);
-  }
-
-  // 이미 로그인한 사용자가 /login, /signup 등에 접근하면 홈으로
   if (user && isPublicPath) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = '/';
