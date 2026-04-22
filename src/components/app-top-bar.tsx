@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Home, LogIn, LogOut, Settings, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
+
+// SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
+const subscribeNoop = () => () => {};
+const getGuestSnapshot = () => isGuestMode();
+const getGuestServerSnapshot = () => false;
 
 // 인증된 영역의 공용 상단바
 // - 로고/브랜드: '/'로 이동
@@ -16,8 +21,7 @@ export default function AppTopBar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  // 마운트 시점에 쿠키로 게스트 여부를 확정 — 이후 이메일 조회 결과와 함께 갱신
-  const [isGuest, setIsGuest] = useState<boolean>(() => isGuestMode());
+  const isGuest = useSyncExternalStore(subscribeNoop, getGuestSnapshot, getGuestServerSnapshot);
 
   useEffect(() => {
     // 게스트 쿠키가 있으면 Supabase 호출을 건너뛴다 — stale 토큰으로 인한 refresh 오류 방지
@@ -25,15 +29,8 @@ export default function AppTopBar() {
     const supabase = createClient();
     supabase.auth
       .getUser()
-      .then(({ data }) => {
-        const userEmail = data.user?.email ?? null;
-        setEmail(userEmail);
-        if (!userEmail) setIsGuest(isGuestMode());
-      })
-      .catch(() => {
-        setEmail(null);
-        setIsGuest(isGuestMode());
-      });
+      .then(({ data }) => setEmail(data.user?.email ?? null))
+      .catch(() => setEmail(null));
   }, [isGuest]);
 
   useOnClickOutside(menuRef, () => setIsOpen(false));
