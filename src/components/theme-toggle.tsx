@@ -16,6 +16,9 @@ export function ThemeToggle({ fullWidth = false }: ThemeToggleProps = {}) {
   const isClient = useIsClient();
 
   const handleSetTheme = (newTheme: typeof theme) => {
+    // 동일한 테마를 다시 눌렀을 땐 불필요한 상태 갱신/토스트를 방지
+    if (newTheme === theme) return;
+
     setTheme(newTheme);
 
     const messages = {
