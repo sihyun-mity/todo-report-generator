@@ -2,10 +2,10 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import queryString from 'query-string';
-import { useAllSearchParams } from './index';
 import { useCallback } from 'react';
+import { useAllSearchParams } from '.';
 
-const useSearchQuery = <T extends ParsedUrlQuery>(): [T, (query: Partial<T>) => void, () => void] => {
+export const useSearchQuery = <T extends ParsedUrlQuery>(): [T, (query: Partial<T>) => void, () => void] => {
   const router = useRouter();
   const pathname = usePathname();
   const queries = useAllSearchParams();
@@ -22,12 +22,10 @@ const useSearchQuery = <T extends ParsedUrlQuery>(): [T, (query: Partial<T>) => 
         scroll: false,
       });
     },
-    [pathname, queries, router],
+    [pathname, queries, router]
   );
 
   const resetQuery = useCallback(() => router.replace(pathname, { scroll: false }), [pathname, router]);
 
   return [queries as T, setQuery, resetQuery];
 };
-
-export default useSearchQuery;

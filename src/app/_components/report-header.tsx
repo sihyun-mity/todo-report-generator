@@ -1,25 +1,26 @@
 'use client';
 
 import { Download, HardDriveDownload } from 'lucide-react';
+import type { ReportDate } from '@/types';
 
-interface ReportDate {
-  month: string;
-  day: string;
-}
-
-interface ReportHeaderProps {
+type ReportHeaderProps = {
   reportDate: ReportDate;
   onChangeDate: (date: ReportDate) => void;
   onOpenImport: () => void;
   onImportLocal?: () => void;
-}
+};
 
 const actionButtonClass =
   'flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card dark:text-zinc-300 dark:hover:bg-[#2c2e33]';
 
 // 보고서 도메인 전용 헤더 — 타이틀, 날짜 입력, 가져오기 관련 버튼
 // (계정 관련 요소는 상단 AppTopBar로 분리됨)
-const ReportHeader = ({ reportDate, onChangeDate, onOpenImport, onImportLocal }: ReportHeaderProps) => {
+export const ReportHeader = ({
+  reportDate,
+  onChangeDate,
+  onOpenImport,
+  onImportLocal,
+}: Readonly<ReportHeaderProps>) => {
   const dateInputClass = 'w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500';
 
   return (
@@ -60,6 +61,3 @@ const ReportHeader = ({ reportDate, onChangeDate, onOpenImport, onImportLocal }:
     </header>
   );
 };
-
-export default ReportHeader;
-export type { ReportDate };

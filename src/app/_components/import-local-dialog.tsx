@@ -3,14 +3,14 @@
 import { HardDriveDownload } from 'lucide-react';
 import { Portal } from '@/components';
 
-interface Props {
+type Props = {
   isOpen: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
-}
+};
 
 // 최초 접속 시, 로컬스토리지에만 존재하는 기존 기록을 계정으로 이전할지 묻는 다이얼로그
-export default function ImportLocalDialog({ isOpen, onConfirm, onDismiss }: Props) {
+export function ImportLocalDialog({ isOpen, onConfirm, onDismiss }: Readonly<Props>) {
   if (!isOpen) return null;
 
   return (

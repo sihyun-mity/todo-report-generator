@@ -1,4 +1,4 @@
-export interface News {
+export type News = {
   id: string;
   title: string;
   content: string;
@@ -6,10 +6,10 @@ export interface News {
   published_at: string;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface UserNewsRead {
+export type UserNewsRead = {
   user_id: string;
   news_id: string;
   read_at: string;
-}
+};

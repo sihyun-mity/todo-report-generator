@@ -9,9 +9,9 @@ import { issuePasskeyLoginTokens } from '@/lib/webauthn/session';
 
 export const dynamic = 'force-dynamic';
 
-interface Body {
+type Body = {
   response: AuthenticationResponseJSON;
-}
+};
 
 export async function POST(request: Request) {
   let body: Body;

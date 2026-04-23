@@ -5,10 +5,10 @@ import { sealChallenge } from '@/lib/webauthn/challenge-cookie';
 
 export const dynamic = 'force-dynamic';
 
-interface Body {
+type Body = {
   /** 이메일 힌트 (옵셔널, conditional UI에서는 생략) */
   email?: string;
-}
+};
 
 /**
  * 패스키 로그인 옵션 생성.

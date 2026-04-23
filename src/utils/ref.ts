@@ -1,6 +1,6 @@
 import { MutableRefObject, Ref } from 'react';
 
-export const mergeRefs = <T>(...refs: (Ref<T> | undefined)[]): Ref<T> => {
+export const mergeRefs = <T>(...refs: Array<Ref<T> | undefined>): Ref<T> => {
   return (element: T | null) => {
     refs.forEach((ref) => {
       if (typeof ref === 'function') {

@@ -4,20 +4,24 @@ import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, Clipboard, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
-import { parseReportText } from '@/utils/parser';
-import { cn } from '@/utils/class';
+import type { Project } from '@/types';
+import { cn, parseReportText } from '@/utils';
 import { Portal } from '@/components';
 import { useOnClickOutside } from '@/hooks';
-import { Project } from './types';
-import ProjectPreview from './project-preview';
+import { ProjectPreview } from '.';
 
-interface ImportModalProps {
+type ImportModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (data: { month: string; day: string; todayProjects: Project[]; tomorrowProjects: Project[] }) => void;
-}
+  onApply: (data: {
+    month: string;
+    day: string;
+    todayProjects: ReadonlyArray<Project>;
+    tomorrowProjects: ReadonlyArray<Project>;
+  }) => void;
+};
 
-export default function ImportModal({ isOpen, onClose, onApply }: ImportModalProps) {
+export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalProps>) {
   const [text, setText] = useState('');
   const [parsedData, setParsedData] = useState<ReturnType<typeof parseReportText>>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);

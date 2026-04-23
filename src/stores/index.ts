@@ -1,2 +1,2 @@
-export { default as useMediaStore } from './media';
-export { default as useMobileStore } from './mobile';
+export * from './use-media-store';
+export * from './use-mobile-store';

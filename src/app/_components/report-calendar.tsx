@@ -2,11 +2,11 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import { ReportHistoryItem } from './types';
-import { cn } from '@/utils/class';
+import type { ReportHistoryItem } from '@/types';
+import { cn } from '@/utils';
 
 type Props = {
-  history: ReportHistoryItem[];
+  history: ReadonlyArray<ReportHistoryItem>;
   selectedDateKey: string | null;
   viewYear: number;
   viewMonth: number;
@@ -24,14 +24,14 @@ export const getItemDateKey = (item: ReportHistoryItem) => {
   return toDateKey(year, parseInt(item.month, 10), parseInt(item.day, 10));
 };
 
-export default function ReportCalendar({
+export function ReportCalendar({
   history,
   selectedDateKey,
   viewYear,
   viewMonth,
   onChangeMonth,
   onSelectDate,
-}: Props) {
+}: Readonly<Props>) {
   const datesWithRecords = useMemo(() => {
     const set = new Set<string>();
     for (const item of history) set.add(getItemDateKey(item));
@@ -42,7 +42,7 @@ export default function ReportCalendar({
     const first = new Date(viewYear, viewMonth - 1, 1);
     const startDow = first.getDay();
     const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
-    const result: (number | null)[] = [];
+    const result: Array<number | null> = [];
     for (let i = 0; i < startDow; i++) result.push(null);
     for (let d = 1; d <= daysInMonth; d++) result.push(d);
     while (result.length % 7 !== 0) result.push(null);

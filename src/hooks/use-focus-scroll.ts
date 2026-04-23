@@ -3,14 +3,14 @@
 import { type RefObject, useCallback, useLayoutEffect } from 'react';
 import { IS_SERVER } from 'swr/_internal';
 
-interface Props {
+type Props = {
   focusedRef: RefObject<HTMLElement | null>;
   parentRef: RefObject<HTMLElement | null>;
   scrollOffset?: number;
   initialScroll?: boolean;
-}
+};
 
-export default function useFocusScroll({ focusedRef, parentRef, scrollOffset = 0, initialScroll }: Props) {
+export function useFocusScroll({ focusedRef, parentRef, scrollOffset = 0, initialScroll }: Readonly<Props>) {
   const scroll = useCallback(
     (behavior?: ScrollBehavior) => {
       if (parentRef.current && focusedRef.current) {
@@ -32,7 +32,7 @@ export default function useFocusScroll({ focusedRef, parentRef, scrollOffset = 0
         });
       }
     },
-    [focusedRef, parentRef, scrollOffset],
+    [focusedRef, parentRef, scrollOffset]
   );
 
   useLayoutEffect(() => {

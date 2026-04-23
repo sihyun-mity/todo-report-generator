@@ -2,17 +2,17 @@
 
 import { useEffect, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
-import { Task } from './types';
+import type { Task } from '@/types';
 
-interface TaskItemProps {
+type TaskItemProps = {
   task: Task;
   onUpdate: (updates: Partial<Task>) => void;
   onRemove: () => void;
   canRemove: boolean;
   autoFocus?: boolean;
-}
+};
 
-const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemProps) => {
+export const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: Readonly<TaskItemProps>) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,5 +60,3 @@ const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: TaskItemPr
     </div>
   );
 };
-
-export default TaskItem;

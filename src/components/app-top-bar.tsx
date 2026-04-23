@@ -7,7 +7,7 @@ import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, Us
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
-import { ThemeToggle } from './theme-toggle';
+import { ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
 const subscribeNoop = () => () => {};
@@ -17,7 +17,7 @@ const getGuestServerSnapshot = () => false;
 // 인증된 영역의 공용 상단바
 // - 로고/브랜드: '/'로 이동
 // - 우측 사용자 메뉴 드롭다운: 이메일, 설정, 로그아웃 (향후 테마/알림 등을 여기에 추가)
-export default function AppTopBar() {
+export function AppTopBar() {
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);

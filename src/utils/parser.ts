@@ -1,16 +1,7 @@
-import { Project, Task } from '@/app/_components/types';
-import { createId } from './id';
-import { createEmptyProject } from './report';
+import type { ParsedReport, Project, Task } from '@/types';
+import { SECTION_TODAY, SECTION_TOMORROW } from '@/constants';
+import { createEmptyProject, createId } from '.';
 
-interface ParsedReport {
-  month: string;
-  day: string;
-  todayProjects: Project[];
-  tomorrowProjects: Project[];
-}
-
-const SECTION_TODAY = '금일 업무 진행 현황';
-const SECTION_TOMORROW = '익일 업무 진행 예정';
 const DATE_REGEX = /(\d+)\s*월\s*(\d+)\s*일/;
 const PROJECT_LINE = /^\s*\*\s*(.+)$/;
 const TASK_LINE_WITH_PROGRESS = /^\s*-\s*(.+?)\s*\((\d+)%\)\s*$/;
@@ -35,8 +26,8 @@ export const parseReportText = (text: string): ParsedReport | null => {
   const month = dateMatch?.[1] ?? '';
   const day = dateMatch?.[2] ?? '';
 
-  const todayProjects: Project[] = [];
-  const tomorrowProjects: Project[] = [];
+  const todayProjects: Array<Project> = [];
+  const tomorrowProjects: Array<Project> = [];
 
   let currentSection: Section = null;
   let currentProject: Project | null = null;

@@ -1,9 +1,9 @@
 'use client';
 
 import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
-import { cn } from '@/utils/class';
+import { cn } from '@/utils';
 
-interface ReportPreviewProps {
+type ReportPreviewProps = {
   text: string;
   copied: boolean;
   copyError: string | null;
@@ -11,10 +11,10 @@ interface ReportPreviewProps {
   isResetDisabled: boolean;
   onCopy: () => void;
   onReset: () => void;
-}
+};
 
 // 미리보기 패널: 보고서 텍스트 렌더링 + 복사/초기화 액션
-const ReportPreview = ({
+export const ReportPreview = ({
   text,
   copied,
   copyError,
@@ -22,7 +22,7 @@ const ReportPreview = ({
   isResetDisabled,
   onCopy,
   onReset,
-}: ReportPreviewProps) => {
+}: Readonly<ReportPreviewProps>) => {
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-700/50 dark:bg-card/50">
       <h2 className="mb-4 text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
@@ -75,5 +75,3 @@ const ReportPreview = ({
     </div>
   );
 };
-
-export default ReportPreview;

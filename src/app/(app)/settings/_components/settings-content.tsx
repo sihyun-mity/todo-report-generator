@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, KeyRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import EmailForm from './email-form';
-import PasswordForm from './password-form';
+import { EmailForm, PasswordForm } from '.';
 
-export default function SettingsContent() {
+export function SettingsContent() {
   const [currentEmail, setCurrentEmail] = useState<string>('');
 
   useEffect(() => {

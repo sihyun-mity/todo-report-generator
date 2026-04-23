@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { GUEST_MODE_COOKIE } from '@/lib/guest';
+import { GUEST_MODE_COOKIE } from '@/constants';
 
 const PUBLIC_PATH_PREFIXES = ['/login', '/signup', '/auth'];
 

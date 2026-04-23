@@ -3,15 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-interface Params {
-  params: Promise<{ id: string }>;
-}
-
-interface PatchBody {
+type PatchBody = {
   device_name?: string;
-}
+};
 
-export async function PATCH(request: Request, { params }: Params) {
+export async function PATCH(request: Request, { params }: RouteContext<'/api/passkeys/[id]'>) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -48,7 +44,7 @@ export async function PATCH(request: Request, { params }: Params) {
   return NextResponse.json(data);
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(_request: Request, { params }: RouteContext<'/api/passkeys/[id]'>) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();

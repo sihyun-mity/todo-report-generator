@@ -4,23 +4,22 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
-import { Portal } from '@/components';
+import { Portal } from '..';
+import { NewsMarkdown } from '.';
 import { createClient } from '@/lib/supabase/client';
-import NewsMarkdown from './NewsMarkdown';
-import type { News } from '@/types/news';
+import { NEWS_GUEST_STORAGE_KEY } from '@/constants';
+import type { News } from '@/types';
 
-interface Props {
+type Props = {
   /** 서버에서 내려준 최신 새소식 (없으면 다이얼로그는 뜨지 않음) */
   latestNews: News | null;
   /** 로그인한 유저의 id. 게스트라면 null */
   userId: string | null;
   /** 로그인 유저 기준, 서버에서 이미 읽음 여부를 판단해 내려줌 */
   alreadyReadByUser: boolean;
-}
+};
 
-const GUEST_STORAGE_KEY = 'trg:last-seen-news-id';
-
-export default function NewsDialog({ latestNews, userId, alreadyReadByUser }: Props) {
+export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<Props>) {
   const [open, setOpen] = useState(false);
 
   // 다이얼로그가 열려 있는 동안 배경 스크롤 잠금 — import-modal 과 동일한 패턴
@@ -41,7 +40,7 @@ export default function NewsDialog({ latestNews, userId, alreadyReadByUser }: Pr
       shouldOpen = !alreadyReadByUser;
     } else {
       try {
-        shouldOpen = window.localStorage.getItem(GUEST_STORAGE_KEY) !== latestNews.id;
+        shouldOpen = window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY) !== latestNews.id;
       } catch {
         shouldOpen = true;
       }
@@ -70,7 +69,7 @@ export default function NewsDialog({ latestNews, userId, alreadyReadByUser }: Pr
       }
     } else {
       try {
-        window.localStorage.setItem(GUEST_STORAGE_KEY, latestNews.id);
+        window.localStorage.setItem(NEWS_GUEST_STORAGE_KEY, latestNews.id);
       } catch {
         // ignore
       }

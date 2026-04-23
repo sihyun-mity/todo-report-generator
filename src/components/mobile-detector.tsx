@@ -4,7 +4,7 @@ import { useLayoutEffect } from 'react';
 import MobileDetect from 'mobile-detect';
 import { useMobileStore } from '@/stores';
 
-export default function MobileDetector() {
+export function MobileDetector() {
   const { setIsMobile, setIsAndroid, setIsIOS, setIsReady } = useMobileStore();
 
   useLayoutEffect(() => {

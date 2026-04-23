@@ -4,11 +4,11 @@ import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
 
-interface Props {
+type Props = {
   currentEmail: string;
-}
+};
 
-export default function PasswordForm({ currentEmail }: Props) {
+export function PasswordForm({ currentEmail }: Readonly<Props>) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

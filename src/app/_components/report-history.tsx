@@ -2,19 +2,19 @@
 
 import { ChevronLeft, ChevronRight, Copy, History, RotateCcw, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { ReportHistoryItem } from '@/app/_components/types';
 import { MouseEvent, useMemo, useState } from 'react';
-import ReportCalendar, { getItemDateKey } from './report-calendar';
+import type { ReportHistoryItem } from '@/types';
+import { ReportCalendar, getItemDateKey } from '.';
 
 type Props = {
-  history: ReportHistoryItem[];
+  history: ReadonlyArray<ReportHistoryItem>;
   loadHistoryAction: (item: ReportHistoryItem, e: MouseEvent<HTMLDivElement | HTMLButtonElement>) => void;
   deleteHistoryAction: (id: string, e: MouseEvent<HTMLButtonElement>) => void;
 };
 
 const ITEMS_PER_PAGE = 3;
 
-export default function ReportHistory({ history, loadHistoryAction, deleteHistoryAction }: Props) {
+export function ReportHistory({ history, loadHistoryAction, deleteHistoryAction }: Readonly<Props>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
