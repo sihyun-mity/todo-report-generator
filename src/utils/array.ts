@@ -1,18 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export const shuffle = (list: any[]) => {
+export const shuffle = (list: Array<any>) => {
   for (let i = list.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [list[i], list[j]] = [list[j], list[i]];
   }
 };
 
-export const getChunkedArray = <T>({ data, size }: { data: T; size: number }): T[] => {
+export const getChunkedArray = <T>({ data, size }: { data: T; size: number }): Array<T> => {
   if (!Array.isArray(data)) {
     throw ReferenceError('data is not array.');
   }
 
-  const result: T[] = [];
+  const result: Array<T> = [];
 
   for (let i = 0; i < data.length; i += size) {
     const chunk = data.slice(i, i + size);
@@ -26,11 +26,11 @@ export const filterDuplicateItem = <T extends { [key: string]: unknown }>({
   items,
   key,
 }: {
-  items: T[];
+  items: ReadonlyArray<T>;
   key: string;
 }) => {
   const uniqueKeys = new Map();
   return items.filter((v) => !uniqueKeys.has(v[key]) && uniqueKeys.set(v[key], true));
 };
 
-export const deepCopy = <T extends unknown[]>(data: T): T => JSON.parse(JSON.stringify(data ?? '[]'));
+export const deepCopy = <T extends ReadonlyArray<unknown>>(data: T): T => JSON.parse(JSON.stringify(data ?? '[]'));

@@ -2,9 +2,9 @@
 
 import { useCallback, useRef, useState } from 'react';
 
-import styles from './index.module.scss';
+import styles from '@/hooks/use-grab-slide.module.scss';
 
-export default function useGrabSlide() {
+export function useGrabSlide() {
   const slider = useRef<HTMLDivElement | null>(null);
   const [isDown, setIsDown] = useState<boolean>(false);
   const startX = useRef<number>(0);
@@ -64,7 +64,7 @@ export default function useGrabSlide() {
       const walk = x - startX.current;
       slider.current.scrollLeft = scrollLeft.current - walk;
     },
-    [isDown],
+    [isDown]
   );
 
   const addListener = useCallback(() => {

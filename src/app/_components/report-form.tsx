@@ -3,26 +3,20 @@
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
-import { Project, ReportHistoryItem } from './types';
-import ProjectList from './project-list';
-import ReportHeader, { ReportDate } from './report-header';
-import ReportPreview from './report-preview';
-import ReportHistory from './report-history';
-import ImportModal from './import-modal';
-import ImportLocalDialog from './import-local-dialog';
-import { useProjects, useReportHistory } from '@/hooks';
-import type { UseProjectsReturn } from '@/hooks/useProjects';
+import type { Project, ReportDate, ReportHistoryItem } from '@/types';
+import { ImportLocalDialog, ImportModal, ProjectList, ReportHeader, ReportHistory, ReportPreview } from '.';
+import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { isGuestMode } from '@/lib/guest';
+import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
 import {
   areAllAttemptedProjectsValid,
   cloneProjects,
-  COPY_FEEDBACK_DURATION_MS,
   createEmptyProject,
   generateReportText,
   hasProjectContent,
   mergeIncompleteTasks,
-} from '@/utils/report';
+} from '@/utils';
 
 // 오늘/내일을 제외한 기준 날짜(월/일)로 히스토리 추가 대상인지 판단
 const isEarlierDate = (month: string, day: string) => {
@@ -42,10 +36,7 @@ const getTodayDate = (): ReportDate => {
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
 
-// 삭제 직후 잠시 동안 실행 취소가 가능하도록 하는 토스트 지속 시간(ms)
-const UNDO_TOAST_DURATION_MS = 8000;
-
-export default function ReportForm() {
+export function ReportForm() {
   const isClient = useIsClient();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [reportDate, setReportDate] = useState<ReportDate>(getTodayDate);
@@ -288,8 +279,8 @@ export default function ReportForm() {
   const handleImportApply = (data: {
     month: string;
     day: string;
-    todayProjects: Project[];
-    tomorrowProjects: Project[];
+    todayProjects: ReadonlyArray<Project>;
+    tomorrowProjects: ReadonlyArray<Project>;
   }) => {
     if (hasAnyData && !confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) return;
 
@@ -299,8 +290,8 @@ export default function ReportForm() {
     }
 
     setReportDate({ month: data.month, day: data.day });
-    today.setProjects(data.todayProjects);
-    tomorrow.setProjects(data.tomorrowProjects);
+    today.setProjects([...data.todayProjects]);
+    tomorrow.setProjects([...data.tomorrowProjects]);
     toast.success('텍스트 분석 내용을 적용했습니다.');
     setIsImportModalOpen(false);
   };

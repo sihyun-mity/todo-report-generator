@@ -6,16 +6,16 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
 
-interface Passkey {
+type Passkey = {
   id: string;
   device_name: string | null;
-  transports: string[] | null;
+  transports: ReadonlyArray<string> | null;
   aaguid: string | null;
   device_type: 'single_device' | 'multi_device' | null;
   backed_up: boolean;
   created_at: string;
   last_used_at: string | null;
-}
+};
 
 const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric',
@@ -25,8 +25,15 @@ const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
   minute: 'numeric',
 });
 
-export default function PasskeysManager() {
-  const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
+function defaultLabel(pk: Passkey): string {
+  // 기기 이름이 없을 때의 임시 라벨
+  const kind = pk.device_type === 'multi_device' ? '동기화 패스키' : '하드웨어 패스키';
+  const tail = pk.transports?.includes('internal') ? ' · 내장 인증기' : '';
+  return `${kind}${tail}`;
+}
+
+export function PasskeysManager() {
+  const [passkeys, setPasskeys] = useState<ReadonlyArray<Passkey> | null>(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -49,7 +56,7 @@ export default function PasskeysManager() {
         setPasskeys([]);
         return;
       }
-      const body = (await res.json()) as { passkeys: Passkey[] };
+      const body = (await res.json()) as { passkeys: ReadonlyArray<Passkey> };
       setPasskeys(body.passkeys ?? []);
     } finally {
       setLoading(false);
@@ -267,11 +274,4 @@ export default function PasskeysManager() {
       </section>
     </div>
   );
-}
-
-function defaultLabel(pk: Passkey): string {
-  // 기기 이름이 없을 때의 임시 라벨
-  const kind = pk.device_type === 'multi_device' ? '동기화 패스키' : '하드웨어 패스키';
-  const tail = pk.transports?.includes('internal') ? ' · 내장 인증기' : '';
-  return `${kind}${tail}`;
 }

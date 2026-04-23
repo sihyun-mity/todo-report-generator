@@ -1,22 +1,8 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { sealData, unsealData } from 'iron-session';
-
-export const CHALLENGE_COOKIE_NAME = 'webauthn_challenge';
-const TTL_SECONDS = 300; // 5분
-
-export type ChallengeType = 'registration' | 'authentication';
-
-export interface ChallengePayload {
-  challenge: string;
-  type: ChallengeType;
-  /** 등록 시: 현재 로그인 사용자 id (UUID) */
-  userId?: string;
-  /** 인증 시: 프론트가 이메일 힌트를 보낸 경우 */
-  email?: string;
-  /** 발급 시각 (초 단위 unix epoch) */
-  iat: number;
-}
+import { CHALLENGE_COOKIE_NAME, CHALLENGE_TTL_SECONDS } from '@/constants';
+import type { ChallengePayload, ChallengeType } from '@/types';
 
 function getSecret(): string {
   const secret = process.env.WEBAUTHN_CHALLENGE_SECRET;
@@ -28,14 +14,14 @@ function getSecret(): string {
 
 export async function sealChallenge(payload: Omit<ChallengePayload, 'iat'>): Promise<void> {
   const full: ChallengePayload = { ...payload, iat: Math.floor(Date.now() / 1000) };
-  const sealed = await sealData(full, { password: getSecret(), ttl: TTL_SECONDS });
+  const sealed = await sealData(full, { password: getSecret(), ttl: CHALLENGE_TTL_SECONDS });
 
   const cookieStore = await cookies();
   cookieStore.set(CHALLENGE_COOKIE_NAME, sealed, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: TTL_SECONDS,
+    maxAge: CHALLENGE_TTL_SECONDS,
     path: '/',
   });
 }
@@ -49,7 +35,7 @@ export async function readChallenge(expectedType: ChallengeType): Promise<Challe
 
   let payload: ChallengePayload;
   try {
-    payload = await unsealData<ChallengePayload>(sealed, { password: getSecret(), ttl: TTL_SECONDS });
+    payload = await unsealData<ChallengePayload>(sealed, { password: getSecret(), ttl: CHALLENGE_TTL_SECONDS });
   } catch {
     throw new Error('챌린지 쿠키가 손상되었거나 만료되었습니다. 처음부터 다시 시도해주세요.');
   }

@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { createId } from '@/utils/id';
-import { Project, Task } from './types';
-import TaskItem from './task-item';
+import type { Project, Task } from '@/types';
+import { createId } from '@/utils';
+import { TaskItem } from '.';
 
-interface ProjectItemProps {
+type ProjectItemProps = {
   project: Project;
   onUpdateName: (name: string) => void;
   onRemove: () => void;
@@ -15,9 +15,9 @@ interface ProjectItemProps {
   onRemoveTask: (taskId: string) => void;
   canRemove: boolean;
   autoFocus?: boolean;
-}
+};
 
-const ProjectItem = ({
+export const ProjectItem = ({
   project,
   onUpdateName,
   onRemove,
@@ -26,7 +26,7 @@ const ProjectItem = ({
   onRemoveTask,
   canRemove,
   autoFocus,
-}: ProjectItemProps) => {
+}: Readonly<ProjectItemProps>) => {
   const [lastAddedTaskId, setLastAddedTaskId] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,5 +85,3 @@ const ProjectItem = ({
     </div>
   );
 };
-
-export default ProjectItem;

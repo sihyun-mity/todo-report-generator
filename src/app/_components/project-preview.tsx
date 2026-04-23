@@ -1,17 +1,17 @@
 'use client';
 
-import { Project } from './types';
+import type { Project } from '@/types';
 
-interface ProjectPreviewProps {
+type ProjectPreviewProps = {
   title: string;
   dotClassName: string;
-  projects: Project[];
-}
+  projects: ReadonlyArray<Project>;
+};
 
 // 텍스트 가져오기 모달에서 금일/익일 각 섹션에 동일하게 쓰이던 프로젝트 프리뷰 리스트
 // - 이름이 비어있는 프로젝트는 필터링
 // - 내용이 없으면 placeholder 표시
-const ProjectPreview = ({ title, dotClassName, projects }: ProjectPreviewProps) => {
+export const ProjectPreview = ({ title, dotClassName, projects }: Readonly<ProjectPreviewProps>) => {
   const filled = projects.filter((p) => p.name);
 
   return (
@@ -41,5 +41,3 @@ const ProjectPreview = ({ title, dotClassName, projects }: ProjectPreviewProps) 
     </div>
   );
 };
-
-export default ProjectPreview;

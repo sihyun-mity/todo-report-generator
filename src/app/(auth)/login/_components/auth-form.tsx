@@ -11,11 +11,11 @@ import { isConditionalUISupported, isWebAuthnSupported, loginWithPasskey } from 
 
 type Mode = 'login' | 'signup';
 
-interface Props {
+type Props = {
   mode: Mode;
-}
+};
 
-export default function AuthForm({ mode }: Props) {
+export function AuthForm({ mode }: Readonly<Props>) {
   if (mode === 'signup') return <SignupForm />;
   return <LoginForm />;
 }
@@ -324,7 +324,7 @@ function LoginForm() {
   );
 }
 
-interface FieldProps {
+type FieldProps = {
   id: string;
   label: string;
   type: 'email' | 'password';
@@ -336,7 +336,7 @@ interface FieldProps {
   required?: boolean;
   invalid?: boolean;
   error?: string;
-}
+};
 function Field({
   id,
   label,
@@ -349,7 +349,7 @@ function Field({
   required,
   invalid,
   error,
-}: FieldProps) {
+}: Readonly<FieldProps>) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400" htmlFor={id}>

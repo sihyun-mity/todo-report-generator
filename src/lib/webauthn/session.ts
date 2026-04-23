@@ -1,10 +1,6 @@
 import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
-
-export interface PasskeySessionTokens {
-  email: string;
-  tokenHash: string;
-}
+import type { PasskeySessionTokens } from '@/types';
 
 /**
  * 패스키 검증 성공 후 Supabase 세션을 발급하기 위한 브리지.

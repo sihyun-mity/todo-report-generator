@@ -9,10 +9,10 @@ import { bytesToBytea } from '@/lib/webauthn/bytea';
 
 export const dynamic = 'force-dynamic';
 
-interface Body {
+type Body = {
   response: RegistrationResponseJSON;
   deviceName?: string;
-}
+};
 
 export async function POST(request: Request) {
   const supabase = await createClient();

@@ -2,12 +2,12 @@
 
 import ReactMarkdown from 'react-markdown';
 
-interface Props {
+type Props = {
   content: string;
-}
+};
 
 // 새소식 공용 마크다운 렌더러 — @tailwindcss/typography 없이도 보기 좋게 표시
-export default function NewsMarkdown({ content }: Props) {
+export function NewsMarkdown({ content }: Readonly<Props>) {
   return (
     <div className="text-sm text-zinc-600 dark:text-zinc-300">
       <ReactMarkdown

@@ -1,16 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import { NewsMarkdown } from '@/components';
 import { fetchNewsById } from '@/lib/news';
-import NewsMarkdown from '@/components/news/NewsMarkdown';
+import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
-
-interface PageProps {
-  // Next.js 15+: params는 Promise
-  params: Promise<{ id: string }>;
-}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {
@@ -20,7 +15,7 @@ function formatDate(iso: string) {
   });
 }
 
-export default async function NewsDetailPage({ params }: PageProps) {
+export default async function NewsDetailPage({ params }: PageProps<'/whats-new/[id]'>) {
   const { id } = await params;
   const supabase = await createClient();
   const item = await fetchNewsById(supabase, id);

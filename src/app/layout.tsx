@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { ReactNode, Suspense } from 'react';
+import { Suspense } from 'react';
 import '@/styles/globals.css';
 import { MobileDetector, ThemeProvider, ToasterProvider } from '@/components';
 import { cn, staticMetadata } from '@/utils';
@@ -25,7 +25,7 @@ const pretendard = localFont({
   preload: false,
 });
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="ko">
       <body

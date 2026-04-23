@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Project, Task } from '@/app/_components/types';
-import { createEmptyProject, createEmptyTask } from '@/utils/report';
+import type { Project, Task } from '@/types';
+import { createEmptyProject, createEmptyTask } from '@/utils';
 
 // 하나의 프로젝트 목록(today 또는 tomorrow)을 다루는 상태 훅
 // - report-form에서 today/tomorrow 각각에 대해 중복되던 add/remove/update 로직을 일원화
-export const useProjects = (initial?: Project[]) => {
-  const [projects, setProjects] = useState<Project[]>(() => initial ?? [createEmptyProject()]);
+export const useProjects = (initial?: ReadonlyArray<Project>) => {
+  const [projects, setProjects] = useState<Array<Project>>(() => (initial ? [...initial] : [createEmptyProject()]));
 
   const addProject = useCallback((id?: string) => {
     // id가 전달되면 해당 id로 새 프로젝트를 만들어 상위에서 autoFocus 추적이 가능하도록 한다

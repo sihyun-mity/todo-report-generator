@@ -5,14 +5,14 @@ import { useIsClient, useLocalStorage } from 'usehooks-ts';
 
 type Theme = 'light' | 'dark' | 'system';
 
-interface ThemeContextType {
+type ThemeContextType = {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-}
+};
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, setTheme] = useLocalStorage<Theme>('theme', 'system');
   const isClient = useIsClient();
 

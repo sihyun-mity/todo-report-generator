@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { isValidQuery } from '@/utils';
 
-export default function useAllSearchParams() {
+export function useAllSearchParams() {
   const searchParams = useSearchParams();
   return useMemo(() => {
     const obj: ParsedUrlQuery = {};

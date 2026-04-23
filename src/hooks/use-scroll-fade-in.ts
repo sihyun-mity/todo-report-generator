@@ -6,10 +6,10 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 gsap.registerPlugin(ScrollTrigger);
 
-export default function useScrollFadeIn(selector: string) {
+export function useScrollFadeIn(selector: string) {
   useEffect(() => {
     const elements = gsap.utils.toArray(selector) as HTMLElement[];
-    const triggers: ScrollTrigger[] = [];
+    const triggers: Array<ScrollTrigger> = [];
 
     elements.forEach((el) => {
       const animation = gsap.fromTo(
@@ -28,7 +28,7 @@ export default function useScrollFadeIn(selector: string) {
             start: 'top 80%',
             toggleActions: 'play none none reverse',
           },
-        },
+        }
       );
 
       triggers.push(animation.scrollTrigger!);

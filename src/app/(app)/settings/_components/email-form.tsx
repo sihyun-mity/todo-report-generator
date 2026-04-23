@@ -4,12 +4,12 @@ import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
 
-interface Props {
+type Props = {
   currentEmail: string;
   onUpdated: (email: string) => void;
-}
+};
 
-export default function EmailForm({ currentEmail, onUpdated }: Props) {
+export function EmailForm({ currentEmail, onUpdated }: Readonly<Props>) {
   const [newEmail, setNewEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 

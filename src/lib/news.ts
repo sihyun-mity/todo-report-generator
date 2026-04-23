@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { News } from '@/types/news';
+import type { News } from '@/types';
 
 // 최신 새소식 1건 — 없으면 null
 export async function fetchLatestNews(supabase: SupabaseClient): Promise<News | null> {

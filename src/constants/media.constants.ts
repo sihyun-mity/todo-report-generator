@@ -1,4 +1,4 @@
-import { Media } from '@/stores/media/index.type';
+import type { Media } from '@/types';
 
 export const MEDIA_STATE_DEFAULT_VALUE: Media = {
   sm: false,

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-export default function useScrollPage() {
+export function useScrollPage() {
   const element = useRef<HTMLDivElement | null>(null);
   const [page, setPage] = useState<number>(1);
 

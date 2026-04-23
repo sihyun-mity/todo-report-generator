@@ -1,4 +1,4 @@
-const scroll = {
+export const scroll = {
   lock: () => {
     if (typeof document === 'undefined') return;
     document.documentElement.style.overflow = 'hidden';
@@ -9,5 +9,3 @@ const scroll = {
     document.documentElement.style.removeProperty('overflow');
   },
 };
-
-export default scroll;

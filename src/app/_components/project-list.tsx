@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { createId } from '@/utils/id';
-import { Project, Task } from './types';
-import ProjectItem from './project-item';
+import type { Project, Task } from '@/types';
+import { createId } from '@/utils';
+import { ProjectItem } from '.';
 
-interface ProjectListProps {
+type ProjectListProps = {
   title: string;
-  projects: Project[];
+  projects: ReadonlyArray<Project>;
   onAddProject: (projectId: string) => void;
   onRemoveProject: (projectId: string) => void;
   onUpdateProjectName: (projectId: string, name: string) => void;
@@ -16,9 +16,9 @@ interface ProjectListProps {
   onUpdateTask: (projectId: string, taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (projectId: string, taskId: string) => void;
   onImportIncomplete?: () => void;
-}
+};
 
-const ProjectList = ({
+export const ProjectList = ({
   title,
   projects,
   onAddProject,
@@ -28,7 +28,7 @@ const ProjectList = ({
   onUpdateTask,
   onRemoveTask,
   onImportIncomplete,
-}: ProjectListProps) => {
+}: Readonly<ProjectListProps>) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
 
   // 새로 추가된 프로젝트의 ID를 상위에서 받기 전에 미리 생성해두고,
@@ -78,5 +78,3 @@ const ProjectList = ({
     </div>
   );
 };
-
-export default ProjectList;

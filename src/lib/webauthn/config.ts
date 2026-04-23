@@ -1,10 +1,5 @@
 import 'server-only';
-
-export interface WebAuthnConfig {
-  rpID: string;
-  rpName: string;
-  origin: string;
-}
+import type { WebAuthnConfig } from '@/types';
 
 function readEnv(name: 'WEBAUTHN_RP_ID' | 'WEBAUTHN_RP_NAME' | 'WEBAUTHN_ORIGIN'): string {
   const value = process.env[name];

@@ -1,9 +1,8 @@
-import { ReactNode, Suspense } from 'react';
-import { AppTopBar } from '@/components';
-import NewsDialogMount from '@/components/news/NewsDialogMount';
-import PasskeyRegisterBanner from '@/components/passkey-register-banner';
+import { Suspense } from 'react';
+import { AppTopBar, PasskeyRegisterBanner } from '@/components';
+import { NewsDialogMount } from '@/app/(app)/_components';
 
-export default function AppLayout({ children }: { children: ReactNode }) {
+export default function AppLayout({ children }: LayoutProps<'/'>) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppTopBar />

@@ -1,9 +1,5 @@
-import { Project, Task } from '@/app/_components/types';
-import { createId } from './id';
-
-// 보고서 기록 관련 상수
-export const MAX_HISTORY_ITEMS = 50;
-export const COPY_FEEDBACK_DURATION_MS = 2000;
+import type { Project, Task, ReportTextData } from '@/types';
+import { createId } from '@/utils';
 
 // 빈 태스크/프로젝트를 만드는 팩토리 함수 (여러 곳에서 중복되던 초기화 로직 통합)
 export const createEmptyTask = (): Task => ({
@@ -19,7 +15,7 @@ export const createEmptyProject = (): Project => ({
 });
 
 // 프로젝트 배열을 깊은 복사할 때 사용 (localStorage에 저장하거나 히스토리를 복원할 때 참조 공유 방지)
-export const cloneProjects = (projects: Project[]): Project[] =>
+export const cloneProjects = (projects: ReadonlyArray<Project>): Array<Project> =>
   projects.map((p) => ({ ...p, tasks: p.tasks.map((t) => ({ ...t })) }));
 
 // 프로젝트가 완전히 비어있는지 판별 (기본 초기값 상태인지 확인할 때 사용)
@@ -36,22 +32,18 @@ export const isProjectValid = (p: Project) => {
 };
 
 // 빈 프로젝트는 통과시키고, 입력이 시작된 프로젝트만 검증
-export const areAllAttemptedProjectsValid = (projects: Project[]) =>
+export const areAllAttemptedProjectsValid = (projects: ReadonlyArray<Project>) =>
   projects.every((p) => isProjectEmpty(p) || isProjectValid(p));
-
-interface ReportTextData {
-  month: string;
-  day: string;
-  todayProjects: Project[];
-  tomorrowProjects: Project[];
-}
 
 // 금일 프로젝트에서 미완료(진행률 100% 미만) 태스크만 모아 익일 프로젝트 목록에 병합
 // - 이미 동일한 프로젝트명이 존재하면 태스크만 추가
 // - 동일한 프로젝트 내 동일한 작업 내용이 이미 있으면 중복으로 간주하여 제외
-export const mergeIncompleteTasks = (todayProjects: Project[], tomorrowProjects: Project[]): Project[] | null => {
-  const incomplete: Project[] = todayProjects
-    .map((p) => {
+export const mergeIncompleteTasks = (
+  todayProjects: ReadonlyArray<Project>,
+  tomorrowProjects: ReadonlyArray<Project>
+): Array<Project> | null => {
+  const incomplete: Array<Project> = todayProjects
+    .map((p): Project | null => {
       const existing = tomorrowProjects.find((tp) => tp.name.trim() !== '' && tp.name.trim() === p.name.trim());
 
       const tasks = p.tasks
@@ -74,7 +66,7 @@ export const mergeIncompleteTasks = (todayProjects: Project[], tomorrowProjects:
   if (isInitialTomorrow) return incomplete;
 
   // 기존 익일 목록에 프로젝트 단위로 병합
-  const merged = [...tomorrowProjects];
+  const merged: Array<Project> = [...tomorrowProjects];
   incomplete.forEach((newP) => {
     const existingIdx = merged.findIndex((tp) => tp.name.trim() !== '' && tp.name.trim() === newP.name.trim());
     if (existingIdx > -1) {
@@ -88,7 +80,7 @@ export const mergeIncompleteTasks = (todayProjects: Project[], tomorrowProjects:
 
 // 보고서 본문 텍스트 생성 (미리보기 / 복사 / 히스토리 저장에서 공통 사용)
 export const generateReportText = ({ month, day, todayProjects, tomorrowProjects }: ReportTextData) => {
-  const renderSection = (projects: Project[]) =>
+  const renderSection = (projects: ReadonlyArray<Project>) =>
     projects
       .map((p) => {
         const header = `    * ${p.name || '프로젝트명'}`;

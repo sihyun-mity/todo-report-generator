@@ -6,26 +6,25 @@ import toast from 'react-hot-toast';
 import { KeyRound, X } from 'lucide-react';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
 import { isGuestMode } from '@/lib/guest';
-
-const DISMISS_KEY = 'passkey_register_banner_dismissed';
+import { PASSKEY_BANNER_DISMISS_KEY } from '@/constants';
 
 // 홈 상단에 한 번 뜨는 패스키 등록 유도 배너.
 // 노출 조건: 로그인 계정 + 패스키 0개 + WebAuthn 지원 + 사용자가 "나중에" 눌러 닫은 적 없음.
-export default function PasskeyRegisterBanner() {
+export function PasskeyRegisterBanner() {
   const [visible, setVisible] = useState(false);
   const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     if (isGuestMode()) return;
     if (!isWebAuthnSupported()) return;
-    if (typeof window !== 'undefined' && localStorage.getItem(DISMISS_KEY) === '1') return;
+    if (typeof window !== 'undefined' && localStorage.getItem(PASSKEY_BANNER_DISMISS_KEY) === '1') return;
 
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch('/api/passkeys', { method: 'GET', cache: 'no-store' });
         if (!res.ok) return; // 비로그인 등 — 배너 안 띄움
-        const body = (await res.json()) as { passkeys: unknown[] };
+        const body = (await res.json()) as { passkeys: ReadonlyArray<unknown> };
         if (cancelled) return;
         if (Array.isArray(body.passkeys) && body.passkeys.length === 0) {
           setVisible(true);
@@ -40,7 +39,7 @@ export default function PasskeyRegisterBanner() {
   }, []);
 
   const handleDismiss = () => {
-    if (typeof window !== 'undefined') localStorage.setItem(DISMISS_KEY, '1');
+    if (typeof window !== 'undefined') localStorage.setItem(PASSKEY_BANNER_DISMISS_KEY, '1');
     setVisible(false);
   };
 
@@ -50,7 +49,7 @@ export default function PasskeyRegisterBanner() {
     try {
       await registerPasskey();
       toast.success('패스키가 등록되었습니다. 다음부터는 비밀번호 없이 로그인할 수 있어요.');
-      if (typeof window !== 'undefined') localStorage.setItem(DISMISS_KEY, '1');
+      if (typeof window !== 'undefined') localStorage.setItem(PASSKEY_BANNER_DISMISS_KEY, '1');
       setVisible(false);
     } catch (e) {
       const msg = (e as Error).message;

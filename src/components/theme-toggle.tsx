@@ -3,15 +3,15 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
-import { useTheme } from './theme-provider';
+import { useTheme } from '.';
 import { cn } from '@/utils';
 
-interface ThemeToggleProps {
+type ThemeToggleProps = {
   // 드롭다운 등 좁은 컨테이너 안에서 좌측 정렬로 공간이 비어 보이지 않도록 가득 채우는 옵션
   fullWidth?: boolean;
-}
+};
 
-export function ThemeToggle({ fullWidth = false }: ThemeToggleProps = {}) {
+export function ThemeToggle({ fullWidth = false }: Readonly<ThemeToggleProps> = {}) {
   const { theme, setTheme } = useTheme();
   const isClient = useIsClient();
 

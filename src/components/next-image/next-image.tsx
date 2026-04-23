@@ -24,7 +24,7 @@ type Props = Omit<ImageProps, 'width' | 'height' | 'src' | 'alt' | 'objectFit'> 
   containerRef?: RefObject<HTMLDivElement | null> | null;
 };
 
-export default function NextImage({
+export function OriginNextImage({
   width = '100%',
   height = 'auto',
   maxWidth,
