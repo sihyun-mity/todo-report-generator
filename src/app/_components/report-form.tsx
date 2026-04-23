@@ -11,6 +11,7 @@ import ReportHistory from './report-history';
 import ImportModal from './import-modal';
 import ImportLocalDialog from './import-local-dialog';
 import { useProjects, useReportHistory } from '@/hooks';
+import type { UseProjectsReturn } from '@/hooks/useProjects';
 import { createClient } from '@/lib/supabase/client';
 import { isGuestMode } from '@/lib/guest';
 import {
@@ -40,6 +41,9 @@ const getTodayDate = (): ReportDate => {
 
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
+
+// 삭제 직후 잠시 동안 실행 취소가 가능하도록 하는 토스트 지속 시간(ms)
+const UNDO_TOAST_DURATION_MS = 8000;
 
 export default function ReportForm() {
   const isClient = useIsClient();
@@ -144,6 +148,79 @@ export default function ReportForm() {
   const isCopyDisabled =
     !hasAnyData || !areAllAttemptedProjectsValid(today.projects) || !areAllAttemptedProjectsValid(tomorrow.projects);
 
+  // 프로젝트/작업 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
+  // 토스트가 유지되는 동안(UNDO_TOAST_DURATION_MS) 사용자가 원래 위치로 되돌릴 수 있다.
+  const makeRemoveHandlers = (bucket: UseProjectsReturn, label: '금일' | '익일') => ({
+    removeProject: (projectId: string) => {
+      const index = bucket.projects.findIndex((p) => p.id === projectId);
+      if (index === -1) return;
+      const removed = bucket.projects[index];
+      bucket.removeProject(projectId);
+      const projectLabel = removed.name.trim() || '제목 없는 프로젝트';
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3 break-all">
+            <span className="break-all">
+              {label} 프로젝트 &quot;{projectLabel}&quot;을(를) 삭제했습니다.
+            </span>
+            <button
+              onClick={() => {
+                bucket.setProjects((prev) => {
+                  const next = [...prev];
+                  next.splice(Math.min(index, next.length), 0, removed);
+                  return next;
+                });
+                toast.dismiss(t.id);
+              }}
+              className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
+            >
+              실행 취소
+            </button>
+          </span>
+        ),
+        { duration: UNDO_TOAST_DURATION_MS }
+      );
+    },
+    removeTask: (projectId: string, taskId: string) => {
+      const project = bucket.projects.find((p) => p.id === projectId);
+      if (!project) return;
+      // useProjects.removeTask는 마지막 작업은 지우지 않는다 — 동일한 가드
+      if (project.tasks.length <= 1) return;
+      const index = project.tasks.findIndex((t) => t.id === taskId);
+      if (index === -1) return;
+      const removed = project.tasks[index];
+      bucket.removeTask(projectId, taskId);
+      const taskLabel = removed.content.trim() || '내용 없는 작업';
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3 break-all">
+            <span className="break-all">작업 &quot;{taskLabel}&quot;을(를) 삭제했습니다.</span>
+            <button
+              onClick={() => {
+                bucket.setProjects((prev) =>
+                  prev.map((p) => {
+                    if (p.id !== projectId) return p;
+                    const nextTasks = [...p.tasks];
+                    nextTasks.splice(Math.min(index, nextTasks.length), 0, removed);
+                    return { ...p, tasks: nextTasks };
+                  })
+                );
+                toast.dismiss(t.id);
+              }}
+              className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
+            >
+              실행 취소
+            </button>
+          </span>
+        ),
+        { duration: UNDO_TOAST_DURATION_MS }
+      );
+    },
+  });
+
+  const todayRemove = makeRemoveHandlers(today, '금일');
+  const tomorrowRemove = makeRemoveHandlers(tomorrow, '익일');
+
   // 금일 미완료 업무를 익일로 이동
   const handleImportIncomplete = () => {
     const merged = mergeIncompleteTasks(today.projects, tomorrow.projects);
@@ -242,21 +319,21 @@ export default function ReportForm() {
           title="금일 업무 진행 현황"
           projects={today.projects}
           onAddProject={today.addProject}
-          onRemoveProject={today.removeProject}
+          onRemoveProject={todayRemove.removeProject}
           onUpdateProjectName={today.updateProjectName}
           onAddTask={today.addTask}
           onUpdateTask={today.updateTask}
-          onRemoveTask={today.removeTask}
+          onRemoveTask={todayRemove.removeTask}
         />
         <ProjectList
           title="익일 업무 진행 예정"
           projects={tomorrow.projects}
           onAddProject={tomorrow.addProject}
-          onRemoveProject={tomorrow.removeProject}
+          onRemoveProject={tomorrowRemove.removeProject}
           onUpdateProjectName={tomorrow.updateProjectName}
           onAddTask={tomorrow.addTask}
           onUpdateTask={tomorrow.updateTask}
-          onRemoveTask={tomorrow.removeTask}
+          onRemoveTask={tomorrowRemove.removeTask}
           onImportIncomplete={handleImportIncomplete}
         />
       </div>
