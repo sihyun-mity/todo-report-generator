@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
+import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
@@ -105,6 +105,17 @@ export default function AppTopBar() {
                     <Megaphone size={14} />
                     새소식
                   </Link>
+                  <a
+                    role="menuitem"
+                    href="https://github.com/sihyun-mity/todo-report-generator"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <Github size={14} />
+                    GitHub에서 의견 남기기
+                  </a>
                   <button
                     role="menuitem"
                     type="button"
@@ -139,6 +150,17 @@ export default function AppTopBar() {
                     <Megaphone size={14} />
                     새소식
                   </Link>
+                  <a
+                    role="menuitem"
+                    href="https://github.com/sihyun-mity/todo-report-generator"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <Github size={14} />
+                    GitHub에서 의견 남기기
+                  </a>
                   <button
                     role="menuitem"
                     type="button"
