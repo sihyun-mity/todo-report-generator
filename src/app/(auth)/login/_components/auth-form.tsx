@@ -54,6 +54,9 @@ function SignupForm() {
         toast.error(error.message);
         return;
       }
+      // 게스트에서 계정으로 전환하는 시점 — 이메일 인증 링크 클릭 후 홈으로 돌아왔을 때
+      // 게스트 쿠키가 남아있으면 미들웨어가 게스트로 취급해 세션을 무시하므로 여기서 미리 정리
+      disableGuestMode();
       toast.success(`${email}로 인증 메일을 발송했습니다. 메일의 링크를 눌러 인증을 완료한 뒤 로그인해주세요.`, {
         duration: 6000,
       });
