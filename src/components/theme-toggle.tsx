@@ -6,7 +6,12 @@ import { useIsClient } from 'usehooks-ts';
 import { useTheme } from './theme-provider';
 import { cn } from '@/utils';
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  // 드롭다운 등 좁은 컨테이너 안에서 좌측 정렬로 공간이 비어 보이지 않도록 가득 채우는 옵션
+  fullWidth?: boolean;
+}
+
+export function ThemeToggle({ fullWidth = false }: ThemeToggleProps = {}) {
   const { theme, setTheme } = useTheme();
   const isClient = useIsClient();
 
@@ -22,16 +27,22 @@ export function ThemeToggle() {
     toast.success(messages[newTheme]);
   };
 
+  const containerCls = cn(
+    'flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-0.5 dark:border-zinc-700/50 dark:bg-card/50',
+    fullWidth && 'w-full'
+  );
+  const buttonSizingCls = fullWidth ? 'h-8 flex-1' : 'h-8 w-8';
+
   if (!isClient) {
     return (
-      <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700/50 dark:bg-card/50">
-        <div className="p-1.5">
+      <div className={containerCls}>
+        <div className={cn('flex items-center justify-center', buttonSizingCls)}>
           <Sun size={16} className="text-transparent" />
         </div>
-        <div className="p-1.5">
+        <div className={cn('flex items-center justify-center', buttonSizingCls)}>
           <Moon size={16} className="text-transparent" />
         </div>
-        <div className="p-1.5">
+        <div className={cn('flex items-center justify-center', buttonSizingCls)}>
           <Monitor size={16} className="text-transparent" />
         </div>
       </div>
@@ -39,11 +50,12 @@ export function ThemeToggle() {
   }
 
   return (
-    <div className="flex items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700/50 dark:bg-card/50">
+    <div className={containerCls}>
       <button
         onClick={() => handleSetTheme('light')}
         className={cn(
-          'rounded-md p-1.5 transition-all',
+          'flex cursor-pointer items-center justify-center rounded-md transition-all',
+          buttonSizingCls,
           theme === 'light'
             ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
@@ -55,7 +67,8 @@ export function ThemeToggle() {
       <button
         onClick={() => handleSetTheme('dark')}
         className={cn(
-          'rounded-md p-1.5 transition-all',
+          'flex cursor-pointer items-center justify-center rounded-md transition-all',
+          buttonSizingCls,
           theme === 'dark'
             ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
@@ -67,7 +80,8 @@ export function ThemeToggle() {
       <button
         onClick={() => handleSetTheme('system')}
         className={cn(
-          'rounded-md p-1.5 transition-all',
+          'flex cursor-pointer items-center justify-center rounded-md transition-all',
+          buttonSizingCls,
           theme === 'system'
             ? 'bg-zinc-100 text-zinc-900 dark:bg-toast-border/50 dark:text-zinc-100'
             : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
