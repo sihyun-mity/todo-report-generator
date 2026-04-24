@@ -7,6 +7,9 @@ export function ToasterProvider() {
     <Toaster
       position="bottom-center"
       reverseOrder={false}
+      containerStyle={{
+        bottom: 'max(env(safe-area-inset-bottom), 2rem)',
+      }}
       toastOptions={{
         duration: 3000,
         style: {
