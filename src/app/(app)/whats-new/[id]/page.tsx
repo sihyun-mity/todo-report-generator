@@ -2,10 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { NewsMarkdown } from '@/components';
-import { fetchNewsById } from '@/lib/news';
-import { createClient } from '@/lib/supabase/server';
-
-export const dynamic = 'force-dynamic';
+import { fetchNewsByIdCached } from '@/lib/news';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {
@@ -17,8 +14,7 @@ function formatDate(iso: string) {
 
 export default async function NewsDetailPage({ params }: PageProps<'/whats-new/[id]'>) {
   const { id } = await params;
-  const supabase = await createClient();
-  const item = await fetchNewsById(supabase, id);
+  const item = await fetchNewsByIdCached(id);
 
   if (!item) notFound();
 

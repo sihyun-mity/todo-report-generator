@@ -1,8 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
-import { fetchAllNews } from '@/lib/news';
-
-export const dynamic = 'force-dynamic';
+import { fetchAllNewsCached } from '@/lib/news';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {
@@ -28,8 +25,7 @@ function toPlainPreview(markdown: string, max = 140) {
 }
 
 export default async function WhatsNewListPage() {
-  const supabase = await createClient();
-  const news = await fetchAllNews(supabase);
+  const news = await fetchAllNewsCached();
 
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">
