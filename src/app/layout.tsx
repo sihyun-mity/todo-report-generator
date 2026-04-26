@@ -15,6 +15,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   userScalable: false,
   viewportFit: 'cover',
+  // 안드로이드 가상 키보드가 layout viewport를 함께 축소하도록 지정
+  // → fixed 위치의 모바일 복사 바가 키보드에 가려지지 않고 자동으로 위로 올라간다
+  interactiveWidget: 'resizes-content',
 };
 
 const pretendard = localFont({
