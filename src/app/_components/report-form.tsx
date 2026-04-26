@@ -4,7 +4,15 @@ import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
 import type { Project, ReportDate, ReportHistoryItem } from '@/types';
-import { ImportLocalDialog, ImportModal, ProjectList, ReportHeader, ReportHistory, ReportPreview } from '.';
+import {
+  ImportLocalDialog,
+  ImportModal,
+  MobileCopyBar,
+  ProjectList,
+  ReportHeader,
+  ReportHistory,
+  ReportPreview,
+} from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { isGuestMode } from '@/lib/guest';
@@ -297,7 +305,7 @@ export function ReportForm() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 sm:p-6 lg:flex-row lg:p-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:flex-row lg:p-12 lg:pb-12">
       <div className="flex-1 overflow-hidden">
         <ReportHeader
           reportDate={reportDate}
@@ -308,6 +316,7 @@ export function ReportForm() {
 
         <ProjectList
           title="금일 업무 진행 현황"
+          accent="today"
           projects={today.projects}
           onAddProject={today.addProject}
           onRemoveProject={todayRemove.removeProject}
@@ -318,6 +327,7 @@ export function ReportForm() {
         />
         <ProjectList
           title="익일 업무 진행 예정"
+          accent="tomorrow"
           projects={tomorrow.projects}
           onAddProject={tomorrow.addProject}
           onRemoveProject={tomorrowRemove.removeProject}
@@ -332,6 +342,7 @@ export function ReportForm() {
       <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
         <ReportPreview
           text={reportText}
+          reportDate={reportDate}
           copied={copied}
           copyError={copyError}
           isCopyDisabled={isCopyDisabled}
@@ -352,6 +363,8 @@ export function ReportForm() {
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
 
       <ImportLocalDialog isOpen={isImportDialogOpen} onConfirm={handleDialogConfirm} onDismiss={handleDialogDismiss} />
+
+      {hasAnyData && <MobileCopyBar copied={copied} isCopyDisabled={isCopyDisabled} onCopy={handleCopy} />}
     </div>
   );
 }

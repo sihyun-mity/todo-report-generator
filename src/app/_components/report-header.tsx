@@ -1,7 +1,8 @@
 'use client';
 
-import { Download, HardDriveDownload } from 'lucide-react';
+import { ClipboardPaste, HardDriveDownload } from 'lucide-react';
 import type { ReportDate } from '@/types';
+import { DatePicker } from '.';
 
 type ReportHeaderProps = {
   reportDate: ReportDate;
@@ -11,9 +12,9 @@ type ReportHeaderProps = {
 };
 
 const actionButtonClass =
-  'flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card dark:text-zinc-300 dark:hover:bg-[#2c2e33]';
+  'flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card dark:text-zinc-300 dark:hover:bg-[#2c2e33]';
 
-// 보고서 도메인 전용 헤더 — 타이틀, 날짜 입력, 가져오기 관련 버튼
+// 보고서 도메인 전용 헤더 — 타이틀, 부제, 날짜 선택, 가져오기 액션
 // (계정 관련 요소는 상단 AppTopBar로 분리됨)
 export const ReportHeader = ({
   reportDate,
@@ -21,35 +22,19 @@ export const ReportHeader = ({
   onOpenImport,
   onImportLocal,
 }: Readonly<ReportHeaderProps>) => {
-  const dateInputClass = 'w-8 bg-transparent text-right outline-none focus:ring-1 focus:ring-blue-500';
-
   return (
     <header className="mb-10">
-      <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
+      <h1 className="mb-1 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
         일일 업무 보고 생성기
       </h1>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2 text-zinc-500">
-          <input
-            type="text"
-            value={reportDate.month}
-            onChange={(e) => onChangeDate({ ...reportDate, month: e.target.value })}
-            onBlur={(e) => onChangeDate({ ...reportDate, month: e.target.value.trim() })}
-            className={dateInputClass}
-          />
-          <span>월</span>
-          <input
-            type="text"
-            value={reportDate.day}
-            onChange={(e) => onChangeDate({ ...reportDate, day: e.target.value })}
-            onBlur={(e) => onChangeDate({ ...reportDate, day: e.target.value.trim() })}
-            className={dateInputClass}
-          />
-          <span>일 보고서</span>
-        </div>
-        <button onClick={onOpenImport} className={actionButtonClass}>
-          <Download size={14} />
-          가져오기
+      <p className="mb-5 text-sm text-zinc-500 dark:text-zinc-400">
+        프로젝트별 진행률을 적으면 보고서 양식이 자동으로 만들어집니다.
+      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <DatePicker value={reportDate} onChange={onChangeDate} />
+        <button onClick={onOpenImport} className={actionButtonClass} title="기존 보고서 텍스트를 붙여넣어 복원">
+          <ClipboardPaste size={14} />
+          텍스트로 복원
         </button>
         {onImportLocal && (
           <button onClick={onImportLocal} className={actionButtonClass} title="기존 로컬 저장 기록을 계정에 옮기기">
