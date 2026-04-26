@@ -1,10 +1,12 @@
 'use client';
 
 import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
+import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
 
 type ReportPreviewProps = {
   text: string;
+  reportDate: ReportDate;
   copied: boolean;
   copyError: string | null;
   isCopyDisabled: boolean;
@@ -16,6 +18,7 @@ type ReportPreviewProps = {
 // 미리보기 패널: 보고서 텍스트 렌더링 + 복사/초기화 액션
 export const ReportPreview = ({
   text,
+  reportDate,
   copied,
   copyError,
   isCopyDisabled,
@@ -23,9 +26,22 @@ export const ReportPreview = ({
   onCopy,
   onReset,
 }: Readonly<ReportPreviewProps>) => {
+  const charCount = text.length;
+  const hasDate = reportDate.month.trim() !== '' && reportDate.day.trim() !== '';
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-700/50 dark:bg-card/50">
-      <h2 className="mb-4 text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
+      <div className="mb-4 flex items-end justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold tracking-wider text-zinc-500 uppercase">미리보기</h2>
+          {hasDate && (
+            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+              {reportDate.month}월 {reportDate.day}일 보고서
+            </p>
+          )}
+        </div>
+        <span className="text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{charCount}자</span>
+      </div>
       <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-700/30 dark:bg-background/50 dark:text-zinc-200">
         {text}
       </pre>
