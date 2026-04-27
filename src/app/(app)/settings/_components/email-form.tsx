@@ -49,11 +49,6 @@ export function EmailForm({ currentEmail, onUpdated }: Readonly<Props>) {
 
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-white">이메일 변경</h2>
-      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">
-        변경 시 기존 이메일과 새 이메일 양쪽에 확인 메일이 발송될 수 있습니다.
-      </p>
-
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">현재 이메일</label>

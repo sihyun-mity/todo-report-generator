@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { ArrowLeft, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
+import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
+import { SettingsSubHeader } from '.';
 
 type Passkey = {
   id: string;
@@ -138,22 +138,10 @@ export function PasskeysManager() {
 
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6 lg:p-12">
-      <header className="mb-8">
-        <Link
-          href="/settings"
-          className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-        >
-          <ArrowLeft size={12} />
-          계정 설정
-        </Link>
-        <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
-          패스키 관리
-        </h1>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Face ID / 지문 / Windows Hello 등 기기의 생체 인증으로 비밀번호 없이 로그인할 수 있어요. 기기별로 따로
-          등록하는 걸 권장합니다.
-        </p>
-      </header>
+      <SettingsSubHeader
+        title="패스키 관리"
+        description="Face ID / 지문 / Windows Hello 등 기기의 생체 인증으로 비밀번호 없이 로그인할 수 있어요. 기기별로 따로 등록하는 걸 권장합니다."
+      />
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-5 flex items-center justify-between">
