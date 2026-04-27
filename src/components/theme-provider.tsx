@@ -12,6 +12,10 @@ type ThemeContextType = {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+// `<head>`에 동기 실행되어 첫 페인트 전에 `.dark` 클래스를 붙이는 스크립트.
+// `useLocalStorage`(usehooks-ts)는 값을 JSON.stringify해서 저장하므로 JSON.parse로 읽는다.
+export const themeInitScript = `(function(){try{var s=localStorage.getItem('theme');var t=s?JSON.parse(s):'system';if(t==='system'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var c=document.documentElement.classList;c.remove('light','dark');c.add(t);document.documentElement.style.colorScheme=t;}catch(e){}})();`;
+
 export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, setTheme] = useLocalStorage<Theme>('theme', 'system');
   const isClient = useIsClient();
@@ -24,6 +28,7 @@ export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode
     const applyTheme = (t: 'light' | 'dark') => {
       root.classList.remove('light', 'dark');
       root.classList.add(t);
+      root.style.colorScheme = t;
       // Tailwind v4 uses prefers-color-scheme by default.
       // If we want dark: classes to work when manually toggled to dark mode,
       // we need to make sure the class is there.

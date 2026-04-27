@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Suspense, ViewTransition } from 'react';
 import '@/styles/globals.css';
-import { MobileDetector, ThemeProvider, ToasterProvider } from '@/components';
+import { MobileDetector, ThemeProvider, ToasterProvider, themeInitScript } from '@/components';
 import { cn, staticMetadata } from '@/utils';
 import localFont from 'next/font/local';
 
@@ -29,7 +29,11 @@ const pretendard = localFont({
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        {/* 첫 페인트 전 다크모드 클래스를 동기 적용해 라이트 → 다크 깜빡임 방지 */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
         className={cn(
           pretendard.variable,
