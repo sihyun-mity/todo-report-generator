@@ -1,9 +1,9 @@
 'use client';
 
-import { MouseEvent, useEffect, useMemo, useState } from 'react';
+import { MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
-import type { Project, ReportHistoryItem } from '@/types';
+import type { Project, ReportDate, ReportHistoryItem } from '@/types';
 import {
   ImportLocalDialog,
   ImportModal,
@@ -42,6 +42,10 @@ const isSameAsToday = (month: string, day: string) => {
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
 
+// 폼 dirty 비교용 직렬화 — 페이지 이탈 경고에 쓰는 baseline 키
+const serializeReport = (date: ReportDate, today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Project>): string =>
+  JSON.stringify({ d: date, t: today, n: tomorrow });
+
 export function ReportForm() {
   const isClient = useIsClient();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -66,6 +70,19 @@ export function ReportForm() {
     deleteHistory,
     importFromLocalStorage,
   } = useReportHistory();
+
+  // 페이지 이탈 경고용 baseline. 처음 준비된 보고서 직렬화 결과와 현재 상태를 비교해 dirty 여부 판정.
+  // 페이지 내 SPA 탐색은 beforeunload가 발생하지 않으므로 자연스럽게 제외된다.
+  const [dirtyBaseline, setDirtyBaseline] = useState<string | null>(null);
+
+  // 외부 액션(복사·리셋·기록 불러오기·텍스트 적용) 후 store가 새 값으로 갱신된 직후 baseline을 다시 잡는다.
+  // 같은 핸들러 안에서는 selector가 아직 옛 값일 수 있어 microtask로 미루고 store에서 직접 가져온다.
+  const refreshBaseline = useCallback(() => {
+    queueMicrotask(() => {
+      const s = useReportFormStore.getState();
+      setDirtyBaseline(serializeReport(s.reportDate, s.today, s.tomorrow));
+    });
+  }, []);
 
   // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음
   const canImportLocal = isHistoryLoaded && history.length === 0 && hasLocalBackup;
@@ -129,6 +146,32 @@ export function ReportForm() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, isHistoryLoaded, hasHydratedFromHistory]);
+
+  // 위 hydration이 끝나 store가 안정된 시점의 직렬화 값을 baseline으로 캡처. 한 번만 잡는다.
+  const currentReportKey = useMemo(
+    () => serializeReport(reportDate, today.projects, tomorrow.projects),
+    [reportDate, today.projects, tomorrow.projects]
+  );
+  useEffect(() => {
+    if (!hasHydratedFromHistory) return;
+    if (dirtyBaseline !== null) return;
+    setDirtyBaseline(currentReportKey);
+  }, [hasHydratedFromHistory, dirtyBaseline, currentReportKey]);
+
+  const isReportDirty = dirtyBaseline !== null && dirtyBaseline !== currentReportKey;
+
+  // dirty 상태에서만 beforeunload 핸들러 등록 — 페이지 새로고침/탭 닫기/외부 탐색 전에 경고를 띄운다.
+  // 페이지 내 SPA 탐색은 beforeunload가 발생하지 않으므로 자연 제외된다.
+  useEffect(() => {
+    if (!isReportDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // 최신 브라우저는 사용자 정의 메시지를 무시하고 표준 다이얼로그만 표시한다.
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isReportDirty]);
 
   const reportText = useMemo(
     () =>
@@ -250,6 +293,8 @@ export function ReportForm() {
       setCopied(true);
       toast.success('내용이 클립보드에 복사되었습니다.');
       addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
+      // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
+      refreshBaseline();
       setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
     } catch (err) {
       console.error('Failed to copy: ', err);
@@ -264,6 +309,7 @@ export function ReportForm() {
     setReportDate({ month: item.month, day: item.day });
     today.setProjects(item.todayProjects);
     tomorrow.setProjects(item.tomorrowProjects);
+    refreshBaseline();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -276,6 +322,7 @@ export function ReportForm() {
   const handleReset = () => {
     if (!confirm('작성 중인 내용이 모두 초기화됩니다. 계속하시겠습니까?')) return;
     resetForm();
+    refreshBaseline();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -296,6 +343,7 @@ export function ReportForm() {
     setReportDate({ month: data.month, day: data.day });
     today.setProjects([...data.todayProjects]);
     tomorrow.setProjects([...data.tomorrowProjects]);
+    refreshBaseline();
     toast.success('텍스트 분석 내용을 적용했습니다.');
     setIsImportModalOpen(false);
   };
