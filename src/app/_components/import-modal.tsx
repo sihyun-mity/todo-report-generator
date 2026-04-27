@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { AlertCircle, Check, Clipboard, X } from 'lucide-react';
+import { AlertCircle, Check, Clipboard, Info, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
 import type { Project } from '@/types';
@@ -108,6 +108,50 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
                 value={text}
                 onChange={handleTextChange}
               />
+              <details className="group rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900/30">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-zinc-600 select-none dark:text-zinc-400">
+                  <Info className="h-3.5 w-3.5" />
+                  지원 형식 안내
+                  <span className="ml-auto text-[11px] text-zinc-400 group-open:hidden dark:text-zinc-500">펼치기</span>
+                  <span className="ml-auto hidden text-[11px] text-zinc-400 group-open:inline dark:text-zinc-500">
+                    접기
+                  </span>
+                </summary>
+                <div className="mt-2 space-y-2 text-zinc-500 dark:text-zinc-400">
+                  <p>
+                    이 생성기로 만든 보고서를 그대로 붙여넣으면 분석됩니다. 직접 작성할 때는 아래 규칙을 지켜주세요.
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    <li>
+                      어딘가에 <span className="font-mono text-zinc-700 dark:text-zinc-300">N월 N일</span> 형식의 날짜
+                    </li>
+                    <li>
+                      섹션 제목은{' '}
+                      <span className="font-mono text-zinc-700 dark:text-zinc-300">금일 업무 진행 현황</span> /{' '}
+                      <span className="font-mono text-zinc-700 dark:text-zinc-300">익일 업무 진행 예정</span> 그대로
+                    </li>
+                    <li>
+                      프로젝트는 <span className="font-mono text-zinc-700 dark:text-zinc-300">* 프로젝트명</span>
+                    </li>
+                    <li>
+                      작업은 <span className="font-mono text-zinc-700 dark:text-zinc-300">- 작업 내용 (50%)</span> —
+                      진행률 <span className="font-mono text-zinc-700 dark:text-zinc-300">(NN%)</span>은 생략
+                      가능(미입력 시 0%)
+                    </li>
+                  </ul>
+                  <pre className="overflow-x-auto rounded-md bg-white p-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                    {`2월 24일 일일 업무 보고 드립니다.
+
+금일 업무 진행 현황
+    * 프로젝트명
+        - 작업 내용 (50%)
+
+익일 업무 진행 예정
+    * 프로젝트명
+        - 작업 내용`}
+                  </pre>
+                </div>
+              </details>
             </div>
 
             <div className="space-y-3">
