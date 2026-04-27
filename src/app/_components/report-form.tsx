@@ -79,6 +79,16 @@ export function ReportForm() {
   // 페이지 내 SPA 탐색은 beforeunload가 발생하지 않으므로 자연스럽게 제외된다.
   const [dirtyBaseline, setDirtyBaseline] = useState<string | null>(null);
 
+  // 기록 추가/실행취소 직후 ReportHistory 캘린더를 해당 월로 이동시키기 위한 요청 토큰.
+  // toReportDate와 동일한 규칙으로 dateKey를 만든다 (현재 연도 + 보고서 month/day).
+  const [historyFocus, setHistoryFocus] = useState<{ dateKey: string; nonce: number } | null>(null);
+  const requestHistoryFocus = useCallback((month: string, day: string) => {
+    const y = new Date().getFullYear();
+    const mm = String(parseInt(month, 10)).padStart(2, '0');
+    const dd = String(parseInt(day, 10)).padStart(2, '0');
+    setHistoryFocus({ dateKey: `${y}-${mm}-${dd}`, nonce: Date.now() });
+  }, []);
+
   // 외부 액션(복사·리셋·기록 불러오기·텍스트 적용) 후 store가 새 값으로 갱신된 직후 baseline을 다시 잡는다.
   // 같은 핸들러 안에서는 selector가 아직 옛 값일 수 있어 microtask로 미루고 store에서 직접 가져온다.
   const refreshBaseline = useCallback(() => {
@@ -302,7 +312,8 @@ export function ReportForm() {
       await navigator.clipboard.writeText(reportText);
       setCopied(true);
       toast.success('내용이 클립보드에 복사되었습니다.');
-      addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
+      void addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
+      requestHistoryFocus(reportDate.month, reportDate.day);
       // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
       refreshBaseline();
       setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
@@ -330,7 +341,34 @@ export function ReportForm() {
 
   const handleDeleteHistory = (id: string, e: MouseEvent) => {
     e.stopPropagation();
-    deleteHistory(id);
+    const removed = history.find((item) => item.id === id);
+    void deleteHistory(id);
+    if (!removed) return;
+    toast(
+      (t) => (
+        <span className="flex items-center gap-3 break-all">
+          <span className="break-all">
+            {removed.month}월 {removed.day}일 보고서를 삭제했습니다.
+          </span>
+          <button
+            onClick={() => {
+              void addHistory({
+                month: removed.month,
+                day: removed.day,
+                todayProjects: removed.todayProjects,
+                tomorrowProjects: removed.tomorrowProjects,
+              });
+              requestHistoryFocus(removed.month, removed.day);
+              toast.dismiss(t.id);
+            }}
+            className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
+          >
+            실행 취소
+          </button>
+        </span>
+      ),
+      { duration: UNDO_TOAST_DURATION_MS }
+    );
   };
 
   // 폼 초기화 (빈 프로젝트 한 개 상태로 되돌림)
@@ -364,7 +402,8 @@ export function ReportForm() {
     }
 
     if (isEarlierDate(data.month, data.day)) {
-      addHistory(data);
+      void addHistory(data);
+      requestHistoryFocus(data.month, data.day);
       toast.success(`${data.month}월 ${data.day}일 기록을 이전 기록에 추가했습니다.`);
     }
 
@@ -429,6 +468,7 @@ export function ReportForm() {
           mode={historyMode}
           isLoaded={isHistoryLoaded}
           loadingMonths={loadingMonths}
+          focusRequest={historyFocus}
           loadMonth={loadMonth}
           loadHistoryAction={handleLoadHistory}
           deleteHistoryAction={handleDeleteHistory}

@@ -15,6 +15,9 @@ type Props = {
   mode: ReportHistoryMode;
   isLoaded: boolean;
   loadingMonths: ReadonlySet<string>;
+  // 외부에서 변경(추가/실행취소 등)이 발생했을 때 캘린더를 해당 날짜의 월로 이동시키는 요청.
+  // nonce는 같은 dateKey라도 재발화시키기 위한 단조 증가값.
+  focusRequest: { dateKey: string; nonce: number } | null;
   loadMonth: (year: number, month: number) => Promise<void>;
   loadHistoryAction: (item: ReportHistoryItem, e: MouseEvent<HTMLDivElement | HTMLButtonElement>) => void;
   deleteHistoryAction: (id: string, e: MouseEvent<HTMLButtonElement>) => void;
@@ -60,6 +63,7 @@ export function ReportHistory({
   mode,
   isLoaded,
   loadingMonths,
+  focusRequest,
   loadMonth,
   loadHistoryAction,
   deleteHistoryAction,
@@ -77,16 +81,43 @@ export function ReportHistory({
 
   // 렌더 중 1회성 보정 (effect 대신 권장 패턴): 데이터 도착 시 latest 기록월로 점프,
   // 아직 데이터 없고 클라이언트면 today로 임시 보정 — 추후 데이터가 오면 latest로 한 번 더 갱신.
+  // 단, 최신 기록 월이 오늘 월보다 미래면(예: 4월에 5월 기록이 존재) 오늘 월로 클램프한다.
   if (recordMonths.length > 0 && syncStage !== 'records') {
-    const [y, m] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
-    setViewYear(y);
-    setViewMonth(m);
+    const [latestY, latestM] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
+    let nextY = latestY;
+    let nextM = latestM;
+    if (isClient) {
+      const now = new Date();
+      const todayY = now.getFullYear();
+      const todayM = now.getMonth() + 1;
+      if (nextY > todayY || (nextY === todayY && nextM > todayM)) {
+        nextY = todayY;
+        nextM = todayM;
+      }
+    }
+    setViewYear(nextY);
+    setViewMonth(nextM);
     setSyncStage('records');
   } else if (recordMonths.length === 0 && syncStage === 'init' && isClient) {
     const now = new Date();
     setViewYear(now.getFullYear());
     setViewMonth(now.getMonth() + 1);
     setSyncStage('today');
+  }
+
+  // 외부 focus 요청(기록 추가/삭제 실행취소 등) — 같은 nonce가 처리되었는지를 anchor로 추적해 1회성 보정한다.
+  // syncStage 보정 이후에 위치시켜 초기 렌더와 충돌하지 않도록 한다.
+  const [focusAnchor, setFocusAnchor] = useState(0);
+  if (focusRequest && focusRequest.nonce !== focusAnchor) {
+    setFocusAnchor(focusRequest.nonce);
+    const [fy, fm] = focusRequest.dateKey
+      .split('-')
+      .slice(0, 2)
+      .map((s) => parseInt(s, 10));
+    setViewYear(fy);
+    setViewMonth(fm);
+    setSelectedDateKey(null);
+    if (syncStage === 'init') setSyncStage('records');
   }
 
   // 캘린더가 표시 중인 월의 데이터를 자동 로드 (로그인 사용자: lazy fetch).
