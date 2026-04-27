@@ -12,6 +12,7 @@ import {
   ReportHeader,
   ReportHistory,
   ReportPreview,
+  getItemDateKey,
 } from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
 import { confirm, useReportFormStore } from '@/stores';
@@ -34,10 +35,17 @@ const isEarlierDate = (month: string, day: string) => {
   return importMonth < currentMonth || (importMonth === currentMonth && importDay < currentDay);
 };
 
-const isSameAsToday = (month: string, day: string) => {
+// 오늘 자정 기준 dateKey ('YYYY-MM-DD'). getItemDateKey와 동일한 형식이라 lexical 비교 가능.
+const todayDateKey = () => {
   const now = new Date();
-  return parseInt(month, 10) === now.getMonth() + 1 && parseInt(day, 10) === now.getDate();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
+
+// 두 dateKey를 desc 비교 (Array.prototype.sort 콜백용)
+const compareDateKeyDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
 
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
@@ -145,27 +153,63 @@ export function ReportForm() {
   };
 
   // 초기 로드 완료 후 직전 보고서를 폼에 반영한다 (세션당 1회만).
-  // - 가장 최근 기록이 '오늘' 작성된 보고서라면 carry-over 없이 그대로 복원해 사용자가 이어서 편집할 수 있게 한다.
-  // - 그 외에는 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 가져온다.
+  // - 오늘 작성한 기록이 있으면 그대로 복원해 사용자가 이어서 편집할 수 있게 한다 (연도까지 일치하는 경우만).
+  // - 그 외에는 가장 최근 과거 기록의 '익일 예정' 내용을 금일 프로젝트로 가져온다.
+  // - 미래 날짜 기록(예: 4/28인데 5/1 기록)은 hydration 대상에서 제외 — 폼은 항상 오늘 이전 기록 기준으로 복원한다.
+  // - store는 latest 월만 적재하므로 latest가 미래면 과거 월이 history에 없을 수 있다.
+  //   이때 allReportDates에서 가장 최근 과거 날짜의 월을 lazy 로드한 뒤 다음 렌더에서 다시 시도한다.
   // 페이지를 이동했다 돌아와도 store에 hydrate 플래그가 남아 있어 작성 중인 내용을 덮어쓰지 않는다.
   useEffect(() => {
     if (!isClient || !isHistoryLoaded || hasHydratedFromHistory) return;
-    markHydratedFromHistory();
-    if (history.length === 0) return;
-    const latest = history[0];
-    if (latest && isSameAsToday(latest.month, latest.day)) {
-      setReportDate({ month: latest.month, day: latest.day });
-      today.setProjects(cloneProjects(latest.todayProjects));
-      tomorrow.setProjects(cloneProjects(latest.tomorrowProjects));
+    if (history.length === 0 && allReportDates.length === 0) {
+      markHydratedFromHistory();
       return;
     }
-    const lastValid = history.find((item) => item.tomorrowProjects.some(hasProjectContent));
+
+    const todayKey = todayDateKey();
+    const latestPastDateKey = allReportDates.find((d) => d <= todayKey);
+    if (!latestPastDateKey) {
+      // 미래 기록만 존재 — carry-over 없음
+      markHydratedFromHistory();
+      return;
+    }
+
+    // 가장 최근 과거 기록이 속한 월이 history에 적재되어 있어야 carry-over/오늘 복원 후보를 찾을 수 있다.
+    const targetMonth = latestPastDateKey.slice(0, 7);
+    const isTargetMonthLoaded = history.some((item) => getItemDateKey(item).slice(0, 7) === targetMonth);
+    if (!isTargetMonthLoaded) {
+      const [y, m] = targetMonth.split('-').map((s) => parseInt(s, 10));
+      void loadMonth(y, m);
+      return; // 월 로드 후 다음 effect 사이클에서 hydration 재시도
+    }
+
+    markHydratedFromHistory();
+
+    // 오늘 기록이 존재하면 그대로 복원 (연도까지 일치하는 경우만)
+    if (latestPastDateKey === todayKey) {
+      const todayItem = history.find((item) => getItemDateKey(item) === todayKey);
+      if (todayItem) {
+        setReportDate({ month: todayItem.month, day: todayItem.day });
+        today.setProjects(cloneProjects(todayItem.todayProjects));
+        tomorrow.setProjects(cloneProjects(todayItem.tomorrowProjects));
+        return;
+      }
+    }
+
+    // 오늘 기록이 없으면 가장 최근 과거 기록의 '익일 예정' 내용을 carry-over.
+    // store의 loadMonth merge는 `[기존, ...새 데이터]`로 단순 append하므로 cross-month
+    // 전역 desc 정렬이 보장되지 않는다. 명시적으로 desc 정렬한 뒤 first-with-content를 찾는다.
+    const eligibleDesc = history
+      .filter((item) => getItemDateKey(item) <= todayKey)
+      .slice()
+      .sort((a, b) => compareDateKeyDesc(getItemDateKey(a), getItemDateKey(b)));
+    const lastValid = eligibleDesc.find((item) => item.tomorrowProjects.some(hasProjectContent));
     if (lastValid) {
       today.setProjects(cloneProjects(lastValid.tomorrowProjects));
       toast.success('이전 업무의 진행 예정 내용을 가져왔습니다.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClient, isHistoryLoaded, hasHydratedFromHistory]);
+  }, [isClient, isHistoryLoaded, hasHydratedFromHistory, history, allReportDates, loadMonth]);
 
   // 위 hydration이 끝나 store가 안정된 시점의 직렬화 값을 baseline으로 캡처. 한 번만 잡는다.
   const currentReportKey = useMemo(

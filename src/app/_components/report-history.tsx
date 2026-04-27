@@ -82,11 +82,13 @@ export function ReportHistory({
   // 렌더 중 1회성 보정 (effect 대신 권장 패턴): 데이터 도착 시 latest 기록월로 점프,
   // 아직 데이터 없고 클라이언트면 today로 임시 보정 — 추후 데이터가 오면 latest로 한 번 더 갱신.
   // 단, 최신 기록 월이 오늘 월보다 미래면(예: 4월에 5월 기록이 존재) 오늘 월로 클램프한다.
-  if (recordMonths.length > 0 && syncStage !== 'records') {
-    const [latestY, latestM] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
-    let nextY = latestY;
-    let nextM = latestM;
-    if (isClient) {
+  // 모든 전환은 isClient=true 일 때만 수행 — 캐시된 store로 재진입할 때 isClient=false 시점에
+  // records로 고정돼 클램프가 적용되지 않는 케이스를 방지.
+  if (isClient) {
+    if (recordMonths.length > 0 && syncStage !== 'records') {
+      const [latestY, latestM] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
+      let nextY = latestY;
+      let nextM = latestM;
       const now = new Date();
       const todayY = now.getFullYear();
       const todayM = now.getMonth() + 1;
@@ -94,15 +96,15 @@ export function ReportHistory({
         nextY = todayY;
         nextM = todayM;
       }
+      setViewYear(nextY);
+      setViewMonth(nextM);
+      setSyncStage('records');
+    } else if (recordMonths.length === 0 && syncStage === 'init') {
+      const now = new Date();
+      setViewYear(now.getFullYear());
+      setViewMonth(now.getMonth() + 1);
+      setSyncStage('today');
     }
-    setViewYear(nextY);
-    setViewMonth(nextM);
-    setSyncStage('records');
-  } else if (recordMonths.length === 0 && syncStage === 'init' && isClient) {
-    const now = new Date();
-    setViewYear(now.getFullYear());
-    setViewMonth(now.getMonth() + 1);
-    setSyncStage('today');
   }
 
   // 외부 focus 요청(기록 추가/삭제 실행취소 등) — 같은 nonce가 처리되었는지를 anchor로 추적해 1회성 보정한다.
