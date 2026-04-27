@@ -8,6 +8,13 @@ import { KeyRound, Mail } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, enableGuestMode } from '@/lib/guest';
 import { isConditionalUISupported, isWebAuthnSupported, loginWithPasskey } from '@/lib/webauthn/client';
+import { useReportFormStore, useReportHistoryStore } from '@/stores';
+
+// 사용자 전환 시 이전 세션의 store 캐시(보고서 기록·작성 중 폼)를 비운다
+const resetSessionStores = () => {
+  useReportHistoryStore.getState().reset();
+  useReportFormStore.getState().resetSession();
+};
 
 type Mode = 'login' | 'signup';
 
@@ -34,6 +41,7 @@ function SignupForm() {
       // 세션 없는 경우 정상 무시
     }
     enableGuestMode();
+    resetSessionStores();
     toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
     router.push('/');
     router.refresh();
@@ -173,6 +181,7 @@ function LoginForm() {
         await loginWithPasskey({ useAutofill: true });
         if (cancelled) return;
         disableGuestMode();
+        resetSessionStores();
         toast.success('패스키로 로그인되었습니다.');
         router.push('/');
         router.refresh();
@@ -191,6 +200,7 @@ function LoginForm() {
     try {
       await loginWithPasskey({ useAutofill: false });
       disableGuestMode();
+      resetSessionStores();
       toast.success('패스키로 로그인되었습니다.');
       router.push('/');
       router.refresh();
@@ -217,6 +227,7 @@ function LoginForm() {
         return;
       }
       disableGuestMode();
+      resetSessionStores();
       toast.success('로그인되었습니다.');
       router.push('/');
       router.refresh();
@@ -232,6 +243,7 @@ function LoginForm() {
       // 무시
     }
     enableGuestMode();
+    resetSessionStores();
     toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
     router.push('/');
     router.refresh();

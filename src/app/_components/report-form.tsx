@@ -1,9 +1,9 @@
 'use client';
 
-import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
-import type { Project, ReportDate, ReportHistoryItem } from '@/types';
+import type { Project, ReportHistoryItem } from '@/types';
 import {
   ImportLocalDialog,
   ImportModal,
@@ -14,13 +14,11 @@ import {
   ReportPreview,
 } from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
-import { createClient } from '@/lib/supabase/client';
-import { isGuestMode } from '@/lib/guest';
+import { useReportFormStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
 import {
   areAllAttemptedProjectsValid,
   cloneProjects,
-  createEmptyProject,
   generateReportText,
   hasProjectContent,
   mergeIncompleteTasks,
@@ -36,48 +34,33 @@ const isEarlierDate = (month: string, day: string) => {
   return importMonth < currentMonth || (importMonth === currentMonth && importDay < currentDay);
 };
 
-const getTodayDate = (): ReportDate => {
-  const now = new Date();
-  return { month: String(now.getMonth() + 1), day: String(now.getDate()) };
-};
-
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
 
 export function ReportForm() {
   const isClient = useIsClient();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [reportDate, setReportDate] = useState<ReportDate>(getTodayDate);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
-  const today = useProjects();
-  const tomorrow = useProjects();
+  const reportDate = useReportFormStore((s) => s.reportDate);
+  const setReportDate = useReportFormStore((s) => s.setReportDate);
+  const hasHydratedFromHistory = useReportFormStore((s) => s.hasHydratedFromHistory);
+  const markHydratedFromHistory = useReportFormStore((s) => s.markHydratedFromHistory);
+  const resetForm = useReportFormStore((s) => s.resetForm);
+
+  const today = useProjects('today');
+  const tomorrow = useProjects('tomorrow');
   const {
     history,
     isLoaded: isHistoryLoaded,
     hasLocalBackup,
+    userId,
     addHistory,
     deleteHistory,
     importFromLocalStorage,
   } = useReportHistory();
-
-  // 로컬 기록 이전 안내 dialog의 유저별 seen 플래그용 id
-  useEffect(() => {
-    if (!isClient) return;
-    // 게스트는 Supabase 조회 불필요 — stale 토큰 refresh 오류 회피
-    if (isGuestMode()) {
-      setUserId(null);
-      return;
-    }
-    const supabase = createClient();
-    supabase.auth
-      .getUser()
-      .then(({ data }) => setUserId(data.user?.id ?? null))
-      .catch(() => setUserId(null));
-  }, [isClient]);
 
   // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음
   const canImportLocal = isHistoryLoaded && history.length === 0 && hasLocalBackup;
@@ -119,11 +102,11 @@ export function ReportForm() {
     setIsImportDialogOpen(false);
   };
 
-  // 초기 로드 완료 후, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다 (1회만)
-  const didHydrateFromHistoryRef = useRef(false);
+  // 초기 로드 완료 후, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다 (세션당 1회만).
+  // 페이지를 이동했다 돌아와도 store에 hydrate 플래그가 남아 있어 작성 중인 내용을 덮어쓰지 않는다.
   useEffect(() => {
-    if (!isClient || !isHistoryLoaded || didHydrateFromHistoryRef.current) return;
-    didHydrateFromHistoryRef.current = true;
+    if (!isClient || !isHistoryLoaded || hasHydratedFromHistory) return;
+    markHydratedFromHistory();
     if (history.length === 0) return;
     const lastValid = history.find((item) => item.tomorrowProjects.some(hasProjectContent));
     if (lastValid) {
@@ -131,7 +114,7 @@ export function ReportForm() {
       toast.success('이전 업무의 진행 예정 내용을 가져왔습니다.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClient, isHistoryLoaded]);
+  }, [isClient, isHistoryLoaded, hasHydratedFromHistory]);
 
   const reportText = useMemo(
     () =>
@@ -278,8 +261,7 @@ export function ReportForm() {
   // 폼 초기화 (빈 프로젝트 한 개 상태로 되돌림)
   const handleReset = () => {
     if (!confirm('작성 중인 내용이 모두 초기화됩니다. 계속하시겠습니까?')) return;
-    today.setProjects([createEmptyProject()]);
-    tomorrow.setProjects([createEmptyProject()]);
+    resetForm();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

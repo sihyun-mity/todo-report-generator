@@ -7,6 +7,7 @@ import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, Us
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
+import { useReportFormStore, useReportHistoryStore } from '@/stores';
 import { ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
@@ -36,9 +37,16 @@ export function AppTopBar() {
 
   useOnClickOutside(menuRef, () => setIsOpen(false));
 
+  // 사용자 전환 시 모듈 레벨 store가 stale 상태로 남지 않도록 초기화한다
+  const resetSessionStores = () => {
+    useReportHistoryStore.getState().reset();
+    useReportFormStore.getState().resetSession();
+  };
+
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    resetSessionStores();
     setIsOpen(false);
     router.push('/login');
     router.refresh();
@@ -46,6 +54,7 @@ export function AppTopBar() {
 
   const handleExitGuest = () => {
     disableGuestMode();
+    resetSessionStores();
     setIsOpen(false);
     router.push('/login');
     router.refresh();
