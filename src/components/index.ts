@@ -1,4 +1,6 @@
 export * from './app-top-bar';
+export * from './confirm-dialog';
+export * from './confirm-dialog-host';
 export * from './mobile-detector';
 export * from './next-image';
 export * from './news';

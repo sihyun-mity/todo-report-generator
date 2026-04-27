@@ -14,7 +14,7 @@ import {
   ReportPreview,
 } from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
-import { useReportFormStore } from '@/stores';
+import { confirm, useReportFormStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
 import {
   areAllAttemptedProjectsValid,
@@ -109,7 +109,12 @@ export function ReportForm() {
   };
 
   const handleImportLocal = async () => {
-    if (!confirm('브라우저에 저장된 기존 기록을 계정에 이전합니다. 같은 날짜 기록이 있으면 덮어쓰여집니다.')) return;
+    const ok = await confirm({
+      title: '로컬 기록 이전',
+      description: '브라우저에 저장된 기존 기록을 계정에 이전합니다.\n같은 날짜 기록이 있으면 덮어쓰여집니다.',
+      confirmText: '이전하기',
+    });
+    if (!ok) return;
     await runImportLocal();
   };
 
@@ -303,9 +308,14 @@ export function ReportForm() {
   };
 
   // 히스토리 항목을 폼에 복원
-  const handleLoadHistory = (item: ReportHistoryItem, e: MouseEvent) => {
+  const handleLoadHistory = async (item: ReportHistoryItem, e: MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) return;
+    const ok = await confirm({
+      title: '기록 불러오기',
+      description: '현재 작성 중인 내용이 덮어씌워집니다.\n계속하시겠습니까?',
+      confirmText: '불러오기',
+    });
+    if (!ok) return;
     setReportDate({ month: item.month, day: item.day });
     today.setProjects(item.todayProjects);
     tomorrow.setProjects(item.tomorrowProjects);
@@ -319,21 +329,34 @@ export function ReportForm() {
   };
 
   // 폼 초기화 (빈 프로젝트 한 개 상태로 되돌림)
-  const handleReset = () => {
-    if (!confirm('작성 중인 내용이 모두 초기화됩니다. 계속하시겠습니까?')) return;
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: '폼 초기화',
+      description: '작성 중인 내용이 모두 초기화됩니다.\n계속하시겠습니까?',
+      confirmText: '초기화',
+      variant: 'danger',
+    });
+    if (!ok) return;
     resetForm();
     refreshBaseline();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // 텍스트 분석 결과 적용 (과거 날짜라면 히스토리에도 기록)
-  const handleImportApply = (data: {
+  const handleImportApply = async (data: {
     month: string;
     day: string;
     todayProjects: ReadonlyArray<Project>;
     tomorrowProjects: ReadonlyArray<Project>;
   }) => {
-    if (hasAnyData && !confirm('현재 작성 중인 내용이 덮어씌워집니다. 계속하시겠습니까?')) return;
+    if (hasAnyData) {
+      const ok = await confirm({
+        title: '텍스트 적용',
+        description: '현재 작성 중인 내용이 덮어씌워집니다.\n계속하시겠습니까?',
+        confirmText: '적용',
+      });
+      if (!ok) return;
+    }
 
     if (isEarlierDate(data.month, data.day)) {
       addHistory(data);

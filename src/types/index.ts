@@ -1,3 +1,4 @@
+export * from './confirm.type';
 export * from './media.type';
 export * from './mobile.type';
 export * from './news.type';
