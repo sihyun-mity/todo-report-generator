@@ -64,6 +64,24 @@ Next.js 기본 파일명이 아니다. 동작:
 
 `supabase/migrations/*.sql` — RLS 정책 포함. 마이그레이션 추가 시 RLS도 함께 작성한다.
 
+### 페이지 metadata
+
+모든 `page.tsx`는 `staticMetadata({ title, description })`로 metadata를 정의한다 (`src/utils/meta.ts`).
+
+- title이 있으면 자동으로 ` | 일일 업무 보고 생성기` suffix가 붙고, 없으면 서비스명 단독.
+- 동적 title은 `generateMetadata` 내부에서 동일 utility를 호출 (`src/app/(app)/whats-new/[id]/page.tsx` 참고).
+- 새 page를 추가하면서 `Metadata` 객체를 직접 만들지 말고, 항상 이 utility를 거친다.
+
+### View Transitions
+
+페이지 전환 애니메이션은 React 19 `<ViewTransition>` + Next.js 16 `experimental.viewTransition: true` 조합으로 처리한다.
+
+- Root layout(`src/app/layout.tsx`)에서 children을 `<ViewTransition>`으로 감싸 모든 라우트 이동에 자동 적용. transition type별 클래스(`nav-forward`, `nav-back`, default `page`)가 매핑돼 있다.
+- 상위 → 하위로 진입하는 `<Link>`엔 `transitionTypes={['nav-forward']}` (좌→우 슬라이드), 복귀 링크엔 `transitionTypes={['nav-back']}` (우→좌 슬라이드)을 부여한다. 분류가 모호하면 prop을 생략해 default `page` 효과(fade + slide-up)로 둔다.
+- 전환 중에도 자기 자리에 고정돼야 하는 element(예: `AppTopBar`)엔 `style={{ viewTransitionName: '...' }}`을 부여하고 CSS에서 `::view-transition-group(name) { animation: none }`로 anchor한다.
+- 효과 정의는 `src/styles/view-transitions.css` 한 곳에 모은다. `prefers-reduced-motion: reduce`에서는 짧은 cross-fade만 유지하도록 매핑돼 있다.
+- React canary export(`ViewTransition`) 타입은 `src/types/react.d.ts`의 `import {} from 'react/canary'`로 활성화.
+
 ### 디렉터리 구조
 
 ```
