@@ -6,9 +6,11 @@ import { createClient } from '@/lib/supabase/client';
 
 type Props = {
   currentEmail: string;
+  hasPassword: boolean;
+  onPasswordCreated: () => void;
 };
 
-export function PasswordForm({ currentEmail }: Readonly<Props>) {
+export function PasswordForm({ currentEmail, hasPassword, onPasswordCreated }: Readonly<Props>) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,14 +22,14 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
     if (!currentEmail) return;
 
     if (newPassword !== confirmPassword) {
-      toast.error('새 비밀번호 확인이 일치하지 않습니다.');
+      toast.error(hasPassword ? '새 비밀번호 확인이 일치하지 않습니다.' : '비밀번호 확인이 일치하지 않습니다.');
       return;
     }
     if (newPassword.length < 6) {
       toast.error('비밀번호는 6자 이상이어야 합니다.');
       return;
     }
-    if (newPassword === currentPassword) {
+    if (hasPassword && newPassword === currentPassword) {
       toast.error('현재 비밀번호와 동일합니다.');
       return;
     }
@@ -36,14 +38,16 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
     try {
       const supabase = createClient();
 
-      // 보안상 현재 비밀번호를 재검증
-      const { error: verifyError } = await supabase.auth.signInWithPassword({
-        email: currentEmail,
-        password: currentPassword,
-      });
-      if (verifyError) {
-        toast.error('현재 비밀번호가 일치하지 않습니다.');
-        return;
+      if (hasPassword) {
+        // 보안상 현재 비밀번호를 재검증
+        const { error: verifyError } = await supabase.auth.signInWithPassword({
+          email: currentEmail,
+          password: currentPassword,
+        });
+        if (verifyError) {
+          toast.error('현재 비밀번호가 일치하지 않습니다.');
+          return;
+        }
       }
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -52,10 +56,13 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
         return;
       }
 
-      toast.success('비밀번호가 변경되었습니다.');
+      toast.success(
+        hasPassword ? '비밀번호가 변경되었습니다.' : '비밀번호가 설정되었습니다. 이제 이메일로 로그인할 수 있어요.'
+      );
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      if (!hasPassword) onPasswordCreated();
     } finally {
       setIsSubmitting(false);
     }
@@ -64,32 +71,40 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
   const inputClass =
     'rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-zinc-700 dark:bg-zinc-950';
 
+  const title = hasPassword ? '비밀번호 변경' : '비밀번호 설정 (이메일 로그인 활성화)';
+  const description = hasPassword
+    ? '변경 후에도 현재 로그인 세션은 유지됩니다. 6자 이상 입력해주세요.'
+    : '비밀번호를 설정하면 GitHub뿐 아니라 이메일·비밀번호로도 로그인할 수 있어요. 6자 이상 입력해주세요.';
+  const submitLabel = hasPassword ? '비밀번호 변경' : '비밀번호 설정';
+
+  const submitDisabled = isSubmitting || !newPassword || !confirmPassword || (hasPassword && !currentPassword);
+
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-white">비밀번호 변경</h2>
-      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">
-        변경 후에도 현재 로그인 세션은 유지됩니다. 6자 이상 입력해주세요.
-      </p>
+      <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-white">{title}</h2>
+      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="current-password" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            현재 비밀번호
-          </label>
-          <input
-            id="current-password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            className={inputClass}
-          />
-        </div>
+        {hasPassword && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="current-password" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              현재 비밀번호
+            </label>
+            <input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label htmlFor="new-password" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            새 비밀번호
+            {hasPassword ? '새 비밀번호' : '비밀번호'}
           </label>
           <input
             id="new-password"
@@ -105,7 +120,7 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
 
         <div className="flex flex-col gap-1">
           <label htmlFor="confirm-password" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            새 비밀번호 확인
+            {hasPassword ? '새 비밀번호 확인' : '비밀번호 확인'}
           </label>
           <input
             id="confirm-password"
@@ -121,10 +136,10 @@ export function PasswordForm({ currentEmail }: Readonly<Props>) {
 
         <button
           type="submit"
-          disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
+          disabled={submitDisabled}
           className="self-start rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
         >
-          {isSubmitting ? '처리 중...' : '비밀번호 변경'}
+          {isSubmitting ? '처리 중...' : submitLabel}
         </button>
       </form>
     </section>
