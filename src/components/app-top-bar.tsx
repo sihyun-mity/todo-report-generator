@@ -74,7 +74,10 @@ export function AppTopBar() {
   };
 
   return (
-    <div className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70">
+    <div
+      style={{ viewTransitionName: 'site-header' }}
+      className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70"
+    >
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 sm:px-6 lg:px-12">
         <Link
           href="/"

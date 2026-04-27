@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Suspense } from 'react';
+import { Suspense, ViewTransition } from 'react';
 import '@/styles/globals.css';
 import { MobileDetector, ThemeProvider, ToasterProvider } from '@/components';
 import { cn, staticMetadata } from '@/utils';
@@ -37,7 +37,14 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         )}
       >
         <Suspense>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            <ViewTransition
+              enter={{ 'nav-forward': 'nav-forward', 'nav-back': 'nav-back', default: 'page' }}
+              exit={{ 'nav-forward': 'nav-forward', 'nav-back': 'nav-back', default: 'page' }}
+            >
+              {children}
+            </ViewTransition>
+          </ThemeProvider>
         </Suspense>
 
         <ToasterProvider />
