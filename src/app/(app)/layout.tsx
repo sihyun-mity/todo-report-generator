@@ -4,7 +4,7 @@ import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen-enhanced bg-background text-foreground">
       <AppTopBar />
       <PasskeyRegisterBanner />
       {children}

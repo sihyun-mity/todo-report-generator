@@ -85,7 +85,7 @@ function SignupForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <div className="flex min-h-screen-enhanced items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="mb-6 text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">회원가입</h1>
 
@@ -271,7 +271,7 @@ function LoginForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <div className="flex min-h-screen-enhanced items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="mb-6 text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">로그인</h1>
 
