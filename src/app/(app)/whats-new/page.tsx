@@ -1,5 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { fetchAllNewsCached } from '@/lib/news';
+import { staticMetadata } from '@/utils';
+
+export const metadata: Metadata = staticMetadata({
+  title: '새소식',
+  description: '일일 업무 보고 생성기의 업데이트 소식을 모아둔 공간이에요.',
+});
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {

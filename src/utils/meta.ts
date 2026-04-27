@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 export function staticMetadata(meta: Metadata): Metadata {
   return {
     ...meta,
-    title: `${meta.title}`,
+    title: meta.title ? `${meta.title} | 일일 업무 보고 생성기` : '일일 업무 보고 생성기',
     description: `${meta.description}`,
     openGraph: {
       ...meta.openGraph,

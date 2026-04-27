@@ -1,8 +1,19 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { NewsMarkdown } from '@/components';
 import { fetchNewsByIdCached } from '@/lib/news';
+import { staticMetadata } from '@/utils';
+
+export async function generateMetadata({ params }: PageProps<'/whats-new/[id]'>): Promise<Metadata> {
+  const { id } = await params;
+  const item = await fetchNewsByIdCached(id);
+
+  return staticMetadata({
+    title: item?.title ?? '새소식',
+  });
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {
