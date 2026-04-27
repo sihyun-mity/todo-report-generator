@@ -101,8 +101,6 @@ function SignupForm() {
           처음이라면 자동으로 계정이 만들어지고 이메일 인증도 자동 처리돼요.
         </p>
 
-        <Divider />
-
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Field
             id="email"
@@ -277,8 +275,8 @@ function LoginForm() {
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="mb-6 text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">로그인</h1>
 
-        {passkeySupported && (
-          <>
+        <div className="flex flex-col gap-3">
+          {passkeySupported && (
             <button
               type="button"
               onClick={handlePasskeyLogin}
@@ -288,65 +286,59 @@ function LoginForm() {
               <KeyRound size={16} />
               {passkeyInFlight ? '인증 중...' : '패스키로 로그인'}
             </button>
-            <Divider />
-          </>
-        )}
+          )}
 
-        <button
-          type="button"
-          onClick={startGithubOAuth}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          <Github size={16} />
-          GitHub로 로그인
-        </button>
-        <div className="my-5 flex items-center gap-3 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
-          <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-          또는
-          <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-        </div>
-
-        {!emailExpanded ? (
           <button
             type="button"
-            onClick={() => setEmailExpanded(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            onClick={startGithubOAuth}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-800"
           >
-            <Mail size={16} />
-            이메일로 로그인
+            <Github size={16} />
+            GitHub로 로그인
           </button>
-        ) : (
-          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
-            <Field
-              id="email"
-              label="이메일"
-              type="email"
-              autoComplete="username webauthn"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@example.com"
-              required
-            />
-            <Field
-              id="password"
-              label="비밀번호"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={setPassword}
-              placeholder="비밀번호를 입력해주세요"
-              minLength={6}
-              required
-            />
+
+          {!emailExpanded ? (
             <button
-              type="submit"
-              disabled={isSubmitting}
-              className="mt-2 rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              type="button"
+              onClick={() => setEmailExpanded(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
             >
-              {isSubmitting ? '처리 중...' : '로그인'}
+              <Mail size={16} />
+              이메일로 로그인
             </button>
-          </form>
-        )}
+          ) : (
+            <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+              <Field
+                id="email"
+                label="이메일"
+                type="email"
+                autoComplete="username webauthn"
+                value={email}
+                onChange={setEmail}
+                placeholder="you@example.com"
+                required
+              />
+              <Field
+                id="password"
+                label="비밀번호"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={setPassword}
+                placeholder="비밀번호를 입력해주세요"
+                minLength={6}
+                required
+              />
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="mt-2 rounded-xl bg-zinc-900 px-4 py-3 text-sm font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                {isSubmitting ? '처리 중...' : '로그인'}
+              </button>
+            </form>
+          )}
+        </div>
 
         <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
           아직 계정이 없으신가요?{' '}
