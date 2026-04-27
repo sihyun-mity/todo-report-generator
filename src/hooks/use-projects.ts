@@ -1,50 +1,27 @@
-import { useCallback, useState } from 'react';
-import type { Project, Task } from '@/types';
-import { createEmptyProject, createEmptyTask } from '@/utils';
+import type { Dispatch, SetStateAction } from 'react';
+import type { Project, ProjectsBucket, Task } from '@/types';
+import { useReportFormStore } from '@/stores';
 
-// 하나의 프로젝트 목록(today 또는 tomorrow)을 다루는 상태 훅
-// - report-form에서 today/tomorrow 각각에 대해 중복되던 add/remove/update 로직을 일원화
-export const useProjects = (initial?: ReadonlyArray<Project>) => {
-  const [projects, setProjects] = useState<Array<Project>>(() => (initial ? [...initial] : [createEmptyProject()]));
+// 보고 폼의 today/tomorrow 프로젝트 목록을 다루는 훅.
+// 내부 상태는 useReportFormStore(Zustand)에 보관되므로, 페이지 이동 후에도 작성 중 내용이 유지된다.
+export const useProjects = (bucket: ProjectsBucket) => {
+  const projects = useReportFormStore((s) => s[bucket]);
+  const setBucket = useReportFormStore((s) => s.setBucket);
+  const addProjectAction = useReportFormStore((s) => s.addProject);
+  const removeProjectAction = useReportFormStore((s) => s.removeProject);
+  const updateProjectNameAction = useReportFormStore((s) => s.updateProjectName);
+  const addTaskAction = useReportFormStore((s) => s.addTask);
+  const removeTaskAction = useReportFormStore((s) => s.removeTask);
+  const updateTaskAction = useReportFormStore((s) => s.updateTask);
 
-  const addProject = useCallback((id?: string) => {
-    // id가 전달되면 해당 id로 새 프로젝트를 만들어 상위에서 autoFocus 추적이 가능하도록 한다
-    const newProject: Project = id ? { ...createEmptyProject(), id } : createEmptyProject();
-    setProjects((prev) => [...prev, newProject]);
-  }, []);
-
-  const removeProject = useCallback((projectId: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
-  }, []);
-
-  const updateProjectName = useCallback((projectId: string, name: string) => {
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name } : p)));
-  }, []);
-
-  const addTask = useCallback((projectId: string, id?: string) => {
-    const newTask: Task = id ? { ...createEmptyTask(), id } : createEmptyTask();
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, tasks: [...p.tasks, newTask] } : p)));
-  }, []);
-
-  const removeTask = useCallback((projectId: string, taskId: string) => {
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== projectId) return p;
-        // 프로젝트당 최소 한 개의 태스크는 유지
-        if (p.tasks.length <= 1) return p;
-        return { ...p, tasks: p.tasks.filter((t) => t.id !== taskId) };
-      })
-    );
-  }, []);
-
-  const updateTask = useCallback((projectId: string, taskId: string, updates: Partial<Task>) => {
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== projectId) return p;
-        return { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)) };
-      })
-    );
-  }, []);
+  const setProjects: Dispatch<SetStateAction<Array<Project>>> = (updater) => setBucket(bucket, updater);
+  const addProject = (id?: string) => addProjectAction(bucket, id);
+  const removeProject = (projectId: string) => removeProjectAction(bucket, projectId);
+  const updateProjectName = (projectId: string, name: string) => updateProjectNameAction(bucket, projectId, name);
+  const addTask = (projectId: string, id?: string) => addTaskAction(bucket, projectId, id);
+  const removeTask = (projectId: string, taskId: string) => removeTaskAction(bucket, projectId, taskId);
+  const updateTask = (projectId: string, taskId: string, updates: Partial<Task>) =>
+    updateTaskAction(bucket, projectId, taskId, updates);
 
   return {
     projects,
