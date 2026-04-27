@@ -33,6 +33,7 @@ export default async function NewsDetailPage({ params }: PageProps<'/whats-new/[
     <main className="container mx-auto max-w-3xl px-4 py-10">
       <Link
         href="/whats-new"
+        transitionTypes={['nav-back']}
         className="inline-flex items-center gap-1 text-sm text-zinc-500 transition hover:text-zinc-700 dark:hover:text-zinc-300"
       >
         <ChevronLeft className="h-4 w-4" />

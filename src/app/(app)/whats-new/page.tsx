@@ -53,6 +53,7 @@ export default async function WhatsNewListPage() {
             <li key={item.id}>
               <Link
                 href={`/whats-new/${item.id}`}
+                transitionTypes={['nav-forward']}
                 className="block rounded-2xl border border-zinc-200 bg-white p-5 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
               >
                 <time className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">

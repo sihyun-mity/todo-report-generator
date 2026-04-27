@@ -64,6 +64,7 @@ function MenuLink({ href, icon, title, subtitle }: Readonly<MenuLinkProps>) {
     <li>
       <Link
         href={href}
+        transitionTypes={['nav-forward']}
         className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-5 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800/50"
       >
         <div className="rounded-lg bg-zinc-100 p-2 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{icon}</div>

@@ -12,6 +12,7 @@ export function SettingsSubHeader({ title, description }: Readonly<Props>) {
     <header className="mb-8">
       <Link
         href="/settings"
+        transitionTypes={['nav-back']}
         className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft size={12} />

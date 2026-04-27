@@ -3,6 +3,7 @@ import { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   experimental: {
     scrollRestoration: true,
+    viewTransition: true,
   },
   reactCompiler: true,
   images: {
