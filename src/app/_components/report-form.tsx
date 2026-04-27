@@ -34,6 +34,11 @@ const isEarlierDate = (month: string, day: string) => {
   return importMonth < currentMonth || (importMonth === currentMonth && importDay < currentDay);
 };
 
+const isSameAsToday = (month: string, day: string) => {
+  const now = new Date();
+  return parseInt(month, 10) === now.getMonth() + 1 && parseInt(day, 10) === now.getDate();
+};
+
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
 
@@ -102,12 +107,21 @@ export function ReportForm() {
     setIsImportDialogOpen(false);
   };
 
-  // 초기 로드 완료 후, 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 불러온다 (세션당 1회만).
+  // 초기 로드 완료 후 직전 보고서를 폼에 반영한다 (세션당 1회만).
+  // - 가장 최근 기록이 '오늘' 작성된 보고서라면 carry-over 없이 그대로 복원해 사용자가 이어서 편집할 수 있게 한다.
+  // - 그 외에는 직전 보고서의 '익일 예정' 내용을 금일 프로젝트로 가져온다.
   // 페이지를 이동했다 돌아와도 store에 hydrate 플래그가 남아 있어 작성 중인 내용을 덮어쓰지 않는다.
   useEffect(() => {
     if (!isClient || !isHistoryLoaded || hasHydratedFromHistory) return;
     markHydratedFromHistory();
     if (history.length === 0) return;
+    const latest = history[0];
+    if (latest && isSameAsToday(latest.month, latest.day)) {
+      setReportDate({ month: latest.month, day: latest.day });
+      today.setProjects(cloneProjects(latest.todayProjects));
+      tomorrow.setProjects(cloneProjects(latest.tomorrowProjects));
+      return;
+    }
     const lastValid = history.find((item) => item.tomorrowProjects.some(hasProjectContent));
     if (lastValid) {
       today.setProjects(cloneProjects(lastValid.tomorrowProjects));
