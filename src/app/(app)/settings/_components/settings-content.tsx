@@ -1,20 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, KeyRound } from 'lucide-react';
+import type { UserIdentity } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
-import { EmailForm, PasswordForm } from '.';
+import { EmailForm, OAuthProviders, PasswordForm } from '.';
 
 export function SettingsContent() {
   const [currentEmail, setCurrentEmail] = useState<string>('');
+  const [identities, setIdentities] = useState<ReadonlyArray<UserIdentity>>([]);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       setCurrentEmail(data.user?.email ?? '');
+      setIdentities(data.user?.identities ?? []);
     });
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const hasPassword = identities.some((i) => i.provider === 'email');
 
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6 lg:p-12">
@@ -24,7 +33,8 @@ export function SettingsContent() {
 
       <div className="flex flex-col gap-6">
         <EmailForm currentEmail={currentEmail} onUpdated={setCurrentEmail} />
-        <PasswordForm currentEmail={currentEmail} />
+        <PasswordForm currentEmail={currentEmail} hasPassword={hasPassword} onPasswordCreated={refresh} />
+        <OAuthProviders identities={identities} onChanged={refresh} />
 
         <Link
           href="/settings/passkeys"
