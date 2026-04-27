@@ -23,7 +23,11 @@ export function AppTopBar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const isGuest = useSyncExternalStore(subscribeNoop, getGuestSnapshot, getGuestServerSnapshot);
+
+  // 표시명: GitHub 연동 시 닉네임 우선, 그 외에는 이메일
+  const displayName = githubUsername ?? email;
 
   useEffect(() => {
     // 게스트 쿠키가 있으면 Supabase 호출을 건너뛴다 — stale 토큰으로 인한 refresh 오류 방지
@@ -31,8 +35,17 @@ export function AppTopBar() {
     const supabase = createClient();
     supabase.auth
       .getUser()
-      .then(({ data }) => setEmail(data.user?.email ?? null))
-      .catch(() => setEmail(null));
+      .then(({ data }) => {
+        const user = data.user;
+        setEmail(user?.email ?? null);
+        const githubIdentity = user?.identities?.find((i) => i.provider === 'github');
+        const userName = githubIdentity?.identity_data?.user_name;
+        setGithubUsername(typeof userName === 'string' ? userName : null);
+      })
+      .catch(() => {
+        setEmail(null);
+        setGithubUsername(null);
+      });
   }, [isGuest]);
 
   useOnClickOutside(menuRef, () => setIsOpen(false));
@@ -85,7 +98,7 @@ export function AppTopBar() {
               className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card/50 dark:text-zinc-300 dark:hover:bg-[#2c2e33]"
             >
               {isGuest ? <UserRound size={16} /> : <User size={16} />}
-              <span className="max-w-[160px] truncate">{email ?? (isGuest ? '게스트' : '계정')}</span>
+              <span className="max-w-[160px] truncate">{displayName ?? (isGuest ? '게스트' : '계정')}</span>
               <ChevronDown size={14} className={isOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
             </button>
 
@@ -153,7 +166,12 @@ export function AppTopBar() {
                       <div className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
                         로그인 계정
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-zinc-700 dark:text-zinc-200">{email ?? '-'}</div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-700 dark:text-zinc-200">
+                        {displayName ?? '-'}
+                      </div>
+                      {githubUsername && email && (
+                        <div className="mt-0.5 truncate text-[11px] text-zinc-500 dark:text-zinc-400">{email}</div>
+                      )}
                     </div>
                     <div className="border-b border-zinc-100 px-4 py-3 sm:hidden dark:border-zinc-800">
                       <div className="mb-2 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">테마</div>
