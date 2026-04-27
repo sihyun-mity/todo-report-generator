@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
+import { confirm } from '@/stores';
 import { SettingsSubHeader } from '.';
 
 type Passkey = {
@@ -119,8 +120,13 @@ export function PasskeysManager() {
 
   const handleDelete = async (pk: Passkey) => {
     const label = pk.device_name || defaultLabel(pk);
-    if (!window.confirm(`"${label}" 패스키를 삭제합니다. 삭제 후에는 이 패스키로 로그인할 수 없습니다.\n\n계속할까요?`))
-      return;
+    const ok = await confirm({
+      title: `"${label}" 패스키 삭제`,
+      description: '삭제 후에는 이 패스키로 로그인할 수 없습니다.\n계속할까요?',
+      confirmText: '삭제',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeletingId(pk.id);
     try {
       const res = await fetch(`/api/passkeys/${pk.id}`, { method: 'DELETE' });

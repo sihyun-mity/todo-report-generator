@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Suspense, ViewTransition } from 'react';
 import '@/styles/globals.css';
-import { MobileDetector, ThemeProvider, ToasterProvider, themeInitScript } from '@/components';
+import { ConfirmDialogHost, MobileDetector, ThemeProvider, ToasterProvider, themeInitScript } from '@/components';
 import { cn, staticMetadata } from '@/utils';
 import localFont from 'next/font/local';
 
@@ -54,6 +54,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         <ToasterProvider />
 
         <MobileDetector />
+
+        <ConfirmDialogHost />
 
         {/* For Portal Component */}
         <div id="next-app-portal" />
