@@ -62,11 +62,6 @@ export function OAuthProviders({ identities, onChanged }: Readonly<Props>) {
 
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-white">소셜 로그인 연동</h2>
-      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">
-        외부 계정을 연결하면 비밀번호 없이도 로그인할 수 있어요.
-      </p>
-
       <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950/50">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-zinc-900 p-2 text-white dark:bg-white dark:text-black">
