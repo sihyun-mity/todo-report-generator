@@ -3,7 +3,7 @@
 일일 업무 보고 양식을 빠르게 작성·복사·재사용할 수 있게 도와주는 웹앱.
 
 - **프레임워크**: Next.js 16 (App Router) + React 19 + React Compiler
-- **인증/DB**: Supabase (이메일·비밀번호 + WebAuthn 패스키)
+- **인증/DB**: Supabase (이메일·비밀번호 + GitHub OAuth + WebAuthn 패스키)
 - **상태/데이터**: Zustand · SWR
 - **스타일**: Tailwind CSS v4
 - **배포**: Vercel (리전 `icn1`)
@@ -77,7 +77,8 @@ src/
 ├── app/
 │   ├── (app)/            # 로그인/게스트가 접근하는 보호 영역 (홈, 설정, 새소식)
 │   ├── (auth)/           # /login, /signup
-│   ├── api/              # passkey, github, auth route handlers
+│   ├── auth/callback/    # OAuth code exchange route handler
+│   ├── api/              # passkey 관련 route handlers
 │   └── _components/      # 보고서 폼/프리뷰/캘린더 등
 ├── components/           # 공용 UI
 ├── lib/                  # supabase / webauthn / guest / news 외부 어댑터

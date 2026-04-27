@@ -35,13 +35,29 @@
 - 결과: "Success. No rows returned"
 
 ### 3. Authentication 설정
+
+> 위치 주의: "Confirm email", "Allow manual linking", "Allow new users to sign up", "Allow anonymous sign-ins"는 모두
+> **Authentication > Sign In / Providers** 페이지 상단의 **User Signups** 섹션에 함께 묶여 있다.
+> (옛 UI에서 "Providers > Email" 안에 있던 항목들이 이쪽으로 옮겨짐)
+
 - Email provider 활성화 (Supabase 기본값)
+- **Confirm email = ON** (User Signups 섹션, 기본값 유지)
+  - 이메일/비밀번호 가입에만 적용. GitHub OAuth로 가입하면 GitHub가 이메일을 verified로 넘겨주므로 Supabase가 `email_confirmed_at`을 자동으로 채운다.
+- **Allow manual linking = ON** (User Signups 섹션) — 설정 페이지의 GitHub 연동/해제(`supabase.auth.linkIdentity` / `unlinkIdentity`)에 필요
+- GitHub provider 활성화 — Client ID / Client Secret 등록
+  - GitHub OAuth App 등록 위치: `https://github.com/settings/applications/new`
+  - Application name: `Todo Report Generator`
+  - Homepage URL: `https://todo-report-generator.vercel.app`
+  - Authorization callback URL: `https://atyknqnfijbfqqineedg.supabase.co/auth/v1/callback`
+  - 발급받은 Client ID / Secret을 Supabase Dashboard > Authentication > Sign In / Providers > GitHub 패널에 입력하고 "GitHub enabled" 토글 ON
 - URL Configuration:
   - **Site URL**: `https://todo-report-generator.vercel.app`
-  - **Redirect URLs**:
+  - **Redirect URLs** (allowlist):
     - `https://todo-report-generator.vercel.app/**`
     - `http://localhost:3000/**`
-- "Confirm email" 옵션은 테스트 중 OFF 권장 (운영 안정화 후 ON으로 전환)
+    - `https://todo-report-generator.vercel.app/auth/callback` (와일드카드로도 매칭되지만 명시 등록)
+    - `http://localhost:3000/auth/callback`
+  - 앱 측 OAuth 콜백은 `/auth/callback`(`src/app/auth/callback/route.ts`)이 처리한다
 
 ### 4. Vercel 환경변수 등록
 - Environment: **Production** (Preview/Development 미적용)
@@ -82,7 +98,7 @@
 - **데이터베이스 비밀번호**는 Cowork가 기록하지 않음. 사용자 본인 보관분만 유효.
 - **anon key**는 공개용 키지만 문서에 평문으로 남기지 않았음. Supabase 대시보드에서 그때그때 복사해서 쓰기.
 - **service_role key**는 절대 클라이언트 코드나 `NEXT_PUBLIC_*` 변수에 넣지 말 것. 서버 전용 시크릿 작업이 생기면 별도 `SUPABASE_SERVICE_ROLE_KEY`로 관리.
-- Auth "Confirm email"은 현재 정책이 기본값대로임. 테스트 편의를 위해 OFF 상태가 맞는지 한 번 더 확인하고, 운영 안정화 후 ON 전환.
+- Auth "Confirm email"은 ON 상태(기본값) 유지. 이메일/비밀번호 가입에만 영향이 있고, GitHub OAuth 가입자는 영향 없음.
 - 기존 localStorage 데이터는 "가져오기" 버튼으로 이전한 뒤에도 몇 주간 남겨두기 (롤백 대비).
 
 ## 유용한 링크
@@ -90,5 +106,6 @@
 - Supabase 프로젝트 대시보드: https://supabase.com/dashboard/project/atyknqnfijbfqqineedg
 - SQL Editor: https://supabase.com/dashboard/project/atyknqnfijbfqqineedg/sql/new
 - API Keys (Legacy): https://supabase.com/dashboard/project/atyknqnfijbfqqineedg/settings/api-keys/legacy
+- Auth Sign In / Providers (Confirm email · Manual linking · 각 Provider): https://supabase.com/dashboard/project/atyknqnfijbfqqineedg/auth/providers
 - Auth URL Configuration: https://supabase.com/dashboard/project/atyknqnfijbfqqineedg/auth/url-configuration
 - Vercel Env Vars: https://vercel.com/sihyuns-projects-a914edee/todo-report-generator/settings/environment-variables
