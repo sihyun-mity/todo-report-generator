@@ -39,8 +39,8 @@ const collectRecordMonths = (dateKeys: ReadonlyArray<string>): Array<string> => 
 };
 
 // 카드 모양 placeholder — 실제 항목과 동일한 외곽/패딩/행 높이를 유지해 레이아웃 점프를 막는다.
-// 실제 카드 구조 매칭:
-//   p-3 + mb-1 + 상단 행 (~22px, hover 액션 버튼 자리 포함) + text-[11px] 2줄 + mt-2 + text-[10px] timestamp
+// 실제 카드 측정값(브라우저 107.33px) 매칭:
+//   p-3 + mb-1 + 22px 상단 행(hover 액션 버튼 자리 포함) + text-[11px] 2줄(33px) + mt-2.5 + text-[10px] timestamp(15px)
 function HistoryCardSkeleton() {
   return (
     <div className="flex animate-pulse flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-[#25262b]/20">
@@ -49,7 +49,7 @@ function HistoryCardSkeleton() {
       </div>
       <div className="h-3.5 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
       <div className="mt-1.5 h-3.5 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="mt-2 h-3 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="mt-2.5 h-3 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
     </div>
   );
 }
