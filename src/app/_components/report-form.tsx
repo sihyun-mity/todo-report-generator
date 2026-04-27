@@ -65,7 +65,11 @@ export function ReportForm() {
     history,
     isLoaded: isHistoryLoaded,
     hasLocalBackup,
+    mode: historyMode,
     userId,
+    allReportDates,
+    loadingMonths,
+    loadMonth,
     addHistory,
     deleteHistory,
     importFromLocalStorage,
@@ -85,7 +89,8 @@ export function ReportForm() {
   }, []);
 
   // 조건: 로컬에는 기록이 있지만 DB 계정에는 없음
-  const canImportLocal = isHistoryLoaded && history.length === 0 && hasLocalBackup;
+  // (로그인 사용자는 페이지네이션으로 history가 비어 보일 수 있어 allReportDates로 판정)
+  const canImportLocal = isHistoryLoaded && allReportDates.length === 0 && hasLocalBackup;
 
   // 최초 접속 1회 안내 dialog: 위 조건 + 해당 유저 대상 안내를 본 적이 없을 때
   useEffect(() => {
@@ -418,13 +423,16 @@ export function ReportForm() {
           onReset={handleReset}
         />
 
-        {history.length > 0 && isClient && (
-          <ReportHistory
-            history={history}
-            loadHistoryAction={handleLoadHistory}
-            deleteHistoryAction={handleDeleteHistory}
-          />
-        )}
+        <ReportHistory
+          history={history}
+          allDateKeys={allReportDates}
+          mode={historyMode}
+          isLoaded={isHistoryLoaded}
+          loadingMonths={loadingMonths}
+          loadMonth={loadMonth}
+          loadHistoryAction={handleLoadHistory}
+          deleteHistoryAction={handleDeleteHistory}
+        />
       </div>
 
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />

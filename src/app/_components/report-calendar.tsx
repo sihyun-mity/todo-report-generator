@@ -2,14 +2,18 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
+import { useIsClient } from 'usehooks-ts';
 import type { ReportHistoryItem } from '@/types';
 import { cn } from '@/utils';
 
 type Props = {
-  history: ReadonlyArray<ReportHistoryItem>;
+  // 'YYYY-MM-DD' 도트 표시용 — 페이지네이션 미적재 월의 항목도 포함되어야 한다
+  dateKeys: ReadonlyArray<string>;
   selectedDateKey: string | null;
   viewYear: number;
   viewMonth: number;
+  // false면 헤더 라벨 자리에 스켈레톤을 보여주고 월 이동 버튼을 비활성화한다 (SSR/초기 placeholder 단계 대응)
+  isReady: boolean;
   onChangeMonth: (year: number, month: number) => void;
   onSelectDate: (dateKey: string | null) => void;
 };
@@ -25,18 +29,15 @@ export const getItemDateKey = (item: ReportHistoryItem) => {
 };
 
 export function ReportCalendar({
-  history,
+  dateKeys,
   selectedDateKey,
   viewYear,
   viewMonth,
+  isReady,
   onChangeMonth,
   onSelectDate,
 }: Readonly<Props>) {
-  const datesWithRecords = useMemo(() => {
-    const set = new Set<string>();
-    for (const item of history) set.add(getItemDateKey(item));
-    return set;
-  }, [history]);
+  const datesWithRecords = useMemo(() => new Set<string>(dateKeys), [dateKeys]);
 
   const cells = useMemo(() => {
     const first = new Date(viewYear, viewMonth - 1, 1);
@@ -49,8 +50,13 @@ export function ReportCalendar({
     return result;
   }, [viewYear, viewMonth]);
 
-  const today = new Date();
-  const todayKey = toDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  // hydration 안전: 서버에서는 today 강조를 표시하지 않고, 클라이언트 마운트 후 보정한다.
+  const isClient = useIsClient();
+  const todayKey = useMemo(() => {
+    if (!isClient) return null;
+    const now = new Date();
+    return toDateKey(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  }, [isClient]);
 
   const handlePrev = () => {
     if (viewMonth === 1) onChangeMonth(viewYear - 1, 12);
@@ -67,18 +73,27 @@ export function ReportCalendar({
         <button
           type="button"
           onClick={handlePrev}
-          className="rounded p-1 text-zinc-500 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+          disabled={!isReady}
+          className="rounded p-1 text-zinc-500 transition-colors hover:bg-white hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500 dark:hover:bg-zinc-800"
           aria-label="이전 달"
         >
           <ChevronLeft size={14} />
         </button>
-        <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-          {viewYear}년 {viewMonth}월
-        </span>
+        {isReady ? (
+          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+            {viewYear}년 {viewMonth}월
+          </span>
+        ) : (
+          <span
+            className="block h-4 w-20 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700"
+            aria-label="달력 로딩 중"
+          />
+        )}
         <button
           type="button"
           onClick={handleNext}
-          className="rounded p-1 text-zinc-500 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+          disabled={!isReady}
+          className="rounded p-1 text-zinc-500 transition-colors hover:bg-white hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500 dark:hover:bg-zinc-800"
           aria-label="다음 달"
         >
           <ChevronRight size={14} />
