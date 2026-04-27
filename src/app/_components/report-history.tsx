@@ -2,28 +2,99 @@
 
 import { ChevronLeft, ChevronRight, Copy, History, RotateCcw, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { MouseEvent, useMemo, useState } from 'react';
-import type { ReportHistoryItem } from '@/types';
+import { MouseEvent, useEffect, useMemo, useState } from 'react';
+import { useIsClient } from 'usehooks-ts';
+import type { ReportHistoryItem, ReportHistoryMode } from '@/types';
+import { MAX_HISTORY_ITEMS } from '@/constants';
 import { ReportCalendar, getItemDateKey } from '.';
+import { getChunkedArray } from '@/utils';
 
 type Props = {
   history: ReadonlyArray<ReportHistoryItem>;
+  allDateKeys: ReadonlyArray<string>;
+  mode: ReportHistoryMode;
+  isLoaded: boolean;
+  loadingMonths: ReadonlySet<string>;
+  loadMonth: (year: number, month: number) => Promise<void>;
   loadHistoryAction: (item: ReportHistoryItem, e: MouseEvent<HTMLDivElement | HTMLButtonElement>) => void;
   deleteHistoryAction: (id: string, e: MouseEvent<HTMLButtonElement>) => void;
 };
 
 const ITEMS_PER_PAGE = 3;
+const SKELETON_COUNT = 3;
 
-export function ReportHistory({ history, loadHistoryAction, deleteHistoryAction }: Readonly<Props>) {
-  const [currentPage, setCurrentPage] = useState(1);
+const monthKeyOf = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
+
+// 기록이 존재하는 월 목록을 내림차순으로 반환 ('YYYY-MM')
+const collectRecordMonths = (dateKeys: ReadonlyArray<string>): Array<string> => {
+  const seen = new Set<string>();
+  const result: Array<string> = [];
+  for (const d of dateKeys) {
+    const mk = d.slice(0, 7);
+    if (seen.has(mk)) continue;
+    seen.add(mk);
+    result.push(mk);
+  }
+  return result;
+};
+
+// 카드 모양 placeholder — 실제 항목과 동일한 외곽/패딩/행 높이를 유지해 레이아웃 점프를 막는다.
+// 실제 카드 구조 매칭:
+//   p-3 + mb-1 + 상단 행 (~22px, hover 액션 버튼 자리 포함) + text-[11px] 2줄 + mt-2 + text-[10px] timestamp
+function HistoryCardSkeleton() {
+  return (
+    <div className="flex animate-pulse flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-[#25262b]/20">
+      <div className="mb-1 flex h-[22px] items-center">
+        <div className="h-3.5 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+      </div>
+      <div className="h-3.5 w-full rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="mt-1.5 h-3.5 w-3/4 rounded bg-zinc-200 dark:bg-zinc-700" />
+      <div className="mt-2 h-3 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
+    </div>
+  );
+}
+
+export function ReportHistory({
+  history,
+  allDateKeys,
+  mode,
+  isLoaded,
+  loadingMonths,
+  loadMonth,
+  loadHistoryAction,
+  deleteHistoryAction,
+}: Readonly<Props>) {
+  const isClient = useIsClient();
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
-  const initialView = useMemo(() => {
-    const base = history[0] ? new Date(history[0].timestamp) : new Date();
-    return { year: base.getFullYear(), month: base.getMonth() + 1 };
-  }, [history]);
-  const [viewYear, setViewYear] = useState(initialView.year);
-  const [viewMonth, setViewMonth] = useState(initialView.month);
+  const recordMonths = useMemo(() => collectRecordMonths(allDateKeys), [allDateKeys]);
+
+  // 초기 캘린더 뷰는 hydration 안전을 위해 결정적인 placeholder로 둔다.
+  // syncStage: 'init'(SSR/초기) → ('today' | 'records') → 'records'(데이터 수신 후 고정)
+  const [syncStage, setSyncStage] = useState<'init' | 'today' | 'records'>('init');
+  const [viewYear, setViewYear] = useState(2026);
+  const [viewMonth, setViewMonth] = useState(1);
+
+  // 렌더 중 1회성 보정 (effect 대신 권장 패턴): 데이터 도착 시 latest 기록월로 점프,
+  // 아직 데이터 없고 클라이언트면 today로 임시 보정 — 추후 데이터가 오면 latest로 한 번 더 갱신.
+  if (recordMonths.length > 0 && syncStage !== 'records') {
+    const [y, m] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
+    setViewYear(y);
+    setViewMonth(m);
+    setSyncStage('records');
+  } else if (recordMonths.length === 0 && syncStage === 'init' && isClient) {
+    const now = new Date();
+    setViewYear(now.getFullYear());
+    setViewMonth(now.getMonth() + 1);
+    setSyncStage('today');
+  }
+
+  // 캘린더가 표시 중인 월의 데이터를 자동 로드 (로그인 사용자: lazy fetch).
+  // 초기 placeholder 월(2026-01)은 의미 없는 호출이 되므로 syncStage 'init'에서는 건너뛴다.
+  useEffect(() => {
+    if (syncStage === 'init') return;
+    void loadMonth(viewYear, viewMonth);
+  }, [syncStage, viewYear, viewMonth, loadMonth]);
 
   const itemsByDateKey = useMemo(() => {
     const map = new Map<string, ReportHistoryItem>();
@@ -37,21 +108,49 @@ export function ReportHistory({ history, loadHistoryAction, deleteHistoryAction 
 
   const selectedItem = selectedDateKey ? (itemsByDateKey.get(selectedDateKey) ?? null) : null;
 
-  const totalPages = Math.ceil(history.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const currentHistory = history.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  // 현재 뷰 월의 기록만 노출 (Supabase order desc 결과 그대로)
+  const currentMonthKey = monthKeyOf(viewYear, viewMonth);
+  const currentMonthItems = useMemo(
+    () => history.filter((item) => getItemDateKey(item).slice(0, 7) === currentMonthKey),
+    [history, currentMonthKey]
+  );
 
-  const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
-  const handleNextPage = () => setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  // 3개씩 로컬 페이지 (서버에서 받아온 한 달 안에서)
+  const pages = useMemo(
+    () => getChunkedArray<Array<ReportHistoryItem>>({ data: currentMonthItems, size: ITEMS_PER_PAGE }),
+    [currentMonthItems]
+  );
+  const totalPages = pages.length;
+
+  // 월이 바뀌면 로컬 페이지를 1로 초기화 — render 중 prop 변화 감지 패턴 (effect setState 대신)
+  const [localPage, setLocalPage] = useState(1);
+  const [pageMonthAnchor, setPageMonthAnchor] = useState(currentMonthKey);
+  if (pageMonthAnchor !== currentMonthKey) {
+    setPageMonthAnchor(currentMonthKey);
+    setLocalPage(1);
+  }
+  const safeLocalPage = totalPages === 0 ? 1 : Math.min(localPage, totalPages);
+  const currentPageItems = pages[safeLocalPage - 1] ?? [];
+
+  // 초기 데이터 적재 중이거나 현재 월이 로딩 중이면 스켈레톤 노출
+  const isShowingSkeleton = !isLoaded || loadingMonths.has(currentMonthKey);
+  const monthHasRecords = useMemo(
+    () => allDateKeys.some((d) => d.slice(0, 7) === currentMonthKey),
+    [allDateKeys, currentMonthKey]
+  );
 
   const handleChangeMonth = (year: number, month: number) => {
     setViewYear(year);
     setViewMonth(month);
+    setSelectedDateKey(null);
   };
 
   const handleSelectDate = (key: string | null) => {
     setSelectedDateKey(key);
   };
+
+  const handlePrevPage = () => setLocalPage((p) => Math.max(p - 1, 1));
+  const handleNextPage = () => setLocalPage((p) => Math.min(p + 1, totalPages));
 
   const handleCopySelected = () => {
     if (!selectedItem) return;
@@ -66,11 +165,19 @@ export function ReportHistory({ history, loadHistoryAction, deleteHistoryAction 
         <h2 className="text-sm font-semibold tracking-wider text-zinc-500 uppercase">이전 기록</h2>
       </div>
 
+      {mode === 'guest' && (
+        <p className="mb-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+          게스트 모드에서는 최대 {MAX_HISTORY_ITEMS}개까지만 브라우저에 보관되며, 그 이상은 가장 오래된 기록부터
+          삭제됩니다.
+        </p>
+      )}
+
       <ReportCalendar
-        history={history}
+        dateKeys={allDateKeys}
         selectedDateKey={selectedDateKey}
         viewYear={viewYear}
         viewMonth={viewMonth}
+        isReady={syncStage !== 'init'}
         onChangeMonth={handleChangeMonth}
         onSelectDate={handleSelectDate}
       />
@@ -127,68 +234,76 @@ export function ReportHistory({ history, loadHistoryAction, deleteHistoryAction 
       ) : (
         <>
           <div className="mt-4 flex flex-col gap-3">
-            {currentHistory.map((item) => (
-              <div
-                key={item.id}
-                onClick={(e) => loadHistoryAction(item, e)}
-                className="group relative flex cursor-pointer flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 transition-all hover:border-blue-200 hover:bg-blue-50 dark:border-zinc-800 dark:bg-[#25262b]/20 dark:hover:border-blue-900/50 dark:hover:bg-blue-900/10"
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                    {item.month}월 {item.day}일 보고서
-                  </span>
-                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(item.content);
-                        toast.success('내용이 클립보드에 복사되었습니다.');
-                      }}
-                      className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
-                      title="다시 복사"
-                    >
-                      <Copy size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => loadHistoryAction(item, e)}
-                      className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
-                      title="불러오기"
-                    >
-                      <RotateCcw size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => deleteHistoryAction(item.id, e)}
-                      className="rounded p-1 text-zinc-400 hover:bg-white hover:text-red-600 dark:hover:bg-zinc-800"
-                      title="삭제"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+            {isShowingSkeleton && currentPageItems.length === 0 ? (
+              Array.from({ length: SKELETON_COUNT }).map((_, idx) => <HistoryCardSkeleton key={`sk-${idx}`} />)
+            ) : currentMonthItems.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-zinc-200 py-6 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:text-zinc-500">
+                {monthHasRecords ? '기록을 불러오는 중입니다.' : '이 달에는 기록이 없습니다.'}
+              </p>
+            ) : (
+              currentPageItems.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={(e) => loadHistoryAction(item, e)}
+                  className="group relative flex cursor-pointer flex-col rounded-lg border border-zinc-100 bg-zinc-50 p-3 transition-all hover:border-blue-200 hover:bg-blue-50 dark:border-zinc-800 dark:bg-[#25262b]/20 dark:hover:border-blue-900/50 dark:hover:bg-blue-900/10"
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                      {item.month}월 {item.day}일 보고서
+                    </span>
+                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(item.content);
+                          toast.success('내용이 클립보드에 복사되었습니다.');
+                        }}
+                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+                        title="다시 복사"
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => loadHistoryAction(item, e)}
+                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+                        title="불러오기"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => deleteHistoryAction(item.id, e)}
+                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-red-600 dark:hover:bg-zinc-800"
+                        title="삭제"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
+                  <p className="line-clamp-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    {item.content.split('\n').slice(2).join(' ').trim()}
+                  </p>
+                  <span className="mt-2 text-[10px] text-zinc-400">{new Date(item.timestamp).toLocaleString()}</span>
                 </div>
-                <p className="line-clamp-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {item.content.split('\n').slice(2).join(' ').trim()}
-                </p>
-                <span className="mt-2 text-[10px] text-zinc-400">{new Date(item.timestamp).toLocaleString()}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {totalPages > 1 && (
             <div className="mt-6 flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <button
                 onClick={handlePrevPage}
-                disabled={currentPage === 1}
+                disabled={safeLocalPage === 1}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
               >
                 <ChevronLeft size={14} />
                 이전
               </button>
               <span className="text-xs text-zinc-400">
-                {currentPage} / {totalPages}
+                {safeLocalPage} / {totalPages}
               </span>
               <button
                 onClick={handleNextPage}
-                disabled={currentPage === totalPages}
+                disabled={safeLocalPage === totalPages}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-300 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800 dark:disabled:text-zinc-600"
               >
                 다음

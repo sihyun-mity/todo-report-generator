@@ -72,6 +72,23 @@ Next.js 기본 파일명이 아니다. 동작:
 - 동적 title은 `generateMetadata` 내부에서 동일 utility를 호출 (`src/app/(app)/whats-new/[id]/page.tsx` 참고).
 - 새 page를 추가하면서 `Metadata` 객체를 직접 만들지 말고, 항상 이 utility를 거친다.
 
+### 보고서 기록 (Report History)
+
+`src/stores/use-report-history-store.ts`는 모드별로 다른 적재 전략을 쓴다.
+
+- **로그인 사용자**: 월 단위 페이지네이션. `initialize()`에서 ① `report_date` 목록만 lightweight으로 fetch(`allReportDates`), ② 가장 최근 월의 본문을 함께 fetch한 뒤에야 `isLoaded: true`로 set한다. 다른 월은 `loadMonth(year, month)`로 lazy 적재 후 `loadedMonths`에 기록. 동시 호출은 모듈 레벨 `monthFetchPromises` Map으로 합쳐진다. 클라이언트 정렬은 하지 않고 Supabase `.order('report_date', desc)` 결과를 그대로 신뢰한다.
+- **게스트**: localStorage에서 한 번에 로드. `MAX_HISTORY_ITEMS` 제한이 있고 `sortGuestByReportDateDesc`로 클라이언트 정렬한다.
+- **`addHistory`**: 같은 날짜의 기존 본문과 일치하면 I/O를 건너뛴다(복사 연타 시 무의미한 쓰기 방지). 사용자 모드에서는 upsert 후 해당 월을 직접 refetch — `loadingMonths`를 표시하지 않아 사용자 액션 직후 스켈레톤 깜빡임이 없다.
+
+### Hydration-safe 패턴 (보고서 기록 컴포넌트)
+
+`report-history.tsx` / `report-calendar.tsx`는 SSR 시점에서 `new Date()`로 인한 hydration mismatch를 회피해야 한다.
+
+- **`syncStage` 상태머신** (`'init' → 'today' | 'records' → 'records'`): SSR/초기 렌더에서는 결정적 placeholder(`viewYear=2026, viewMonth=1`)로 시작하고, 클라이언트 마운트 후 렌더 중 setState로 today 또는 latest 기록월로 보정한다. **effect 안에서 setState하지 않는다** — React 19 `react-hooks/set-state-in-effect` 룰을 따라 렌더 본문에서 if문으로 1회성 보정한다.
+- **prop 변화로 state 리셋**: 월이 바뀔 때 `localPage`를 1로 되돌리는 등은 `pageMonthAnchor` 같은 anchor state + 렌더 중 비교로 처리 (effect 사용 X).
+- **클라이언트 전용 값**: `useIsClient()` + `useMemo`로 SSR에서는 null로 두고 마운트 후 채우는 방식. 캘린더 today 강조가 이 패턴을 사용한다.
+- **로딩 중 레이아웃 유지**: `isLoaded` / `loadingMonths` / `syncStage`로 스켈레톤(헤더 라벨, 카드)을 렌더해 컴포넌트가 비어 보이지 않도록 한다. 캘린더 헤더는 `isReady` prop으로 placeholder 단계에서 라벨을 스켈레톤으로 가리고 chevron을 비활성화한다. 카드 스켈레톤(`HistoryCardSkeleton`)은 실제 카드의 `p-3 + mb-1 + 22px 상단 행 + text-[11px] 2줄 + mt-2 + text-[10px] timestamp` 구조를 그대로 따라가 레이아웃 점프를 막는다.
+
 ### View Transitions
 
 페이지 전환 애니메이션은 React 19 `<ViewTransition>` + Next.js 16 `experimental.viewTransition: true` 조합으로 처리한다.
