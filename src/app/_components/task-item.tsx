@@ -1,32 +1,48 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { Task } from '@/types';
 import { cn } from '@/utils';
 import { useOnClickOutside } from '@/hooks';
+
+export type TaskFocusField = 'content' | 'progress';
 
 type TaskItemProps = {
   task: Task;
   onUpdate: (updates: Partial<Task>) => void;
   onRemove: () => void;
   canRemove: boolean;
-  autoFocus?: boolean;
+  onContentEnter?: () => void;
+  onProgressEnter?: () => void;
+  focusField?: TaskFocusField | null;
+  focusNonce?: number;
 };
 
 const PRESETS: ReadonlyArray<number> = [20, 40, 60, 80, 100];
 
-export const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: Readonly<TaskItemProps>) => {
+// 한글 IME 조합 중 Enter는 조합 확정용이므로 우리 핸들러를 트리거하지 않는다.
+const isCompositionEnter = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
+
+export const TaskItem = ({
+  task,
+  onUpdate,
+  onRemove,
+  canRemove,
+  onContentEnter,
+  onProgressEnter,
+  focusField,
+  focusNonce,
+}: Readonly<TaskItemProps>) => {
   const contentRef = useRef<HTMLInputElement>(null);
   const progressInputRef = useRef<HTMLInputElement>(null);
   const progressGroupRef = useRef<HTMLDivElement>(null);
   const [isPresetOpen, setIsPresetOpen] = useState(false);
 
   useEffect(() => {
-    if (autoFocus && contentRef.current) {
-      contentRef.current.focus();
-    }
-  }, [autoFocus]);
+    if (focusField === 'content') contentRef.current?.focus();
+    else if (focusField === 'progress') progressInputRef.current?.focus();
+  }, [focusField, focusNonce]);
 
   // 진행률 input + 빠른 선택 팝업을 하나의 그룹으로 보고, 그룹 바깥 클릭 시에만 팝업을 닫는다.
   // input.onBlur로 닫으면 팝업 버튼 클릭이 blur로 먼저 인식돼 클릭 자체가 무시되므로 useOnClickOutside를 사용한다.
@@ -38,6 +54,18 @@ export const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: Rea
     progressInputRef.current?.focus();
   };
 
+  const handleContentKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || isCompositionEnter(e)) return;
+    e.preventDefault();
+    onContentEnter?.();
+  };
+
+  const handleProgressKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || isCompositionEnter(e)) return;
+    e.preventDefault();
+    onProgressEnter?.();
+  };
+
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
       <span className="shrink-0 text-zinc-400">-</span>
@@ -46,18 +74,21 @@ export const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: Rea
         type="text"
         placeholder="작업 내용"
         value={task.content}
+        enterKeyHint="next"
         onChange={(e) => onUpdate({ content: e.target.value })}
         onBlur={(e) => onUpdate({ content: e.target.value.trim() })}
+        onKeyDown={handleContentKeyDown}
         className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
       />
       <div ref={progressGroupRef} className="relative shrink-0">
         <input
           ref={progressInputRef}
-          type="number"
+          // type=number는 iOS 숫자 키패드에 Return 키가 없어 가상 키보드에서 Enter 동작이 막힌다.
+          // type=text + inputMode=numeric으로 숫자 키패드를 띄우면서 Return 키도 노출시킨다.
+          type="text"
           inputMode="numeric"
           pattern="[0-9]*"
-          min="0"
-          max="100"
+          enterKeyHint="next"
           value={task.progress}
           onFocus={() => setIsPresetOpen(true)}
           onBlur={(e) => {
@@ -72,10 +103,10 @@ export const TaskItem = ({ task, onUpdate, onRemove, canRemove, autoFocus }: Rea
             const next = Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed));
             onUpdate({ progress: next });
           }}
+          onKeyDown={handleProgressKeyDown}
           aria-haspopup="menu"
           title="포커스하면 진행률 빠른 선택이 표시돼요"
-          // type=number의 브라우저 기본 spinner 화살표 제거: webkit pseudo와 firefox appearance 둘 다 처리.
-          className="w-14 [appearance:textfield] rounded-md border border-zinc-200 bg-transparent py-1.5 pr-5 pl-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-20 sm:pr-6 sm:pl-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-14 rounded-md border border-zinc-200 bg-transparent py-1.5 pr-5 pl-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-20 sm:pr-6 sm:pl-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
         />
         <span
           aria-hidden="true"
