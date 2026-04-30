@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .bg { fill: #171717; }
+    .fg-fill { fill: #ffffff; }
+    .fg-stroke { stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #ffffff; }
+      .fg-fill { fill: #171717; }
+      .fg-stroke { stroke: #171717; }
+    }
+  </style>
+  <rect class="bg" width="64" height="64" rx="14"/>
+  <path class="fg-stroke" d="m16 32 7 7 14-16" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect class="fg-fill" x="40" y="22" width="12" height="4" rx="2"/>
+  <rect class="fg-fill" x="40" y="32" width="12" height="4" rx="2"/>
+  <rect class="fg-fill" x="40" y="42" width="12" height="4" rx="2" opacity="0.55"/>
+</svg>
