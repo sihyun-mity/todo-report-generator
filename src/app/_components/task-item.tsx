@@ -123,6 +123,9 @@ export const TaskItem = ({
               <button
                 key={value}
                 type="button"
+                // 빠른 선택은 마우스 전용 보조 UI다. tab 순서에 끼면 진행률 input에서 Tab을 눌렀을 때
+                // 포커스가 다음 컨트롤이 아닌 preset 버튼으로 이동해 팝업이 안 닫히는 것처럼 보인다.
+                tabIndex={-1}
                 // input.onBlur가 선행되지 않도록 mousedown에서 default를 막아 input이 포커스를 잃지 않게 한다
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handlePickPreset(value)}
