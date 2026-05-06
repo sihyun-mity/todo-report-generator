@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Trash2 } from 'lucide-react';
+import { GripVertical, Trash2 } from 'lucide-react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Task } from '@/types';
 import { cn } from '@/utils';
 import { useOnClickOutside } from '@/hooks';
@@ -39,6 +41,15 @@ export const TaskItem = ({
   const progressGroupRef = useRef<HTMLDivElement>(null);
   const [isPresetOpen, setIsPresetOpen] = useState(false);
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    // 드래그 중인 행은 다른 행 위에 떠 있는 효과
+    zIndex: isDragging ? 10 : undefined,
+  };
+
   useEffect(() => {
     if (focusField === 'content') contentRef.current?.focus();
     else if (focusField === 'progress') progressInputRef.current?.focus();
@@ -67,8 +78,17 @@ export const TaskItem = ({
   };
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
-      <span className="shrink-0 text-zinc-400">-</span>
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1 sm:gap-1.5">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="작업 순서 변경"
+        title="드래그해서 순서 변경"
+        className="shrink-0 cursor-grab touch-none rounded-md p-1 text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+      >
+        <GripVertical size={14} />
+      </button>
       <input
         ref={contentRef}
         type="text"
