@@ -62,6 +62,34 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
       }),
     })),
 
+  reorderProjects: (bucket, fromId, toId) =>
+    set((state) => {
+      if (fromId === toId) return state;
+      const list = state[bucket];
+      const fromIndex = list.findIndex((p) => p.id === fromId);
+      const toIndex = list.findIndex((p) => p.id === toId);
+      if (fromIndex === -1 || toIndex === -1) return state;
+      const next = [...list];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { [bucket]: next };
+    }),
+
+  reorderTasks: (bucket, projectId, fromId, toId) =>
+    set((state) => {
+      if (fromId === toId) return state;
+      const list = state[bucket];
+      const targetProject = list.find((p) => p.id === projectId);
+      if (!targetProject) return state;
+      const fromIndex = targetProject.tasks.findIndex((t) => t.id === fromId);
+      const toIndex = targetProject.tasks.findIndex((t) => t.id === toId);
+      if (fromIndex === -1 || toIndex === -1) return state;
+      const nextTasks = [...targetProject.tasks];
+      const [moved] = nextTasks.splice(fromIndex, 1);
+      nextTasks.splice(toIndex, 0, moved);
+      return { [bucket]: list.map((p) => (p.id === projectId ? { ...p, tasks: nextTasks } : p)) };
+    }),
+
   markHydratedFromHistory: () => set({ hasHydratedFromHistory: true }),
 
   resetForm: () =>
