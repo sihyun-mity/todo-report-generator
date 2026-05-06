@@ -9,9 +9,11 @@ import {
   ImportModal,
   MobileCopyBar,
   ProjectList,
+  ProjectListSkeleton,
   ReportHeader,
   ReportHistory,
   ReportPreview,
+  ReportPreviewSkeleton,
   getItemDateKey,
 } from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
@@ -251,6 +253,12 @@ export function ReportForm() {
   const isCopyDisabled =
     !hasAnyData || !areAllAttemptedProjectsValid(today.projects) || !areAllAttemptedProjectsValid(tomorrow.projects);
 
+  // 서버/로컬 스토리지에서 폼 채울 정보를 불러오는 동안에는 빈 폼 대신 skeleton을 보여준다.
+  // - SSR/초기 마운트: isClient=false → skeleton
+  // - 히스토리 store 초기화 중: isHistoryLoaded=false → skeleton
+  // - hydration 로직(오늘 기록 복원 / 익일 carry-over) 진행 중: hasHydratedFromHistory=false → skeleton
+  const isFormReady = isClient && isHistoryLoaded && hasHydratedFromHistory;
+
   // 프로젝트/작업 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
   // 토스트가 유지되는 동안(UNDO_TOAST_DURATION_MS) 사용자가 원래 위치로 되돌릴 수 있다.
   const makeRemoveHandlers = (bucket: UseProjectsReturn, label: '금일' | '익일') => ({
@@ -469,46 +477,59 @@ export function ReportForm() {
           onImportLocal={canImportLocal ? handleImportLocal : undefined}
         />
 
-        <ProjectList
-          title="금일 업무 진행 현황"
-          accent="today"
-          projects={today.projects}
-          onAddProject={today.addProject}
-          onRemoveProject={todayRemove.removeProject}
-          onUpdateProjectName={today.updateProjectName}
-          onAddTask={today.addTask}
-          onUpdateTask={today.updateTask}
-          onRemoveTask={todayRemove.removeTask}
-          onReorderProjects={today.reorderProjects}
-          onReorderTasks={today.reorderTasks}
-        />
-        <ProjectList
-          title="익일 업무 진행 예정"
-          accent="tomorrow"
-          projects={tomorrow.projects}
-          onAddProject={tomorrow.addProject}
-          onRemoveProject={tomorrowRemove.removeProject}
-          onUpdateProjectName={tomorrow.updateProjectName}
-          onAddTask={tomorrow.addTask}
-          onUpdateTask={tomorrow.updateTask}
-          onRemoveTask={tomorrowRemove.removeTask}
-          onReorderProjects={tomorrow.reorderProjects}
-          onReorderTasks={tomorrow.reorderTasks}
-          onImportIncomplete={handleImportIncomplete}
-        />
+        {isFormReady ? (
+          <>
+            <ProjectList
+              title="금일 업무 진행 현황"
+              accent="today"
+              projects={today.projects}
+              onAddProject={today.addProject}
+              onRemoveProject={todayRemove.removeProject}
+              onUpdateProjectName={today.updateProjectName}
+              onAddTask={today.addTask}
+              onUpdateTask={today.updateTask}
+              onRemoveTask={todayRemove.removeTask}
+              onReorderProjects={today.reorderProjects}
+              onReorderTasks={today.reorderTasks}
+            />
+            <ProjectList
+              title="익일 업무 진행 예정"
+              accent="tomorrow"
+              projects={tomorrow.projects}
+              onAddProject={tomorrow.addProject}
+              onRemoveProject={tomorrowRemove.removeProject}
+              onUpdateProjectName={tomorrow.updateProjectName}
+              onAddTask={tomorrow.addTask}
+              onUpdateTask={tomorrow.updateTask}
+              onRemoveTask={tomorrowRemove.removeTask}
+              onReorderProjects={tomorrow.reorderProjects}
+              onReorderTasks={tomorrow.reorderTasks}
+              onImportIncomplete={handleImportIncomplete}
+            />
+          </>
+        ) : (
+          <>
+            <ProjectListSkeleton title="금일 업무 진행 현황" accent="today" />
+            <ProjectListSkeleton title="익일 업무 진행 예정" accent="tomorrow" showImportButton />
+          </>
+        )}
       </div>
 
       <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
-        <ReportPreview
-          text={reportText}
-          reportDate={reportDate}
-          copied={copied}
-          copyError={copyError}
-          isCopyDisabled={isCopyDisabled}
-          isResetDisabled={!hasAnyData}
-          onCopy={handleCopy}
-          onReset={handleReset}
-        />
+        {isFormReady ? (
+          <ReportPreview
+            text={reportText}
+            reportDate={reportDate}
+            copied={copied}
+            copyError={copyError}
+            isCopyDisabled={isCopyDisabled}
+            isResetDisabled={!hasAnyData}
+            onCopy={handleCopy}
+            onReset={handleReset}
+          />
+        ) : (
+          <ReportPreviewSkeleton />
+        )}
 
         <ReportHistory
           history={history}
