@@ -16,6 +16,7 @@ type TaskItemProps = {
   onRemove: () => void;
   canRemove: boolean;
   onContentEnter?: () => void;
+  onContentBackspaceEmpty?: () => void;
   onProgressEnter?: () => void;
   focusField?: TaskFocusField | null;
   focusNonce?: number;
@@ -23,8 +24,8 @@ type TaskItemProps = {
 
 const PRESETS: ReadonlyArray<number> = [20, 40, 60, 80, 100];
 
-// 한글 IME 조합 중 Enter는 조합 확정용이므로 우리 핸들러를 트리거하지 않는다.
-const isCompositionEnter = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
+// 한글 IME 조합 중 입력은 조합 확정용이므로 우리 핸들러를 트리거하지 않는다.
+const isComposingKey = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
 
 export const TaskItem = ({
   task,
@@ -32,6 +33,7 @@ export const TaskItem = ({
   onRemove,
   canRemove,
   onContentEnter,
+  onContentBackspaceEmpty,
   onProgressEnter,
   focusField,
   focusNonce,
@@ -66,13 +68,23 @@ export const TaskItem = ({
   };
 
   const handleContentKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || isCompositionEnter(e)) return;
-    e.preventDefault();
-    onContentEnter?.();
+    if (isComposingKey(e)) return;
+    if (e.key === 'Backspace') {
+      // 빈 입력 상태에서 Backspace는 작업 삭제 + 이전 항목 포커스 이동을 트리거한다.
+      if (task.content === '' && onContentBackspaceEmpty) {
+        e.preventDefault();
+        onContentBackspaceEmpty();
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onContentEnter?.();
+    }
   };
 
   const handleProgressKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || isCompositionEnter(e)) return;
+    if (e.key !== 'Enter' || isComposingKey(e)) return;
     e.preventDefault();
     onProgressEnter?.();
   };

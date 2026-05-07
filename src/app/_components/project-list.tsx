@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { CalendarDays, Plus, Sun } from 'lucide-react';
 import {
   DndContext,
@@ -21,19 +21,29 @@ import { ProjectItem, ProjectItemPreview } from '.';
 
 type Accent = 'today' | 'tomorrow';
 
+// 외부에서 ProjectList로 보내는 포커스 신호. nonce가 변할 때마다 트리거된다.
+export type ProjectListFocusRequest =
+  | { kind: 'project'; projectId: string; nonce: number }
+  | { kind: 'task'; projectId: string; taskId: string; nonce: number };
+
+// silent: true 면 실행 취소 토스트를 띄우지 않고 조용히 삭제만 한다.
+// 빈 항목 위에서 Backspace로 삭제하는 경로처럼 복원할 콘텐츠가 없는 경우에 사용.
+export type RemoveOptions = { silent?: boolean };
+
 type ProjectListProps = {
   title: string;
   accent: Accent;
   projects: ReadonlyArray<Project>;
   onAddProject: (projectId: string) => void;
-  onRemoveProject: (projectId: string) => void;
+  onRemoveProject: (projectId: string, options?: RemoveOptions) => void;
   onUpdateProjectName: (projectId: string, name: string) => void;
   onAddTask: (projectId: string, taskId: string) => void;
   onUpdateTask: (projectId: string, taskId: string, updates: Partial<Task>) => void;
-  onRemoveTask: (projectId: string, taskId: string) => void;
+  onRemoveTask: (projectId: string, taskId: string, options?: RemoveOptions) => void;
   onReorderProjects: (fromId: string, toId: string) => void;
   onReorderTasks: (projectId: string, fromId: string, toId: string) => void;
   onImportIncomplete?: () => void;
+  focusRequest?: ProjectListFocusRequest | null;
 };
 
 const ACCENT_STYLES: Record<Accent, { stripe: string; iconWrap: string }> = {
@@ -60,9 +70,33 @@ export const ProjectList = ({
   onReorderProjects,
   onReorderTasks,
   onImportIncomplete,
+  focusRequest,
 }: Readonly<ProjectListProps>) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  // Backspace 삭제 후 이전 항목 포커스, 또는 외부 focusRequest를 sync 받는 통합 상태.
+  const [projectFocus, setProjectFocus] = useState<{
+    projectId: string;
+    field: 'name' | 'last-task' | 'task';
+    taskId?: string;
+    nonce: number;
+  } | null>(null);
+
+  // 외부 focusRequest의 nonce가 바뀔 때마다 내부 projectFocus로 동기화한다.
+  useEffect(() => {
+    if (!focusRequest) return;
+    setProjectFocus(
+      focusRequest.kind === 'project'
+        ? { projectId: focusRequest.projectId, field: 'name', nonce: focusRequest.nonce }
+        : {
+            projectId: focusRequest.projectId,
+            field: 'task',
+            taskId: focusRequest.taskId,
+            nonce: focusRequest.nonce,
+          }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest?.nonce]);
   // DndContext가 내부적으로 동적 id를 생성하면 SSR/CSR 사이에서 값이 달라져 hydration 경고가 난다.
   // useId로 안정적인 id를 부여해 SSR/CSR 양쪽에서 동일한 markup이 나오도록 한다.
   const dndContextId = useId();
@@ -95,6 +129,21 @@ export const ProjectList = ({
   };
 
   const handleDragCancel = () => setActiveProjectId(null);
+
+  // 빈 프로젝트(이름·모든 작업 내용 비어있음)에서 Backspace 시 호출.
+  // 이전 프로젝트가 있을 때만 삭제 + 그 프로젝트의 마지막 작업으로 포커스 이동.
+  // 빈 항목이라 복원해도 의미가 없으므로 silent로 토스트를 띄우지 않는다.
+  const handleProjectBackspaceEmpty = (projectId: string) => {
+    const index = projects.findIndex((p) => p.id === projectId);
+    if (index <= 0) return;
+    const prevProject = projects[index - 1];
+    setProjectFocus((prev) => ({
+      projectId: prevProject.id,
+      field: 'last-task',
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
+    onRemoveProject(projectId, { silent: true });
+  };
 
   const accentStyles = ACCENT_STYLES[accent];
   const Icon = accent === 'today' ? Sun : CalendarDays;
@@ -155,9 +204,13 @@ export const ProjectList = ({
                 canRemove={projects.length > 1}
                 onAddTask={(taskId) => onAddTask(project.id, taskId)}
                 onUpdateTask={(taskId, updates) => onUpdateTask(project.id, taskId, updates)}
-                onRemoveTask={(taskId) => onRemoveTask(project.id, taskId)}
+                onRemoveTask={(taskId, options) => onRemoveTask(project.id, taskId, options)}
                 onReorderTasks={(fromId, toId) => onReorderTasks(project.id, fromId, toId)}
+                onBackspaceEmpty={() => handleProjectBackspaceEmpty(project.id)}
                 autoFocus={project.id === lastAddedProjectId}
+                externalFocusField={projectFocus?.projectId === project.id ? projectFocus.field : null}
+                externalFocusTaskId={projectFocus?.projectId === project.id ? projectFocus.taskId : undefined}
+                externalFocusNonce={projectFocus?.projectId === project.id ? projectFocus.nonce : 0}
               />
             ))}
           </div>
