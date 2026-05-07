@@ -21,7 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { Project, Task } from '@/types';
 import { createId } from '@/utils';
-import { TaskItem, type TaskFocusField } from '.';
+import { TaskItem, type RemoveOptions, type TaskFocusField } from '.';
 
 type ProjectItemProps = {
   project: Project;
@@ -29,10 +29,16 @@ type ProjectItemProps = {
   onRemove: () => void;
   onAddTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
-  onRemoveTask: (taskId: string) => void;
+  onRemoveTask: (taskId: string, options?: RemoveOptions) => void;
   onReorderTasks: (fromId: string, toId: string) => void;
+  onBackspaceEmpty?: () => void;
   canRemove: boolean;
   autoFocus?: boolean;
+  // 외부(ProjectList)에서 명시적으로 트리거하는 포커스 신호. nonce가 바뀔 때만 동작한다.
+  // 'task' 사용 시 externalFocusTaskId로 대상 작업을 지정한다.
+  externalFocusField?: 'name' | 'last-task' | 'task' | null;
+  externalFocusTaskId?: string;
+  externalFocusNonce?: number;
 };
 
 type TaskFocus = {
@@ -41,8 +47,8 @@ type TaskFocus = {
   nonce: number;
 };
 
-// 한글 IME 조합 중 Enter는 조합 확정용이므로 우리 핸들러를 트리거하지 않는다.
-const isCompositionEnter = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
+// 한글 IME 조합 중 입력은 조합 확정용이므로 우리 핸들러를 트리거하지 않는다.
+const isComposingKey = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isComposing || e.keyCode === 229;
 
 export const ProjectItem = ({
   project,
@@ -52,8 +58,12 @@ export const ProjectItem = ({
   onUpdateTask,
   onRemoveTask,
   onReorderTasks,
+  onBackspaceEmpty,
   canRemove,
   autoFocus,
+  externalFocusField,
+  externalFocusTaskId,
+  externalFocusNonce,
 }: Readonly<ProjectItemProps>) => {
   const [taskFocus, setTaskFocus] = useState<TaskFocus | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +94,23 @@ export const ProjectItem = ({
     setTaskFocus((prev) => ({ taskId, field, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
+  // 외부에서 보내는 포커스 신호 처리 — 프로젝트명, 마지막 작업, 또는 특정 작업으로 포커스 이동.
+  // nonce가 바뀔 때마다 실행되어 같은 대상도 반복 포커스 가능하다.
+  useEffect(() => {
+    if (!externalFocusField || !externalFocusNonce) return;
+    if (externalFocusField === 'name') {
+      nameInputRef.current?.focus();
+      return;
+    }
+    if (externalFocusField === 'task' && externalFocusTaskId) {
+      focusTask(externalFocusTaskId, 'content');
+      return;
+    }
+    const lastTask = project.tasks[project.tasks.length - 1];
+    if (lastTask) focusTask(lastTask.id, 'content');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalFocusField, externalFocusTaskId, externalFocusNonce]);
+
   // 새 태스크의 ID를 먼저 생성하여 focus 대상으로 기록한 뒤 추가한다.
   const handleAddTask = () => {
     const newTaskId = createId();
@@ -92,14 +119,38 @@ export const ProjectItem = ({
   };
 
   const handleNameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || isCompositionEnter(e)) return;
-    e.preventDefault();
-    const firstTask = project.tasks[0];
-    if (firstTask) {
-      focusTask(firstTask.id, 'content');
-    } else {
-      handleAddTask();
+    if (isComposingKey(e)) return;
+    if (e.key === 'Backspace') {
+      // 프로젝트명이 비어 있고 모든 작업 내용도 비어 있을 때만 프로젝트 삭제 + 이전 프로젝트로 포커스.
+      if (project.name === '' && project.tasks.every((t) => t.content === '') && onBackspaceEmpty) {
+        e.preventDefault();
+        onBackspaceEmpty();
+      }
+      return;
     }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const firstTask = project.tasks[0];
+      if (firstTask) {
+        focusTask(firstTask.id, 'content');
+      } else {
+        handleAddTask();
+      }
+    }
+  };
+
+  // 빈 작업에서 Backspace: 작업 삭제 + 이전 작업(또는 프로젝트명)으로 포커스 이동.
+  // 프로젝트당 최소 1개 작업 규칙은 유지 — 마지막 작업에서는 무시.
+  // 빈 작업이라 복원해도 의미가 없으므로 silent로 토스트를 띄우지 않는다.
+  const handleTaskContentBackspaceEmpty = (taskId: string, index: number) => {
+    if (project.tasks.length <= 1) return;
+    if (index > 0) {
+      const prevTask = project.tasks[index - 1];
+      focusTask(prevTask.id, 'content');
+    } else {
+      nameInputRef.current?.focus();
+    }
+    onRemoveTask(taskId, { silent: true });
   };
 
   const handleTaskContentEnter = (taskId: string, index: number) => {
@@ -187,6 +238,7 @@ export const ProjectItem = ({
                 onRemove={() => onRemoveTask(task.id)}
                 canRemove={project.tasks.length > 1}
                 onContentEnter={() => handleTaskContentEnter(task.id, index)}
+                onContentBackspaceEmpty={() => handleTaskContentBackspaceEmpty(task.id, index)}
                 onProgressEnter={() => handleTaskProgressEnter(index)}
                 focusField={taskFocus?.taskId === task.id ? taskFocus.field : null}
                 focusNonce={taskFocus?.taskId === task.id ? taskFocus.nonce : 0}

@@ -1,6 +1,6 @@
 'use client';
 
-import { MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Dispatch, MouseEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
 import type { Project, ReportDate, ReportHistoryItem } from '@/types';
@@ -15,6 +15,8 @@ import {
   ReportPreview,
   ReportPreviewSkeleton,
   getItemDateKey,
+  type ProjectListFocusRequest,
+  type RemoveOptions,
 } from '.';
 import { useProjects, useReportHistory, type UseProjectsReturn } from '@/hooks';
 import { confirm, useReportFormStore } from '@/stores';
@@ -62,6 +64,9 @@ export function ReportForm() {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  // 토스트 "실행 취소" 클릭 후 복구된 input으로 포커스를 보내기 위한 신호 (today/tomorrow 분리).
+  const [todayFocusRequest, setTodayFocusRequest] = useState<ProjectListFocusRequest | null>(null);
+  const [tomorrowFocusRequest, setTomorrowFocusRequest] = useState<ProjectListFocusRequest | null>(null);
 
   const reportDate = useReportFormStore((s) => s.reportDate);
   const setReportDate = useReportFormStore((s) => s.setReportDate);
@@ -261,12 +266,19 @@ export function ReportForm() {
 
   // 프로젝트/작업 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
   // 토스트가 유지되는 동안(UNDO_TOAST_DURATION_MS) 사용자가 원래 위치로 되돌릴 수 있다.
-  const makeRemoveHandlers = (bucket: UseProjectsReturn, label: '금일' | '익일') => ({
-    removeProject: (projectId: string) => {
+  // setFocusRequest는 실행 취소 시 복구된 input으로 포커스를 보내기 위해 받는다.
+  const makeRemoveHandlers = (
+    bucket: UseProjectsReturn,
+    label: '금일' | '익일',
+    setFocusRequest: Dispatch<SetStateAction<ProjectListFocusRequest | null>>
+  ) => ({
+    removeProject: (projectId: string, options?: RemoveOptions) => {
       const index = bucket.projects.findIndex((p) => p.id === projectId);
       if (index === -1) return;
       const removed = bucket.projects[index];
       bucket.removeProject(projectId);
+      // Backspace 등 빈 항목 삭제 경로는 복원할 콘텐츠가 없으므로 토스트를 띄우지 않는다.
+      if (options?.silent) return;
       const projectLabel = removed.name.trim() || '제목 없는 프로젝트';
       toast(
         (t) => (
@@ -281,6 +293,11 @@ export function ReportForm() {
                   next.splice(Math.min(index, next.length), 0, removed);
                   return next;
                 });
+                setFocusRequest((prev) => ({
+                  kind: 'project',
+                  projectId: removed.id,
+                  nonce: (prev?.nonce ?? 0) + 1,
+                }));
                 toast.dismiss(t.id);
               }}
               className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
@@ -292,7 +309,7 @@ export function ReportForm() {
         { duration: UNDO_TOAST_DURATION_MS }
       );
     },
-    removeTask: (projectId: string, taskId: string) => {
+    removeTask: (projectId: string, taskId: string, options?: RemoveOptions) => {
       const project = bucket.projects.find((p) => p.id === projectId);
       if (!project) return;
       // useProjects.removeTask는 마지막 작업은 지우지 않는다 — 동일한 가드
@@ -301,6 +318,8 @@ export function ReportForm() {
       if (index === -1) return;
       const removed = project.tasks[index];
       bucket.removeTask(projectId, taskId);
+      // Backspace 등 빈 항목 삭제 경로는 복원할 콘텐츠가 없으므로 토스트를 띄우지 않는다.
+      if (options?.silent) return;
       const taskLabel = removed.content.trim() || '내용 없는 작업';
       toast(
         (t) => (
@@ -316,6 +335,12 @@ export function ReportForm() {
                     return { ...p, tasks: nextTasks };
                   })
                 );
+                setFocusRequest((prev) => ({
+                  kind: 'task',
+                  projectId,
+                  taskId: removed.id,
+                  nonce: (prev?.nonce ?? 0) + 1,
+                }));
                 toast.dismiss(t.id);
               }}
               className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
@@ -329,8 +354,8 @@ export function ReportForm() {
     },
   });
 
-  const todayRemove = makeRemoveHandlers(today, '금일');
-  const tomorrowRemove = makeRemoveHandlers(tomorrow, '익일');
+  const todayRemove = makeRemoveHandlers(today, '금일', setTodayFocusRequest);
+  const tomorrowRemove = makeRemoveHandlers(tomorrow, '익일', setTomorrowFocusRequest);
 
   // 금일 미완료 업무를 익일로 이동
   const handleImportIncomplete = () => {
@@ -491,6 +516,7 @@ export function ReportForm() {
               onRemoveTask={todayRemove.removeTask}
               onReorderProjects={today.reorderProjects}
               onReorderTasks={today.reorderTasks}
+              focusRequest={todayFocusRequest}
             />
             <ProjectList
               title="익일 업무 진행 예정"
@@ -505,6 +531,7 @@ export function ReportForm() {
               onReorderProjects={tomorrow.reorderProjects}
               onReorderTasks={tomorrow.reorderTasks}
               onImportIncomplete={handleImportIncomplete}
+              focusRequest={tomorrowFocusRequest}
             />
           </>
         ) : (
