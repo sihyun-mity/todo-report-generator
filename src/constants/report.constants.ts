@@ -1,4 +1,4 @@
-export const MAX_HISTORY_ITEMS = 50;
+export const MAX_HISTORY_ITEMS = 100;
 export const COPY_FEEDBACK_DURATION_MS = 2000;
 export const UNDO_TOAST_DURATION_MS = 8000;
 
