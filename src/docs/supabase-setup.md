@@ -99,7 +99,7 @@
 - **anon key**는 공개용 키지만 문서에 평문으로 남기지 않았음. Supabase 대시보드에서 그때그때 복사해서 쓰기.
 - **service_role key**는 절대 클라이언트 코드나 `NEXT_PUBLIC_*` 변수에 넣지 말 것. 서버 전용 시크릿 작업이 생기면 별도 `SUPABASE_SERVICE_ROLE_KEY`로 관리.
 - Auth "Confirm email"은 ON 상태(기본값) 유지. 이메일/비밀번호 가입에만 영향이 있고, GitHub OAuth 가입자는 영향 없음.
-- 기존 localStorage 데이터는 "가져오기" 버튼으로 이전한 뒤에도 몇 주간 남겨두기 (롤백 대비).
+- 마이그레이션 직후에는 롤백 대비로 `report-history` localStorage 키를 그대로 남겨두고 `report-history-imported` 플래그만 찍었다. 충분한 시간이 지난 뒤 이 잔재 정리 로직이 추가되어, 이제는 ① import 성공 시점, ② 로그인 사용자가 이미 DB에 기록을 갖고 있는 시점에 `clearLegacyLocalHistory()`로 두 키를 함께 제거한다 (`src/stores/use-report-history-store.ts`).
 
 ## 유용한 링크
 

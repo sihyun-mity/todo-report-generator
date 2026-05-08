@@ -97,6 +97,19 @@ const computeHasLocalBackup = () => {
   }
 };
 
+// Supabase 마이그레이션 잔여 로컬 데이터 정리.
+// 과거에는 import 후에도 롤백 대비로 로컬 키를 남겨두고 `-imported` 플래그만 찍었으나,
+// 충분한 시간이 지나 이제는 import 성공/계정에 DB 데이터가 있는 시점에 직접 제거한다.
+const clearLegacyLocalHistory = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(REPORT_HISTORY_STORAGE_KEY);
+    localStorage.removeItem(`${REPORT_HISTORY_STORAGE_KEY}-imported`);
+  } catch {
+    // storage 접근 실패는 무시
+  }
+};
+
 const generateLocalId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -225,6 +238,12 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
           } else {
             toast.error('이전 기록을 불러오지 못했습니다.');
           }
+        }
+
+        // 계정에 이미 DB 기록이 있다면 (= 마이그레이션이 끝난 사용자) 남아 있던 로컬 데이터는 정리한다.
+        // DB가 비어 있으면 아직 마이그레이션 전일 수 있으므로 import 흐름에 맡긴다.
+        if (allDates.length > 0) {
+          clearLegacyLocalHistory();
         }
 
         // 3) 단일 atomic set
@@ -509,19 +528,16 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
       }
     }
 
+    // 이전 완료 — 더 이상 로컬에 잔재를 남기지 않는다.
+    clearLegacyLocalHistory();
+
     set({
       history: nextHistory,
       allReportDates: allDates,
       loadedMonths: nextLoadedMonths,
       loadingMonths: new Set<string>(),
+      hasLocalBackup: false,
     });
-
-    // 롤백 대비 로컬 데이터는 지우지 않고 플래그만 기록
-    try {
-      localStorage.setItem(`${REPORT_HISTORY_STORAGE_KEY}-imported`, String(Date.now()));
-    } catch {
-      // storage 쿼터 초과 등은 무시
-    }
 
     return { imported: rows.length };
   },
