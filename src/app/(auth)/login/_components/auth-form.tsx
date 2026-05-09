@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Github, KeyRound, Mail } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, enableGuestMode } from '@/lib/guest';
+import { migrateGuestNewsLastSeen, stashGuestNewsLastSeenInCookie } from '@/lib/news';
 import { isConditionalUISupported, isWebAuthnSupported, loginWithPasskey } from '@/lib/webauthn/client';
 import { useReportFormStore, useReportHistoryStore } from '@/stores';
 
@@ -17,6 +18,10 @@ const resetSessionStores = () => {
 };
 
 const startGithubOAuth = async () => {
+  // 게스트 → OAuth 로그인 직전: 마지막으로 본 새소식 id 를 짧은 쿠키로 옮겨둔다.
+  // GitHub redirect 후 /auth/callback 에서 user_news_reads 로 마이그레이션된다.
+  stashGuestNewsLastSeenInCookie();
+
   const supabase = createClient();
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'github',
@@ -74,6 +79,9 @@ function SignupForm() {
       // 게스트에서 계정으로 전환하는 시점 — 이메일 인증 링크 클릭 후 홈으로 돌아왔을 때
       // 게스트 쿠키가 남아있으면 미들웨어가 게스트로 취급해 세션을 무시하므로 여기서 미리 정리
       disableGuestMode();
+      // 메일 인증 링크 → /auth/callback 에서 user_news_reads 로 마이그레이션할 수 있도록
+      // 마지막으로 본 새소식 id 를 짧은 쿠키로 옮겨둔다.
+      stashGuestNewsLastSeenInCookie();
       toast.success(`${email}로 인증 메일을 발송했습니다. 메일의 링크를 눌러 인증을 완료한 뒤 로그인해주세요.`, {
         duration: 6000,
       });
@@ -184,6 +192,11 @@ function LoginForm() {
         await loginWithPasskey({ useAutofill: true });
         if (cancelled) return;
         disableGuestMode();
+        const supabase = createClient();
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user?.id) {
+          await migrateGuestNewsLastSeen(supabase, userData.user.id);
+        }
         resetSessionStores();
         toast.success('패스키로 로그인되었습니다.');
         router.push('/');
@@ -209,6 +222,11 @@ function LoginForm() {
     try {
       await loginWithPasskey({ useAutofill: false });
       disableGuestMode();
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData.user?.id) {
+        await migrateGuestNewsLastSeen(supabase, userData.user.id);
+      }
       resetSessionStores();
       toast.success('패스키로 로그인되었습니다.');
       router.push('/');
@@ -230,12 +248,15 @@ function LoginForm() {
     setIsSubmitting(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast.error(error.message);
         return;
       }
       disableGuestMode();
+      if (data.user?.id) {
+        await migrateGuestNewsLastSeen(supabase, data.user.id);
+      }
       resetSessionStores();
       toast.success('로그인되었습니다.');
       router.push('/');

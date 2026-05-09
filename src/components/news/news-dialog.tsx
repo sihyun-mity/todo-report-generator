@@ -30,6 +30,19 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
     return () => unlock();
   }, [open, lock, unlock]);
 
+  // 로그인된 상태에서는 게스트 전용 키가 dangling 으로 남는 케이스(OAuth/이메일 가입 콜백 경로)가 있다.
+  // 그 키는 user_news_reads 로 이미 마이그레이션된 뒤이므로 안전하게 정리한다.
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      if (window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY) !== null) {
+        window.localStorage.removeItem(NEWS_GUEST_STORAGE_KEY);
+      }
+    } catch {
+      // 무시
+    }
+  }, [userId]);
+
   // 표시 여부: 로그인 유저는 DB 기준, 게스트는 localStorage 기준.
   // localStorage는 SSR에서 읽을 수 없어 클라이언트 마운트 후에만 확정 가능.
   // 게스트 첫 접속(localStorage 미설정)은 다이얼로그를 띄우지 않고 현재 최신 id 만 저장 —

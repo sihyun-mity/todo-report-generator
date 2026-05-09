@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { GUEST_MODE_COOKIE } from '@/constants';
+import { GUEST_MODE_COOKIE, PENDING_NEWS_SEEN_COOKIE } from '@/constants';
+import { markNewsAsReadForUser } from '@/lib/news';
 
 // OAuth 코드 교환은 supabase가 발급하는 access/refresh 토큰을 chunked 쿠키로 저장한다.
 // `next/headers`의 cookies()로 set하면 GET route handler에서는 응답에 자동 반영되지 않는 케이스가 있어,
@@ -47,5 +48,23 @@ export async function GET(request: NextRequest) {
 
   // 게스트 쿠키가 남아있으면 미들웨어가 게스트로 취급해 세션을 무시한다 — 정리
   response.cookies.set({ name: GUEST_MODE_COOKIE, value: '', maxAge: 0, path: '/' });
+
+  // 게스트 시절 마지막으로 본 새소식 id 가 임시 쿠키로 들어왔다면 user_news_reads 로 마이그레이션한다.
+  // 이 흐름이 없으면 신규 가입자로 인식되어 NewsDialogMount 가 최신 1건만 자동 읽음 처리하므로,
+  // 게스트가 안 본 새 소식이 있는 경우 묻혀버린다.
+  const pendingNewsSeen = request.cookies.get(PENDING_NEWS_SEEN_COOKIE)?.value;
+  if (pendingNewsSeen) {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (userId) {
+        await markNewsAsReadForUser(supabase, userId, pendingNewsSeen);
+      }
+    } catch {
+      // 마이그레이션이 실패해도 로그인 자체는 성공시킨다 — 다이얼로그가 한 번 더 뜰 뿐.
+    }
+    response.cookies.set({ name: PENDING_NEWS_SEEN_COOKIE, value: '', maxAge: 0, path: '/' });
+  }
+
   return response;
 }
