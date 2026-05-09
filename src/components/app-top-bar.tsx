@@ -72,7 +72,7 @@ export function AppTopBar() {
     const ok = await confirm({
       title: '게스트 모드를 종료할까요?',
       description:
-        '이 브라우저에 저장된 게스트 보고서 기록과 새소식 알림 상태가 모두 삭제돼요. 작성한 기록을 계정으로 이어서 사용하고 싶다면 종료 대신 로그인 또는 회원가입을 이용해주세요.',
+        '이 브라우저에 저장된 보고서 기록이 모두 삭제돼요. 작성한 기록을 계정으로 이어서 사용하고 싶다면 종료 대신 로그인 또는 회원가입을 이용해주세요.',
       confirmText: '종료하고 삭제',
       cancelText: '취소',
       variant: 'danger',
