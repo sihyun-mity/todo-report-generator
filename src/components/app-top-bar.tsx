@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
 import { useReportFormStore, useReportHistoryStore } from '@/stores';
+import { NEWS_GUEST_STORAGE_KEY } from '@/constants';
 import { ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
@@ -67,6 +68,13 @@ export function AppTopBar() {
 
   const handleExitGuest = () => {
     disableGuestMode();
+    // 게스트 세션이 끝난 뒤에는 다음에 들어올 사용자(또는 다시 시작한 게스트)와 무관한 상태이므로
+    // 게스트 전용 localStorage 키도 함께 정리한다.
+    try {
+      localStorage.removeItem(NEWS_GUEST_STORAGE_KEY);
+    } catch {
+      // 접근 실패는 무시
+    }
     resetSessionStores();
     setIsOpen(false);
     router.push('/login');

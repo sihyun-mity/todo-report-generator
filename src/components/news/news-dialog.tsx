@@ -32,6 +32,8 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
 
   // 표시 여부: 로그인 유저는 DB 기준, 게스트는 localStorage 기준.
   // localStorage는 SSR에서 읽을 수 없어 클라이언트 마운트 후에만 확정 가능.
+  // 게스트 첫 접속(localStorage 미설정)은 다이얼로그를 띄우지 않고 현재 최신 id 만 저장 —
+  // 이후 새로 발행된 소식부터 알림이 뜨도록 한다.
   useEffect(() => {
     if (!latestNews) return;
 
@@ -40,9 +42,15 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
       shouldOpen = !alreadyReadByUser;
     } else {
       try {
-        shouldOpen = window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY) !== latestNews.id;
+        const lastSeen = window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY);
+        if (lastSeen === null) {
+          window.localStorage.setItem(NEWS_GUEST_STORAGE_KEY, latestNews.id);
+          shouldOpen = false;
+        } else {
+          shouldOpen = lastSeen !== latestNews.id;
+        }
       } catch {
-        shouldOpen = true;
+        shouldOpen = false;
       }
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect

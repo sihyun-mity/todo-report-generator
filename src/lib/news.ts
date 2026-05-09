@@ -59,6 +59,21 @@ export async function hasUserReadNews(supabase: SupabaseClient, userId: string, 
   return !!data;
 }
 
+// 해당 유저가 새소식을 한 번이라도 읽은 적이 있는지 — 첫 접속(신규) 사용자 판별용.
+// 오류 시에는 보수적으로 true(=기존 사용자)로 간주해 첫 접속 자동 읽음 처리를 건너뛴다.
+export async function hasAnyUserNewsReadHistory(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('user_news_reads')
+    .select('news_id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[news] hasAnyUserNewsReadHistory failed', error);
+    return true;
+  }
+  return (count ?? 0) > 0;
+}
+
 export async function markNewsAsReadForUser(supabase: SupabaseClient, userId: string, newsId: string): Promise<void> {
   const { error } = await supabase.from('user_news_reads').upsert(
     {

@@ -1,5 +1,5 @@
 import { NewsDialog } from '@/components';
-import { fetchLatestNewsCached, hasUserReadNews } from '@/lib/news';
+import { fetchLatestNewsCached, hasAnyUserNewsReadHistory, hasUserReadNews, markNewsAsReadForUser } from '@/lib/news';
 import { createClient } from '@/lib/supabase/server';
 
 // (app) 그룹 layout 의 하단에 마운트되어, (app) 그룹 경로에서만 동작한다.
@@ -23,7 +23,19 @@ export async function NewsDialogMount() {
 
   let alreadyReadByUser = false;
   if (userId && latestNews) {
-    alreadyReadByUser = await hasUserReadNews(supabase, userId, latestNews.id);
+    // 두 쿼리를 병렬로 — 신규 유저(읽음 이력 0)인지, 그리고 최신 새소식을 이미 읽었는지.
+    const [hasAnyHistory, hasReadLatest] = await Promise.all([
+      hasAnyUserNewsReadHistory(supabase, userId),
+      hasUserReadNews(supabase, userId, latestNews.id),
+    ]);
+
+    if (!hasAnyHistory) {
+      // 첫 접속 — 가입/사용 시점 이전의 소식은 알리지 않는다. 최신 1건을 읽음 처리해 다이얼로그를 막는다.
+      await markNewsAsReadForUser(supabase, userId, latestNews.id);
+      alreadyReadByUser = true;
+    } else {
+      alreadyReadByUser = hasReadLatest;
+    }
   }
 
   return <NewsDialog latestNews={latestNews} userId={userId} alreadyReadByUser={alreadyReadByUser} />;
