@@ -5,10 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { disableGuestMode, isGuestMode } from '@/lib/guest';
+import { clearGuestLocalData, disableGuestMode, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside } from '@/hooks';
-import { useReportFormStore, useReportHistoryStore } from '@/stores';
-import { NEWS_GUEST_STORAGE_KEY } from '@/constants';
+import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
@@ -66,17 +65,23 @@ export function AppTopBar() {
     router.refresh();
   };
 
-  const handleExitGuest = () => {
-    disableGuestMode();
-    // 게스트 세션이 끝난 뒤에는 다음에 들어올 사용자(또는 다시 시작한 게스트)와 무관한 상태이므로
-    // 게스트 전용 localStorage 키도 함께 정리한다.
-    try {
-      localStorage.removeItem(NEWS_GUEST_STORAGE_KEY);
-    } catch {
-      // 접근 실패는 무시
-    }
-    resetSessionStores();
+  const handleExitGuest = async () => {
     setIsOpen(false);
+    // 종료 시 이 브라우저에 저장된 게스트 보고서 기록과 새소식 알림 상태가 함께 삭제되므로
+    // 사용자 확인을 한 번 받는다 — 로그인/가입(=마이그레이션 전환)과 동작이 다르다는 점을 분명히 한다.
+    const ok = await confirm({
+      title: '게스트 모드를 종료할까요?',
+      description:
+        '이 브라우저에 저장된 게스트 보고서 기록과 새소식 알림 상태가 모두 삭제돼요. 작성한 기록을 계정으로 이어서 사용하고 싶다면 종료 대신 로그인 또는 회원가입을 이용해주세요.',
+      confirmText: '종료하고 삭제',
+      cancelText: '취소',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    disableGuestMode();
+    clearGuestLocalData();
+    resetSessionStores();
     router.push('/login');
     router.refresh();
   };
