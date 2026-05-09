@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createPublicClient } from '@/lib/supabase/public';
+import { NEWS_GUEST_STORAGE_KEY, PENDING_NEWS_SEEN_COOKIE, PENDING_NEWS_SEEN_MAX_AGE_SECONDS } from '@/constants';
 import type { News } from '@/types';
 
 // 공개 뉴스 캐시 태그 — 글 등록/수정 시 revalidateTag(NEWS_CACHE_TAG)로 즉시 무효화 가능.
@@ -58,6 +59,44 @@ export async function hasUserReadNews(supabase: SupabaseClient, userId: string, 
   }
   return !!data;
 }
+
+// 게스트 → 로그인 전환(클라이언트 직접 인증) 시 호출.
+// 게스트 시절 마지막으로 본 새소식 id 가 localStorage 에 있으면 user_news_reads 에 upsert 하고
+// localStorage 키를 정리한다. NewsDialogMount(서버) 가 이 사용자에 대해 호출되기 전에 await 되어야
+// 첫 접속자 자동 처리 로직과 충돌하지 않는다.
+export async function migrateGuestNewsLastSeen(supabase: SupabaseClient, userId: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  let lastSeen: string | null = null;
+  try {
+    lastSeen = window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  if (!lastSeen) return;
+
+  await markNewsAsReadForUser(supabase, userId, lastSeen);
+
+  try {
+    window.localStorage.removeItem(NEWS_GUEST_STORAGE_KEY);
+  } catch {
+    // 정리 실패해도 user_news_reads 에는 들어갔으므로 다이얼로그 동작에는 영향 없음
+  }
+}
+
+// 게스트 → 서버 콜백을 거치는 인증 흐름(GitHub OAuth, 이메일 회원가입) 직전에 호출.
+// 콜백 라우트는 localStorage 를 읽을 수 없으므로 마지막 본 새소식 id 를 짧은 쿠키로 옮겨준다.
+// 콜백이 처리 후 즉시 만료시킨다.
+export const stashGuestNewsLastSeenInCookie = () => {
+  if (typeof window === 'undefined') return;
+  let lastSeen: string | null = null;
+  try {
+    lastSeen = window.localStorage.getItem(NEWS_GUEST_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  if (!lastSeen) return;
+  document.cookie = `${PENDING_NEWS_SEEN_COOKIE}=${encodeURIComponent(lastSeen)}; path=/; max-age=${PENDING_NEWS_SEEN_MAX_AGE_SECONDS}; samesite=lax`;
+};
 
 // 해당 유저가 새소식을 한 번이라도 읽은 적이 있는지 — 첫 접속(신규) 사용자 판별용.
 // 오류 시에는 보수적으로 true(=기존 사용자)로 간주해 첫 접속 자동 읽음 처리를 건너뛴다.
