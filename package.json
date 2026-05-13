@@ -27,7 +27,7 @@
     "iron-session": "^8.0.4",
     "lucide-react": "^0.563.0",
     "mobile-detect": "^1.4.5",
-    "next": "^16.2.5",
+    "next": "^16.2.6",
     "query-string": "^9.3.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
