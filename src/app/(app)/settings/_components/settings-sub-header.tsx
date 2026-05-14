@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, addTransitionType, startTransition } from 'react';
+import { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 
 type Props = {
@@ -9,18 +9,11 @@ type Props = {
 };
 
 export function SettingsSubHeader({ title, description }: Readonly<Props>) {
-  const handleBack = () => {
-    startTransition(() => {
-      addTransitionType('nav-back');
-      window.history.back();
-    });
-  };
-
   return (
     <header className="mb-8">
       <button
         type="button"
-        onClick={handleBack}
+        onClick={() => window.history.back()}
         className="mb-3 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft size={12} />
