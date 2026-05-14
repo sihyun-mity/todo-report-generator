@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
+import { BackLink } from '@/app/(app)/whats-new/[id]/_components';
 import { NewsMarkdown } from '@/components';
 import { fetchNewsByIdCached } from '@/lib/news';
 import { staticMetadata } from '@/utils';
@@ -31,14 +30,7 @@ export default async function NewsDetailPage({ params }: PageProps<'/whats-new/[
 
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">
-      <Link
-        href="/whats-new"
-        transitionTypes={['nav-back']}
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 transition hover:text-zinc-700 dark:hover:text-zinc-300"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        새소식 목록
-      </Link>
+      <BackLink />
 
       <article className="mt-6">
         <time className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
