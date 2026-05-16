@@ -1,12 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { fetchAllNewsCached } from '@/lib/news';
+import { fetchAllNews } from '@/lib/news';
+import { createClient } from '@/lib/supabase/server';
 import { staticMetadata } from '@/utils';
 
 export const metadata: Metadata = staticMetadata({
   title: '새소식',
   description: '일일 업무 보고 생성기의 업데이트 소식을 모아둔 공간이에요.',
 });
+
+export const dynamic = 'force-dynamic';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('ko-KR', {
@@ -32,7 +35,8 @@ function toPlainPreview(markdown: string, max = 140) {
 }
 
 export default async function WhatsNewListPage() {
-  const news = await fetchAllNewsCached();
+  const supabase = await createClient();
+  const news = await fetchAllNews(supabase);
 
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">

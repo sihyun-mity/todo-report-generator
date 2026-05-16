@@ -2,12 +2,16 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { BackLink } from '@/app/(app)/whats-new/[id]/_components';
 import { NewsMarkdown } from '@/components';
-import { fetchNewsByIdCached } from '@/lib/news';
+import { fetchNewsById } from '@/lib/news';
+import { createClient } from '@/lib/supabase/server';
 import { staticMetadata } from '@/utils';
+
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: PageProps<'/whats-new/[id]'>): Promise<Metadata> {
   const { id } = await params;
-  const item = await fetchNewsByIdCached(id);
+  const supabase = await createClient();
+  const item = await fetchNewsById(supabase, id);
 
   return staticMetadata({
     title: item?.title ?? '새소식',
@@ -24,7 +28,8 @@ function formatDate(iso: string) {
 
 export default async function NewsDetailPage({ params }: PageProps<'/whats-new/[id]'>) {
   const { id } = await params;
-  const item = await fetchNewsByIdCached(id);
+  const supabase = await createClient();
+  const item = await fetchNewsById(supabase, id);
 
   if (!item) notFound();
 
