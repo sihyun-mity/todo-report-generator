@@ -2,7 +2,7 @@
 
 import { ReactNode } from 'react';
 import Link from 'next/link';
-import { ChevronRight, KeyRound, Link2, Lock, Mail } from 'lucide-react';
+import { ChevronRight, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
 import { useAccountInfo } from '.';
 
 export function SettingsMenu() {
@@ -47,6 +47,12 @@ export function SettingsMenu() {
           icon={<KeyRound size={18} />}
           title="패스키 관리"
           subtitle="비밀번호 없이 Face ID / 지문 / Windows Hello 로 로그인"
+        />
+        <MenuLink
+          href="/settings/sessions"
+          icon={<MonitorSmartphone size={18} />}
+          title="로그인 기기 관리"
+          subtitle="로그인된 기기를 확인하고 원격으로 로그아웃"
         />
       </ul>
     </div>
