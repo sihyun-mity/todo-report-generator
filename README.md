@@ -78,7 +78,7 @@ src/
 │   ├── (app)/            # 로그인/게스트가 접근하는 보호 영역 (홈, 설정, 새소식)
 │   ├── (auth)/           # /login, /signup
 │   ├── auth/callback/    # OAuth code exchange route handler
-│   ├── api/              # passkey 관련 route handlers
+│   ├── api/              # passkey · 로그인 기기(세션) 관리 route handlers
 │   └── _components/      # 보고서 폼/프리뷰/캘린더 등
 ├── components/           # 공용 UI
 ├── lib/                  # supabase / webauthn / guest / news 외부 어댑터

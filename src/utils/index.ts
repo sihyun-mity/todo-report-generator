@@ -13,3 +13,4 @@ export * from './query';
 export * from './ref';
 export * from './report';
 export * from './scroll';
+export * from './user-agent';

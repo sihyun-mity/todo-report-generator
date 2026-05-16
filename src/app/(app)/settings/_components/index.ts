@@ -4,6 +4,7 @@ export * from './oauth-providers';
 export * from './passkeys-manager';
 export * from './password-form';
 export * from './password-section';
+export * from './sessions-manager';
 export * from './settings-menu';
 export * from './settings-sub-header';
 export * from './social-section';
