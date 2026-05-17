@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { GUEST_MODE_COOKIE } from '@/constants';
+import { forwardedHeadersOption } from '@/lib/supabase/forwarded-headers';
 
 const PUBLIC_PATH_PREFIXES = ['/login', '/signup', '/auth'];
 
@@ -45,6 +46,9 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    // getUser()가 만료된 토큰을 서버에서 리프레시할 때 GoTrue가 서버 런타임의
+    // UA·IP로 auth.sessions를 덮어쓰지 않도록 원래 브라우저 요청 정보를 전달한다.
+    ...forwardedHeadersOption(request.headers),
     cookies: {
       getAll() {
         return request.cookies.getAll();

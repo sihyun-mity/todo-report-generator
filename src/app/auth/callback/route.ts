@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { GUEST_MODE_COOKIE, PENDING_NEWS_SEEN_COOKIE } from '@/constants';
 import { markNewsAsReadForUser } from '@/lib/news';
+import { forwardedHeadersOption } from '@/lib/supabase/forwarded-headers';
 
 // OAuth 코드 교환은 supabase가 발급하는 access/refresh 토큰을 chunked 쿠키로 저장한다.
 // `next/headers`의 cookies()로 set하면 GET route handler에서는 응답에 자동 반영되지 않는 케이스가 있어,
@@ -28,20 +29,10 @@ export async function GET(request: NextRequest) {
   // 응답 객체를 먼저 만들고 supabase가 setAll로 직접 이 응답에 쿠키를 쓰게 한다.
   let response = buildRedirect(safeNext);
 
-  // OAuth 코드 교환은 서버에서 실행되므로, 브라우저 정보를 명시적으로 전달하지 않으면
-  // GoTrue가 서버 런타임(node/undici)의 UA·IP를 auth.sessions에 기록한다.
-  // 그러면 로그인 기기 관리 화면이 "알 수 없는 기기"로 표시한다 — 실제 기기 정보를 실어 보낸다.
-  const userAgent = request.headers.get('user-agent');
-  // Vercel이 세팅하는 x-real-ip가 신뢰 가능한 단일 클라이언트 IP다.
-  // x-forwarded-for 맨 앞 값은 클라이언트가 위조해 끼워넣을 수 있어 폴백으로만 쓴다.
-  const clientIp = request.headers.get('x-real-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-
-  const forwardedHeaders: Record<string, string> = {};
-  if (userAgent) forwardedHeaders['User-Agent'] = userAgent;
-  if (clientIp) forwardedHeaders['X-Forwarded-For'] = clientIp;
-
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    ...(Object.keys(forwardedHeaders).length > 0 ? { global: { headers: forwardedHeaders } } : {}),
+    // 코드 교환·이후 토큰 리프레시가 서버에서 일어나도 GoTrue가 실제 기기 정보를
+    // auth.sessions에 기록하도록 원래 브라우저 요청의 UA·IP를 전달한다.
+    ...forwardedHeadersOption(request.headers),
     cookies: {
       getAll() {
         return request.cookies.getAll();
