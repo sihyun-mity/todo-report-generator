@@ -1,4 +1,4 @@
-import { MutableRefObject, Ref } from 'react';
+import { Ref, RefObject } from 'react';
 
 export const mergeRefs = <T>(...refs: Array<Ref<T> | undefined>): Ref<T> => {
   return (element: T | null) => {
@@ -6,7 +6,7 @@ export const mergeRefs = <T>(...refs: Array<Ref<T> | undefined>): Ref<T> => {
       if (typeof ref === 'function') {
         ref(element);
       } else if (ref && 'current' in ref) {
-        (ref as MutableRefObject<T | null>).current = element;
+        (ref as RefObject<T | null>).current = element;
       }
     });
   };
