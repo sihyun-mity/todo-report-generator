@@ -6,6 +6,7 @@ export * from './use-media';
 export * from './use-on-click-outside';
 export * from './use-projects';
 export * from './use-report-history';
+export * from './use-router';
 export * from './use-scroll-fade-in';
 export * from './use-scroll-page';
 export * from './use-search-query';

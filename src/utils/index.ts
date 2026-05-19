@@ -14,3 +14,4 @@ export * from './ref';
 export * from './report';
 export * from './scroll';
 export * from './user-agent';
+export * from './view-transition';

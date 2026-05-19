@@ -1,7 +1,16 @@
 import type { Metadata, Viewport } from 'next';
-import { Suspense, ViewTransition } from 'react';
+import { Suspense } from 'react';
 import '@/styles/globals.css';
-import { ConfirmDialogHost, MobileDetector, ThemeProvider, ToasterProvider, themeInitScript } from '@/components';
+import {
+  ConfirmDialogHost,
+  MobileDetector,
+  PageViewTransition,
+  PopstateViewTransitionNotifier,
+  ThemeProvider,
+  ToasterProvider,
+  themeInitScript,
+} from '@/components';
+import { PAGE_SHELL_ELEMENT_ID } from '@/constants';
 import { cn, staticMetadata } from '@/utils';
 import localFont from 'next/font/local';
 
@@ -42,14 +51,22 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
       >
         <Suspense>
           <ThemeProvider>
-            <ViewTransition
-              enter={{ 'nav-forward': 'nav-forward', 'nav-back': 'nav-back', default: 'page' }}
-              exit={{ 'nav-forward': 'nav-forward', 'nav-back': 'nav-back', default: 'page' }}
-            >
-              {children}
-            </ViewTransition>
+            {/*
+              PageViewTransition: Link/router 가 주입한 transitionTypes(nav-forward/back/fade)에 따라
+              view-transitions.css 의 iOS 스타일 push/pop 슬라이드를 실행한다.
+              page-shell div: 브라우저 back/forward(popstate) 전환 엔진이 PAGE_SHELL_ELEMENT_ID 로
+              이 컨테이너를 찾아 view-transition-name 을 부여한다. snapshot 단위가 된다.
+            */}
+            <PageViewTransition>
+              <div id={PAGE_SHELL_ELEMENT_ID} className="min-h-screen-enhanced bg-background">
+                {children}
+              </div>
+            </PageViewTransition>
           </ThemeProvider>
         </Suspense>
+
+        {/* 브라우저 back/forward(popstate) View Transition 의 라우트 commit 보고용. */}
+        <PopstateViewTransitionNotifier />
 
         <ToasterProvider />
 
