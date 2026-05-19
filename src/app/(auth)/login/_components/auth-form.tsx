@@ -57,7 +57,8 @@ function SignupForm() {
     enableGuestMode();
     resetSessionStores();
     toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
-    router.push('/');
+    // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
+    router.push('/', { transitionTypes: ['nav-forward'] });
     router.refresh();
   };
 
@@ -199,7 +200,8 @@ function LoginForm() {
         }
         resetSessionStores();
         toast.success('패스키로 로그인되었습니다.');
-        router.push('/');
+        // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
+        router.push('/', { transitionTypes: ['nav-forward'] });
         router.refresh();
       } catch {
         // 사용자 취소/autofill 비활성 — 조용히 무시
@@ -229,7 +231,8 @@ function LoginForm() {
       }
       resetSessionStores();
       toast.success('패스키로 로그인되었습니다.');
-      router.push('/');
+      // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
+      router.push('/', { transitionTypes: ['nav-forward'] });
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message;
@@ -259,7 +262,8 @@ function LoginForm() {
       }
       resetSessionStores();
       toast.success('로그인되었습니다.');
-      router.push('/');
+      // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
+      router.push('/', { transitionTypes: ['nav-forward'] });
       router.refresh();
     } finally {
       setIsSubmitting(false);
@@ -275,7 +279,8 @@ function LoginForm() {
     enableGuestMode();
     resetSessionStores();
     toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
-    router.push('/');
+    // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
+    router.push('/', { transitionTypes: ['nav-forward'] });
     router.refresh();
   };
 
