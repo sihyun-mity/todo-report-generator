@@ -1,120 +1,160 @@
-/* 페이지 전환 — fade + slide + 살짝 scale
-   `<ViewTransition default="page">` wrapper 가 부여하는 view-transition-class `.page` 에 매칭 */
-::view-transition-old(.page) {
-  animation: 200ms cubic-bezier(0.4, 0, 1, 1) both page-fade-out;
+/*
+ * Next 16 `experimental.viewTransition: true` + React `<ViewTransition>` 기반 페이지 전환.
+ *
+ * - Link · useRouter 가 navigation 시 `transitionTypes` 를 넘기면 React 가 commit 시점에
+ *   `document.startViewTransition({ types })` 를 호출한다.
+ *   → 브라우저는 transition 도중 `:root:active-view-transition-type(<type>)` 가 true.
+ * - `<PageViewTransition>` 의 enter/exit map 이 동일 이름으로 class 도 부여하므로,
+ *   `::view-transition-{old,new}(.nav-*)` 클래스 셀렉터도 같이 매칭된다. 두 셀렉터를 모두
+ *   정의해 어떤 매칭 경로든 잡히도록 한다.
+ * - 브라우저 back/forward (popstate) 는 `popstate-view-transition.tsx` 가 직접
+ *   `document.startViewTransition` 을 구동하며, `:root` 에 `vt-nav-{back,forward}` 클래스를
+ *   부여한다. 구형 WebView 는 `:active-view-transition-type(...)` 미지원이라
+ *   `:root.vt-nav-*` 클래스 셀렉터를 추가로 정의해 동일 키프레임을 매칭시킨다.
+ * - `<ViewTransition name="page-shell">` 가 layout 의 page-shell div 에 transition-name 을
+ *   부여 → snapshot 이 컨테이너 단위로 분리되고, image-pair 의 `overflow: clip` 으로 슬라이드
+ *   snapshot 이 영역 밖으로 새지 않는다.
+ * - root 전환은 끈다 — page-shell 만 슬라이드.
+ */
+
+::view-transition-group(page-shell) {
+  animation-duration: 0s;
 }
 
-::view-transition-new(.page) {
-  animation: 360ms cubic-bezier(0, 0, 0.2, 1) 80ms both page-fade-in;
+::view-transition-image-pair(page-shell) {
+  isolation: isolate;
+  overflow: clip;
 }
 
-/* root 영역(헤더 외부 / wrapper 외부)은 효과 없이 즉시 스왑 — 깜빡임 방지 */
+::view-transition-old(page-shell),
+::view-transition-new(page-shell) {
+  /* UA 기본 mix-blend-mode: plus-lighter 는 두 snapshot 을 가산 합성해 회색 cast 를 만든다.
+     iOS 스타일 push/pop 은 NEW 가 OLD 를 덮는 효과이므로 일반 blending 으로 되돌린다. */
+  mix-blend-mode: normal;
+  /* fill-mode: both 로 keyframe 의 from/to 가 시작·종료 시점에도 적용되어 잔상 방지. */
+  animation-fill-mode: both;
+  /* snapshot 의 투명 픽셀 영역으로 아래 레이어가 비치는 것을 막기 위해 불투명 배경을 깐다. */
+  background-color: var(--background, #fff);
+}
+
+/* root (페이지 외 영역) 는 애니메이션 끄기 — 깜빡임 방지. */
+::view-transition-group(root),
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+  animation: none !important;
 }
 
-@keyframes page-fade-out {
-  to {
-    opacity: 0;
-    transform: translateY(-12px) scale(0.98);
-    filter: blur(2px);
-  }
-}
-
-@keyframes page-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.985);
-    filter: blur(2px);
-  }
-}
-
-/* 정방향(상위 → 하위) — 좌측으로 미끄러져 나가고 우측에서 들어옴 */
+/* ───────── nav-forward (depth ↑, iOS push) ─────────
+ * 새 화면이 오른쪽에서 슬라이드 인, 옛 화면은 살짝 왼쪽으로 밀리며 dim + 페이드. */
+:root:active-view-transition-type(nav-forward)::view-transition-old(page-shell),
+:root.vt-nav-forward::view-transition-old(page-shell),
 ::view-transition-old(.nav-forward) {
-  animation: 220ms cubic-bezier(0.4, 0, 1, 1) both slide-left-out;
+  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-out;
 }
-
+:root:active-view-transition-type(nav-forward)::view-transition-new(page-shell),
+:root.vt-nav-forward::view-transition-new(page-shell),
 ::view-transition-new(.nav-forward) {
-  animation: 360ms cubic-bezier(0, 0, 0.2, 1) 100ms both slide-left-in;
+  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-in;
 }
 
-/* 역방향(하위 → 상위) — 우측으로 미끄러져 나가고 좌측에서 들어옴 */
+/* ───────── nav-back (depth ↓, iOS pop) ───────── */
+:root:active-view-transition-type(nav-back)::view-transition-old(page-shell),
+:root.vt-nav-back::view-transition-old(page-shell),
 ::view-transition-old(.nav-back) {
-  animation: 220ms cubic-bezier(0.4, 0, 1, 1) both slide-right-out;
+  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-out;
 }
-
+:root:active-view-transition-type(nav-back)::view-transition-new(page-shell),
+:root.vt-nav-back::view-transition-new(page-shell),
 ::view-transition-new(.nav-back) {
-  animation: 360ms cubic-bezier(0, 0, 0.2, 1) 100ms both slide-right-in;
+  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-in;
 }
 
-@keyframes slide-left-out {
+/* ───────── nav-fade (호출자가 명시했을 때만) ─────────
+ * delay 없이 OLD/NEW 가 동시에 crossfade 된다. */
+:root:active-view-transition-type(nav-fade)::view-transition-old(page-shell),
+::view-transition-old(.nav-fade) {
+  animation: 220ms ease both vt-fade-out;
+}
+:root:active-view-transition-type(nav-fade)::view-transition-new(page-shell),
+::view-transition-new(.nav-fade) {
+  animation: 220ms ease both vt-fade-in;
+}
+
+/* ───────── keyframes ─────────
+ * push/pop OLD 의 종료 opacity 를 0 으로 떨어뜨려, transition 종료 직후 pseudo 가 제거되기 전
+ * 한 프레임 동안 dim 된 OLD snapshot 이 보이며 발생하던 회색 잔상을 차단한다.
+ *
+ * `--vt-old-shift` (PageViewTransition 이 startViewTransition 호출 시점에 주입하는 음수 px):
+ * page-shell 은 페이지 콘텐츠 전체 높이를 가진 div 라, 스크롤된 상태에서 전환하면 group 이
+ * NEW 기준(top:0)으로 스냅되며 OLD 스냅샷이 최상단으로 끌어올려진다. OLD(`*-out`) 키프레임의
+ * transform 에 translateY 로 스크롤 오프셋을 되돌려, 보던 위치 그대로 옆으로 슬라이드되게 한다.
+ * 미정의 시 0px 폴백 → 스크롤이 없거나 미지원 환경에서는 동작 동일. */
+@keyframes vt-ios-push-in {
+  from {
+    transform: translateX(100%);
+  }
   to {
-    opacity: 0;
-    transform: translateX(-48px);
-    filter: blur(2px);
+    transform: translateX(0);
   }
 }
 
-@keyframes slide-left-in {
+@keyframes vt-ios-push-out {
+  from {
+    transform: translateX(0) translateY(var(--vt-old-shift, 0px));
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-30%) translateY(var(--vt-old-shift, 0px));
+    opacity: 0;
+  }
+}
+
+@keyframes vt-ios-pop-in {
+  from {
+    transform: translateX(-30%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes vt-ios-pop-out {
+  from {
+    transform: translateX(0) translateY(var(--vt-old-shift, 0px));
+  }
+  to {
+    transform: translateX(100%) translateY(var(--vt-old-shift, 0px));
+  }
+}
+
+@keyframes vt-fade-in {
   from {
     opacity: 0;
-    transform: translateX(48px);
-    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
   }
 }
 
-@keyframes slide-right-out {
+@keyframes vt-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(var(--vt-old-shift, 0px));
+  }
   to {
     opacity: 0;
-    transform: translateX(48px);
-    filter: blur(2px);
+    transform: translateY(var(--vt-old-shift, 0px));
   }
 }
 
-@keyframes slide-right-in {
-  from {
-    opacity: 0;
-    transform: translateX(-48px);
-    filter: blur(2px);
-  }
-}
-
-/* 상단바는 전환 중에도 자기 자리에 고정 — 사용자 위치 감각 유지 */
-::view-transition-group(site-header) {
-  animation: none;
-  z-index: 100;
-}
-
-::view-transition-old(site-header) {
-  display: none;
-}
-
-::view-transition-new(site-header) {
-  animation: none;
-}
-
-/* 동작 민감 사용자: 위치 변화는 없애고 짧은 cross-fade만 유지 */
+/* prefers-reduced-motion: 슬라이드 끄고 즉시 교체. */
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(.page),
-  ::view-transition-old(.nav-forward),
-  ::view-transition-old(.nav-back) {
-    animation: 120ms ease both reduced-fade-out;
-  }
-  ::view-transition-new(.page),
-  ::view-transition-new(.nav-forward),
-  ::view-transition-new(.nav-back) {
-    animation: 120ms ease both reduced-fade-in;
-  }
-  @keyframes reduced-fade-out {
-    to {
-      opacity: 0;
-    }
-  }
-  @keyframes reduced-fade-in {
-    from {
-      opacity: 0;
-    }
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
   }
 }

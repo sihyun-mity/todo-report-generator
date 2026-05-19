@@ -1,10 +1,10 @@
 'use client';
 
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Github, KeyRound, Mail } from 'lucide-react';
+import { Link } from '@/components';
+import { useRouter } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, enableGuestMode } from '@/lib/guest';
 import { migrateGuestNewsLastSeen, stashGuestNewsLastSeenInCookie } from '@/lib/news';

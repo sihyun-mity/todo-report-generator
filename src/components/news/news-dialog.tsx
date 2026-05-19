@@ -1,10 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
-import { Portal } from '..';
+import { Link, Portal } from '..';
 import { NewsMarkdown } from '.';
 import { createClient } from '@/lib/supabase/client';
 import { NEWS_GUEST_STORAGE_KEY } from '@/constants';

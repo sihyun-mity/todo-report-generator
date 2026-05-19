@@ -1,9 +1,9 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import queryString from 'query-string';
 import { useCallback } from 'react';
-import { useAllSearchParams } from '.';
+import { useAllSearchParams, useRouter } from '.';
 
 export const useSearchQuery = <T extends ParsedUrlQuery>(): [T, (query: Partial<T>) => void, () => void] => {
   const router = useRouter();

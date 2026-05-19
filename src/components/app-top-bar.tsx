@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { clearGuestLocalData, disableGuestMode, isGuestMode } from '@/lib/guest';
-import { useOnClickOutside } from '@/hooks';
+import { useOnClickOutside, useRouter } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
-import { ThemeToggle } from '.';
+import { Link, ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
 const subscribeNoop = () => () => {};
@@ -87,10 +85,7 @@ export function AppTopBar() {
   };
 
   return (
-    <div
-      style={{ viewTransitionName: 'site-header' }}
-      className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70"
-    >
+    <div className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 sm:px-6 lg:px-12">
         <Link
           href="/"
