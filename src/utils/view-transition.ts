@@ -95,3 +95,29 @@ export function resolveTransitionTypes(
   const inferred = computeNavTransitionType(currentPath, targetPath);
   return inferred ? [inferred] : undefined;
 }
+
+/**
+ * 진행 중인 View Transition pseudo-element 애니메이션이 모두 끝날 때까지 대기한다.
+ *
+ * Why: 페이지 진입 effect 가 모달을 자동으로 여는 흐름에서, `::view-transition-old/new(...)`
+ * pseudo 스냅샷이 root 컨텐츠 위로 합성되는 동안 dim 을 깔면, 막 마운트된 dim 위로 페이지
+ * 스냅샷이 잠시 비쳐 보인다. 자동 오픈 트리거를 이 helper 이후로 미루면 전환이 끝난 뒤에
+ * dim 이 올라와 깔끔하게 표시된다.
+ *
+ * 진행 중인 transition 이 없거나 환경이 미지원이면 즉시 resolve.
+ */
+export function waitForViewTransitionEnd(): Promise<void> {
+  if (typeof document === 'undefined') return Promise.resolve();
+  if (typeof document.getAnimations !== 'function') return Promise.resolve();
+
+  const animations = document.getAnimations().filter((animation) => {
+    const effect = animation.effect;
+    if (!effect) return false;
+    const pseudo = (effect as unknown as { pseudoElement?: string | null }).pseudoElement;
+    return typeof pseudo === 'string' && pseudo.startsWith('::view-transition');
+  });
+
+  if (animations.length === 0) return Promise.resolve();
+
+  return Promise.allSettled(animations.map((animation) => animation.finished)).then(() => undefined);
+}

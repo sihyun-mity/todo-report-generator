@@ -13,7 +13,10 @@ export function ConfirmDialogHost() {
   if (!top) return null;
 
   return (
+    // key={top.id} — 중첩 confirm 이 stack 될 때 entry 마다 컴포넌트를 remount 해
+    // 각자의 back sentinel 을 새로 등록하도록 한다.
     <ConfirmDialog
+      key={top.id}
       isOpen
       title={top.title}
       description={top.description}

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
 import type { Project } from '@/types';
 import { cn, parseReportText } from '@/utils';
-import { Portal } from '@/components';
+import { Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '@/components';
 import { useOnClickOutside } from '@/hooks';
 import { ProjectPreview } from '.';
 
@@ -27,6 +27,10 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
   const modalRef = useRef<HTMLDivElement | null>(null);
   const { lock, unlock } = useScrollLock({ autoLock: false });
 
+  // Portal 로 root group 에 마운트되는 모달이라, 페이지 전환(page-shell 슬라이드) 도중에는
+  // page-shell snapshot 이 모달 위로 스택돼 비친다. 전환이 끝난 뒤에 열리도록 통과시킨다.
+  const deferredOpen = useDeferOpenDuringViewTransition(isOpen);
+
   const handleClose = () => {
     setText('');
     setParsedData(null);
@@ -34,6 +38,9 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
   };
 
   useOnClickOutside(modalRef, handleClose);
+
+  // 브라우저 back(안드 하드웨어 back 포함)으로도 모달이 닫히도록 BackStack 에 등록한다.
+  useDismissOnBack(deferredOpen, handleClose);
 
   const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
@@ -61,14 +68,15 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
     if (parsedData) onApply(parsedData);
   };
 
-  // 모달이 열려 있는 동안 배경 스크롤을 잠근다
+  // 모달이 열려 있는 동안 배경 스크롤을 잠근다 — 전환 중 body overflow 변경으로 인한
+  // page-shell 리플로우를 피하려 deferredOpen 기준으로 잠근다.
   useEffect(() => {
-    if (isOpen) lock();
+    if (deferredOpen) lock();
     else unlock();
     return () => unlock();
-  }, [isOpen, lock, unlock]);
+  }, [deferredOpen, lock, unlock]);
 
-  if (!isOpen) return null;
+  if (!deferredOpen) return null;
 
   return (
     <Portal>

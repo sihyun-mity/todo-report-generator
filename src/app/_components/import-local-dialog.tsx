@@ -1,7 +1,7 @@
 'use client';
 
 import { HardDriveDownload } from 'lucide-react';
-import { Portal } from '@/components';
+import { Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '@/components';
 
 type Props = {
   isOpen: boolean;
@@ -11,7 +11,13 @@ type Props = {
 
 // 최초 접속 시, 로컬스토리지에만 존재하는 기존 기록을 계정으로 이전할지 묻는 다이얼로그
 export function ImportLocalDialog({ isOpen, onConfirm, onDismiss }: Readonly<Props>) {
-  if (!isOpen) return null;
+  // 자동으로 열리는 안내 다이얼로그라, 페이지 진입 View Transition 이 끝난 뒤에 열리도록 통과시킨다.
+  const deferredOpen = useDeferOpenDuringViewTransition(isOpen);
+
+  // 브라우저 back(안드 하드웨어 back 포함)은 "나중에"(dismiss)와 동일하게 다이얼로그를 닫는다.
+  useDismissOnBack(deferredOpen, onDismiss);
+
+  if (!deferredOpen) return null;
 
   return (
     <Portal>

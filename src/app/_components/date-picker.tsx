@@ -5,6 +5,7 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-reac
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
 import { useOnClickOutside } from '@/hooks';
+import { useDismissOnBack } from '@/components';
 
 type DatePickerProps = {
   value: ReportDate;
@@ -59,6 +60,9 @@ export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
   };
 
   useOnClickOutside(containerRef, () => setIsOpen(false));
+
+  // 브라우저 back(안드 하드웨어 back 포함)으로도 popover 가 닫히도록 BackStack 에 등록한다.
+  useDismissOnBack(isOpen, () => setIsOpen(false));
 
   // ESC로 닫기
   useEffect(() => {

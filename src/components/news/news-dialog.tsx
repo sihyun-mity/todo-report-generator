@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
-import { Link, Portal } from '..';
+import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '..';
 import { NewsMarkdown } from '.';
 import { createClient } from '@/lib/supabase/client';
 import { NEWS_GUEST_STORAGE_KEY } from '@/constants';
@@ -21,13 +21,17 @@ type Props = {
 export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<Props>) {
   const [open, setOpen] = useState(false);
 
+  // 자동으로 열리는 다이얼로그라, 페이지 진입 View Transition 이 진행 중이면 dim 이 전환
+  // 스냅샷 위로 깜빡인다. 전환이 끝난 뒤에 실제로 열리도록 open 을 한 번 통과시킨다.
+  const deferredOpen = useDeferOpenDuringViewTransition(open);
+
   // 다이얼로그가 열려 있는 동안 배경 스크롤 잠금 — import-modal 과 동일한 패턴
   const { lock, unlock } = useScrollLock({ autoLock: false });
   useEffect(() => {
-    if (open) lock();
+    if (deferredOpen) lock();
     else unlock();
     return () => unlock();
-  }, [open, lock, unlock]);
+  }, [deferredOpen, lock, unlock]);
 
   // 로그인된 상태에서는 게스트 전용 키가 dangling 으로 남는 케이스(OAuth/이메일 가입 콜백 경로)가 있다.
   // 그 키는 user_news_reads 로 이미 마이그레이션된 뒤이므로 안전하게 정리한다.
@@ -96,16 +100,19 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
     }
   }, [latestNews, userId]);
 
+  // 브라우저 back(안드 하드웨어 back 포함)으로도 새소식 다이얼로그가 닫히도록 BackStack 에 등록한다.
+  useDismissOnBack(deferredOpen, () => void markReadAndClose());
+
   useEffect(() => {
-    if (!open) return;
+    if (!deferredOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') void markReadAndClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, markReadAndClose]);
+  }, [deferredOpen, markReadAndClose]);
 
-  if (!open || !latestNews) return null;
+  if (!deferredOpen || !latestNews) return null;
 
   const formattedDate = new Date(latestNews.published_at).toLocaleDateString('ko-KR', {
     year: 'numeric',

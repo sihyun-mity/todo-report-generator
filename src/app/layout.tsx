@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Suspense } from 'react';
 import '@/styles/globals.css';
 import {
+  BackButtonHandler,
   ConfirmDialogHost,
   MobileDetector,
   PageViewTransition,
@@ -67,6 +68,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
 
         {/* 브라우저 back/forward(popstate) View Transition 의 라우트 commit 보고용. */}
         <PopstateViewTransitionNotifier />
+
+        {/* 브라우저 back(안드 하드웨어 back 포함)으로 모달·다이얼로그를 닫는 BackStack 연결. */}
+        <BackButtonHandler />
 
         <ToasterProvider />
 
