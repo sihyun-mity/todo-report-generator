@@ -2,7 +2,7 @@
 
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Github, KeyRound, Mail } from 'lucide-react';
+import { ClipboardList, Github, KeyRound, Mail } from 'lucide-react';
 import { Link } from '@/components';
 import { useRouter } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
@@ -357,9 +357,22 @@ type AuthCardProps = {
 function AuthCard({ title, children }: Readonly<AuthCardProps>) {
   return (
     <div className="flex min-h-screen-enhanced items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h1 className="mb-6 text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">{title}</h1>
-        {children}
+      <div className="w-full max-w-sm">
+        <header className="mb-6 flex flex-col items-center text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700/50 dark:bg-zinc-900">
+            <ClipboardList size={22} className="text-blue-600 dark:text-blue-400" aria-hidden="true" />
+          </div>
+          <h1 className="text-xl font-extrabold tracking-tight text-zinc-900 sm:text-2xl dark:text-white">
+            일일 업무 보고 생성기
+          </h1>
+          <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+            프로젝트별 진행률을 적으면 보고서 양식이 자동으로 만들어져요.
+          </p>
+        </header>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-6 text-lg font-bold tracking-tight text-zinc-900 dark:text-white">{title}</h2>
+          {children}
+        </div>
       </div>
     </div>
   );
