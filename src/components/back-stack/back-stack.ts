@@ -7,19 +7,19 @@
  * - 모달이 열릴 때 `history.pushState` 로 sentinel entry 한 칸을 쌓고, stack 에 onClose 핸들러를 push 한다.
  * - 브라우저 back → sentinel pop → popstate 발생 → `handlePopstate` → stack top 의 onClose 호출.
  * - X 버튼·오버레이 클릭·props.open=false 토글 등 back 키가 아닌 경로로 닫히면(cleanup 이 stack 에서
- *   unregister) sentinel entry 는 history 에 그대로 남는다. 이 "stale sentinel" 이 현재 위치라는 것을
- *   모듈이 `staleSentinelOnCurrentEntry` 로 기억해 두었다가, 사용자가 다음에 back 을 누를 때
- *   `handlePopstate` 가 그 한 칸을 `history.back()` 으로 자동 흡수한다 → 사용자는 back 을 한 번만 눌러도
- *   실제 이전 화면에 도달한다.
+ *   unregister) sentinel entry 는 history 에 그대로 남는다. 이 "stale sentinel" 의 개수를 모듈이
+ *   `staleSentinelCount` 카운터로 누적해 두었다가, 사용자가 다음에 back 을 누를 때 `handlePopstate`
+ *   가 카운트만큼 `history.back()` 으로 한 칸씩 자동 흡수한다 → 다이얼로그를 여러 개 연속으로 X 로
+ *   닫아도 사용자는 back 한 번으로 실제 이전 화면에 도달한다 (모든 흡수는 동일 popstate chain 안에서 일어남).
  *
  *   cleanup 에서 곧장 `history.back()` 을 부르지 않는 이유: 같은 click 안에서 setOpen(false) 와
  *   router.push/replace 가 함께 호출되면(예: NewsDialog 의 "이전 소식 모두 보기" 링크) cleanup 은
  *   urgent commit 직후 sync 로 실행되는데, 이 시점엔 아직 router 의 history 반영 전이다. 여기서
  *   `history.back()` 을 부르면 router 가 entry 를 덮기 전에 pop 되어 popstate → Next 의
  *   ACTION_TRAVERSE 가 navigation 을 덮어쓰는 race 가 난다. 그래서 cleanup 은 history 를 건드리지
- *   않고 stale 표시만 남기며, 실제 정리는 다음 popstate(back) 시점으로 미룬다. router 가 동작한
- *   경우엔 entry 가 router 에 의해 덮여 sentinel 이 사라지므로 stale 표시 자체를 하지 않고,
- *   라우트 변경 시 `clearBackStackOnRouteChange` 가 표시를 지운다.
+ *   않고 카운터만 +1 하며, 실제 정리는 다음 popstate(back) 시점으로 미룬다. router 가 동작한
+ *   경우엔 entry 가 router 에 의해 덮여 sentinel 이 사라지므로 cleanup 은 카운트를 올리지 않으며,
+ *   라우트 변경 시 `clearBackStackOnRouteChange` 가 카운터를 0 으로 리셋한다.
  *
  * popstate View Transition 엔진(`popstate-view-transition.tsx`)과의 공존
  * - sentinel pushState 는 URL 을 바꾸지 않는다(`url` 미지정). popstate 엔진은
@@ -43,10 +43,15 @@ let stack: Array<BackHandler> = [];
 let nextId = 1;
 
 /**
- * 현재 history 위치가 "stale sentinel"(모달이 back 키 외의 경로로 닫혀 sentinel entry 만 남은 자리)
- * 인지 여부. true 면 다음 popstate(back) 에서 `handlePopstate` 가 그 한 칸을 추가로 흡수한다.
+ * X·오버레이 등 back 외 경로로 닫혀 history 에 남아 있는 stale sentinel entry 수.
+ * cleanup 마다 +1, `handlePopstate` 의 stale 분기가 한 번에 하나씩 `history.back()` 으로 흡수해 -1.
+ *
+ * boolean 이 아닌 카운터인 이유: 단일 페이지 안에서 다이얼로그 여러 개를 연속으로 X 로 닫으면
+ * stale entry 가 누적된다. boolean 으로는 한 칸만 기억해 사용자가 뒤로가기 한 번에 entry 두 칸을
+ * 모두 흡수하지 못하고 한 칸은 여전히 남아 화면 변화 없는 popstate 가 발생, 뒤로가기를 한 번 더
+ * 눌러야 진짜 이전 페이지로 가는 문제가 있었다.
  */
-let staleSentinelOnCurrentEntry = false;
+let staleSentinelCount = 0;
 
 const isClient = (): boolean => typeof window !== 'undefined';
 
@@ -61,16 +66,17 @@ const isSentinelState = (state: unknown, id?: number): boolean => {
  * stack 에 닫기 핸들러를 push 하고 history sentinel 한 칸을 추가한다.
  * 반환된 unregister 는 외부 트리거(props.open=false / X 버튼 / 오버레이)로 인한 cleanup 경로에서 호출된다.
  *
- * cleanup 은 history 를 건드리지 않고 "현재 위치가 stale sentinel" 표시(`staleSentinelOnCurrentEntry`)만
- * 남긴다. 곧장 `history.back()` 을 부르면 같은 click 에서 함께 호출되는 router.replace/push 와 race 가
- * 나기 때문이다(모듈 상단 주석 참고). 실제 정리는 다음 popstate(back) 시점의 `handlePopstate` 가 한다.
+ * cleanup 은 history 를 건드리지 않고 `staleSentinelCount` 만 +1 한다. 곧장 `history.back()` 을
+ * 부르면 같은 click 에서 함께 호출되는 router.replace/push 와 race 가 나기 때문이다(모듈 상단 주석 참고).
+ * 실제 정리는 다음 popstate(back) 시점의 `handlePopstate` 가 한다.
  */
 export function pushBackHandler(onClose: () => void): () => void {
   if (!isClient()) return () => {};
   const id = nextId++;
   stack.push({ id, onClose });
-  // 새 sentinel entry 로 이동한다 → 직전에 남아 있던 stale sentinel 위치를 벗어났다.
-  staleSentinelOnCurrentEntry = false;
+  // 새 sentinel push 는 카운터를 건드리지 않는다 — 이전에 X 로 닫힌 다이얼로그들의 stale entry 는
+  // history 깊이에 그대로 남아 있고 새 sentinel 은 그 위에 한 칸 더 쌓일 뿐. 사용자가 결국
+  // 뒤로 가면 카운트만큼 한 칸씩 흡수해 누적된 stale 을 모두 정리한다.
   try {
     window.history.pushState({ [SENTINEL_KEY]: id }, '');
   } catch {
@@ -85,42 +91,41 @@ export function pushBackHandler(onClose: () => void): () => void {
     if (!isSentinelState(window.history.state, id)) return; // 다른 트리거(router 등)가 이미 덮음
 
     // back 키가 아닌 경로(X·오버레이·props.open=false)로 닫혔다. sentinel entry 는 history 에
-    // 그대로 남아 현재 위치가 stale sentinel 이 된다. 다음 back 에서 `handlePopstate` 가 이 한 칸을
-    // 흡수하도록 표시만 남긴다 (history 는 건드리지 않아 router 와의 race 를 원천 차단).
-    staleSentinelOnCurrentEntry = true;
+    // 그대로 남아 흡수 대기가 된다. 카운터를 +1 해 다음 back 들에서 한 칸씩 `history.back()` 으로
+    // 흡수한다 (history 는 건드리지 않아 router 와의 race 를 원천 차단).
+    staleSentinelCount += 1;
   };
 }
 
 /**
  * 라우트(pathname)가 실제로 변경된 시점에 호출한다.
  * 상위 store 등이 자체 dismiss 를 수행하므로 onClose 는 호출하지 않고 stack 만 비운다.
- * 라우트가 바뀌면 직전 화면의 stale sentinel 은 더 이상 우리 책임이 아니므로 표시도 함께 지운다.
+ * 라우트가 바뀌면 직전 화면의 stale sentinel 은 더 이상 우리 책임이 아니므로 카운터도 0 으로 리셋한다.
  */
 export function clearBackStackOnRouteChange(): void {
   stack = [];
-  staleSentinelOnCurrentEntry = false;
+  staleSentinelCount = 0;
 }
 
 /**
  * popstate 리스너 진입점.
  * 1) stack 에 핸들러가 있으면 top 을 호출한다(열린 모달을 back 으로 닫음).
- * 2) stack 이 비었고 직전 위치가 stale sentinel(모달이 back 외 경로로 닫혀 남은 자리)이었으면 →
- *    그 한 칸을 `history.back()` 으로 흡수해 사용자가 back 한 번으로 실제 이전 화면에 도달하게 한다.
+ * 2) stack 이 비었고 stale sentinel 카운트가 남아 있으면 → 그 한 칸을 `history.back()` 으로 흡수.
+ *    카운터가 0 이 될 때까지 매 popstate 마다 한 칸씩 처리하므로 누적된 stale entry 도 사용자의
+ *    back 한 번에 모두 정리된다 (각 자동 back 이 다시 popstate 를 발생시켜 이 분기를 재진입).
  * 3) stack 이 비었는데 새로 도착한 위치의 state 가 우리 sentinel 이면(라우트 push 후 잔존 sandwich)
- *    자동으로 한 칸 더 흡수한다. 연속된 sentinel 도 각 자동 back 이 다시 popstate 를 발생시켜
- *    cascade 로 정리된다.
+ *    자동으로 한 칸 더 흡수한다. 연속된 sentinel 도 cascade 로 정리된다.
  */
 export function handlePopstate(event: PopStateEvent): boolean {
   const top = stack.pop();
   if (top) {
-    // 열린 모달이 있다 → 현재 위치는 그 모달의 live sentinel 이지 stale 이 아니다.
-    staleSentinelOnCurrentEntry = false;
     top.onClose();
     return true;
   }
-  if (staleSentinelOnCurrentEntry) {
-    // 직전 위치가 stale sentinel 이었다 → 그 한 칸을 추가로 흡수해 실제 이전 화면으로 보낸다.
-    staleSentinelOnCurrentEntry = false;
+  if (staleSentinelCount > 0) {
+    // history 에 남아 있던 stale sentinel 한 칸을 흡수. 카운트가 더 있으면 이 `history.back()`
+    // 으로 발생하는 다음 popstate 에서 이 분기로 재진입해 추가 흡수한다.
+    staleSentinelCount -= 1;
     if (isClient()) {
       try {
         window.history.back();
