@@ -44,6 +44,25 @@
   animation: none !important;
 }
 
+/* ───────── react-hot-toast Toaster group: 위치 이동형 ─────────
+ * Toaster bottom offset 이 페이지마다 다름 (ToasterProvider 가 #report-mobile-copy-bar 등 bottom-blocking
+ * 요소를 보고 dynamic 계산). OLD/NEW 둘 다 opacity 1 로 표시하면 서로 다른 좌표에 두 개의 토스트가
+ * 동시에 보이는 잔상 발생.
+ *
+ * OLD pseudo 의 opacity 를 0 으로 즉시 숨기고 NEW 만 표시. group 자체에는 animation 룰을 걸지 않아
+ * UA default morph (transform/width/height 트윈) 가 동작 → NEW snapshot 한 개가 OLD 좌표 → NEW 좌표로
+ * 부드럽게 이동하고 transition 종료 시점에 실제 DOM (NEW 좌표) 으로 자연스럽게 swap.
+ */
+::view-transition-old(toaster) {
+  animation: none !important;
+  opacity: 0 !important;
+}
+::view-transition-new(toaster) {
+  animation: none !important;
+  opacity: 1 !important;
+  mix-blend-mode: normal;
+}
+
 /* ───────── nav-forward (depth ↑, iOS push) ─────────
  * 새 화면이 오른쪽에서 슬라이드 인, 옛 화면은 살짝 왼쪽으로 밀리며 dim + 페이드. */
 :root:active-view-transition-type(nav-forward)::view-transition-old(page-shell),

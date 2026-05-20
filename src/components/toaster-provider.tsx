@@ -100,6 +100,10 @@ export function ToasterProvider() {
       containerStyle={{
         bottom: bottomOffsetPx !== null ? `${bottomOffsetPx}px` : DEFAULT_BOTTOM,
         transition: 'bottom 150ms ease-out',
+        // root snapshot 에서 분리된 별도 view-transition group 으로 만든다. view-transitions.css 의
+        // ::view-transition-old(toaster) 가 opacity 0, NEW 가 opacity 1 로 처리되어 페이지마다 다른
+        // bottom offset 좌표 사이를 UA default morph 로 부드럽게 이동하며 잔상 없이 유지된다.
+        viewTransitionName: 'toaster',
       }}
       toastOptions={{
         duration: 3000,
