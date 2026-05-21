@@ -34,11 +34,38 @@ type Mode = 'login' | 'signup';
 
 type Props = {
   mode: Mode;
+  /** 로그인 흐름 도중 redirect 로 전달된 오류 (예: /auth/callback 의 `?error=...`) */
+  initialError?: string;
 };
 
-export function AuthForm({ mode }: Readonly<Props>) {
+export function AuthForm({ mode, initialError }: Readonly<Props>) {
   if (mode === 'signup') return <SignupForm />;
-  return <LoginForm />;
+  return <LoginForm initialError={initialError} />;
+}
+
+// Supabase / OAuth 가 돌려주는 raw 영어 메시지를 사용자용 한국어 문구로 매핑한다.
+// 매칭 안 되는 코드는 일반 문구 + 원문을 함께 보여 디버깅에 도움.
+function humanizeAuthError(raw: string): string {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes('refresh token')) {
+    return '이전 로그인 정보가 만료되어 다시 시도해야 해요. 다시 로그인해주세요.';
+  }
+  if (normalized === 'missing_code') {
+    return '로그인 정보를 받지 못했어요. 다시 시도해주세요.';
+  }
+  if (normalized.includes('access_denied')) {
+    return 'GitHub 인증을 취소했어요.';
+  }
+  if (normalized.includes('code') && (normalized.includes('used') || normalized.includes('expired'))) {
+    return '로그인 정보가 만료됐어요. 다시 시도해주세요.';
+  }
+  if (normalized.includes('verifier') || normalized.includes('pkce')) {
+    return '로그인 세션이 어긋났어요. 다시 시도해주세요.';
+  }
+  if (normalized.includes('server_error')) {
+    return 'GitHub 로그인 서버에서 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+  }
+  return `로그인에 실패했어요: ${raw}`;
 }
 
 function SignupForm() {
@@ -164,7 +191,11 @@ function SignupForm() {
   );
 }
 
-function LoginForm() {
+type LoginFormProps = {
+  initialError?: string;
+};
+
+function LoginForm({ initialError }: Readonly<LoginFormProps>) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -175,10 +206,29 @@ function LoginForm() {
   const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
   const [passkeyInFlight, setPasskeyInFlight] = useState(false);
   const autofillStarted = useRef(false);
+  // OAuth 등에서 ?error=... 로 redirect 돼 들어왔을 때 1회만 토스트 표시.
+  // strict mode 의 effect 더블 호출과 page 재마운트(예: SWR refetch)에 대비해 ref 로 가드한다.
+  const errorHandled = useRef(false);
 
   useEffect(() => {
     setPasskeySupported(isWebAuthnSupported());
   }, []);
+
+  useEffect(() => {
+    if (!initialError) return;
+    if (errorHandled.current) return;
+    errorHandled.current = true;
+    toast.error(humanizeAuthError(initialError));
+    // URL 에 남은 ?error=... 를 제거해 새로고침/공유 시 다시 토스트가 뜨지 않도록 한다.
+    // next router 의 replace 는 RSC re-render 를 유발하므로 history API 로 직접 정리한다.
+    if (typeof window !== 'undefined') {
+      const cleaned = new URL(window.location.href);
+      cleaned.searchParams.delete('error');
+      const search = cleaned.searchParams.toString();
+      const newUrl = `${cleaned.pathname}${search ? `?${search}` : ''}${cleaned.hash}`;
+      window.history.replaceState(window.history.state, '', newUrl);
+    }
+  }, [initialError]);
 
   // 이메일 필드 확장 & 브라우저가 conditional UI 지원 시 autofill 시작
   useEffect(() => {

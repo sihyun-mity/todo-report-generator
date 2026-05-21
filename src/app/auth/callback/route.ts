@@ -19,11 +19,25 @@ export async function GET(request: NextRequest) {
   const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
   const buildRedirect = (path: string) => NextResponse.redirect(new URL(path, url.origin));
 
+  // exchange 실패 / OAuth 에러로 복귀할 때 호출. 이전 세션의 stale 청크 토큰과 PKCE verifier 가
+  // 남아있으면 다음 로그인 시도에서 또 같은 실패를 반복하므로, supabase 가 쓰는 쿠키를 모두 지운다.
+  // - `sb-<projectRef>-auth-token` / `.0` / `.1` (access/refresh 청크)
+  // - `sb-<projectRef>-auth-token-code-verifier` (PKCE — 새 시도에서 새로 생성)
+  const buildFailureRedirect = (errorMessage: string) => {
+    const failureResponse = buildRedirect(`/login?error=${encodeURIComponent(errorMessage)}`);
+    request.cookies.getAll().forEach((c) => {
+      if (c.name.startsWith('sb-') && c.name.includes('-auth-token')) {
+        failureResponse.cookies.set({ name: c.name, value: '', maxAge: 0, path: '/' });
+      }
+    });
+    return failureResponse;
+  };
+
   if (oauthError) {
-    return buildRedirect(`/login?error=${encodeURIComponent(oauthError)}`);
+    return buildFailureRedirect(oauthError);
   }
   if (!code) {
-    return buildRedirect('/login?error=missing_code');
+    return buildFailureRedirect('missing_code');
   }
 
   // 응답 객체를 먼저 만들고 supabase가 setAll로 직접 이 응답에 쿠키를 쓰게 한다.
@@ -47,7 +61,7 @@ export async function GET(request: NextRequest) {
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return buildRedirect(`/login?error=${encodeURIComponent(error.message)}`);
+    return buildFailureRedirect(error.message);
   }
 
   // 게스트 쿠키가 남아있으면 미들웨어가 게스트로 취급해 세션을 무시한다 — 정리
