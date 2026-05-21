@@ -91,4 +91,4 @@ supabase/migrations/       # SQL 마이그레이션 + RLS
 src/docs/                  # 패스키/Supabase 셋업 문서
 ```
 
-코드 스타일·네이밍·import 규약은 [`CLAUDE.md`](CLAUDE.md) 참고.
+코드 스타일·네이밍·import 규약은 [`AGENTS.md`](AGENTS.md) 참고 (`CLAUDE.md` 는 동일 파일의 symlink).
