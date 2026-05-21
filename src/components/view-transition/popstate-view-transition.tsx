@@ -39,6 +39,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useIsomorphicLayoutEffect } from 'usehooks-ts';
+import { getBackStackSize } from '@/components/back-stack/back-stack';
 import { DEFAULT_PAGE_VIEW_TRANSITION_NAME, PAGE_SHELL_ELEMENT_ID } from '@/constants';
 import { normalizePath } from '@/utils';
 
@@ -315,7 +316,8 @@ function onPopState(event: PopStateEvent): void {
   lastTraverseNavigate = null;
 
   // 2) 인수 조건 검사 — 하나라도 어긋나면 기본 동작(Next 의 즉시 RESTORE)에 맡긴다.
-  if (historyDirection === null) return; //               방향 불명 (앱 외부에서 만든 entry 등)
+  if (historyDirection === null) return; //                방향 불명 (앱 외부에서 만든 entry 등)
+  if (getBackStackSize() > 0) return; //                   모달/바텀시트 sentinel pop — back-stack 처리
   if (transitionInFlight) return; //                       직전 전환이 아직 진행 중
   // UA(브라우저)가 이미 자체 전환(미리보기)을 그렸으면 우리 전환을 얹지 않는다 → 중복 방지.
   if (navInfo !== null && navInfo.supported && Date.now() - navInfo.at < PROGRAMMATIC_NAV_WINDOW_MS) {

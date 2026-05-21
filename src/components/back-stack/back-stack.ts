@@ -41,6 +41,13 @@ type BackHandler = {
 
 let stack: Array<BackHandler> = [];
 let nextId = 1;
+/**
+ * router wrapper 등 외부가 sentinel pop 을 위해 `history.back()` 을 호출한 직후,
+ * `handlePopstate` 가 그 popstate 를 그대로 흘려보내도록 하는 카운터. 0 보다 크면 첫 분기에서
+ * 카운트를 -1 하고 즉시 return → stack/stale 흡수 분기가 발화하지 않는다.
+ * `suppressNextPopstate(count)` 가 키운다.
+ */
+let suppressNextPop = 0;
 
 /**
  * X·오버레이 등 back 외 경로로 닫혀 history 에 남아 있는 stale sentinel entry 수.
@@ -104,11 +111,34 @@ export function pushBackHandler(onClose: () => void): () => void {
  */
 export function clearBackStackOnRouteChange(): void {
   stack = [];
+  suppressNextPop = 0;
   staleSentinelCount = 0;
 }
 
 /**
+ * 현재 활성 sentinel(=stack 에 등록된 닫기 핸들러) 개수.
+ * router wrapper 가 `router.replace` 호출 시 sentinel 위에 있는지 판단하는 데 쓴다.
+ */
+export function getBackStackSize(): number {
+  return stack.length;
+}
+
+/**
+ * 다음 popstate 부터 count 개만큼 `handlePopstate` 가 흡수(=상위 동작 안 함)하도록 표시한다.
+ *
+ * 용도: router wrapper 가 다이얼로그 sentinel entry 를 pop 하기 위해 `history.back()` 을
+ * 부르기 직전에 호출한다. 그렇지 않으면 `staleSentinelCount` 흡수 분기가 추가로 한 칸씩
+ * `history.back()` 을 호출해 의도치 않게 두 칸 이상 뒤로 가버린다.
+ */
+export function suppressNextPopstate(count = 1): void {
+  if (count <= 0) return;
+  suppressNextPop += count;
+}
+
+/**
  * popstate 리스너 진입점.
+ * 0) `suppressNextPop` 이 있으면(router wrapper 가 sentinel 을 pop 하려고 호출한 직후)
+ *    카운트를 -1 하고 그대로 흘려보낸다. stack/stale 흡수가 발화하지 않게 막는다.
  * 1) stack 에 핸들러가 있으면 top 을 호출한다(열린 모달을 back 으로 닫음).
  * 2) stack 이 비었고 stale sentinel 카운트가 남아 있으면 → 그 한 칸을 `history.back()` 으로 흡수.
  *    카운터가 0 이 될 때까지 매 popstate 마다 한 칸씩 처리하므로 누적된 stale entry 도 사용자의
@@ -117,6 +147,10 @@ export function clearBackStackOnRouteChange(): void {
  *    자동으로 한 칸 더 흡수한다. 연속된 sentinel 도 cascade 로 정리된다.
  */
 export function handlePopstate(event: PopStateEvent): boolean {
+  if (suppressNextPop > 0) {
+    suppressNextPop -= 1;
+    return false;
+  }
   const top = stack.pop();
   if (top) {
     top.onClose();
