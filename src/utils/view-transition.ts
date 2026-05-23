@@ -15,6 +15,11 @@ function segments(path: string): Array<string> {
   return path.split('/').filter(Boolean);
 }
 
+export type ComputeNavTransitionOptions = {
+  /** 호출이 `router.replace` 인지 여부. 기본은 push (`Link` · `router.push`). */
+  isReplace?: boolean;
+};
+
 /**
  * iOS 스타일 push/pop 방향 판정.
  *
@@ -23,15 +28,22 @@ function segments(path: string): Array<string> {
  * - 그 외에는 segment depth 로 비교 (depth ↑ = push). depth ↓ 는 pop 으로 판정하지 않는다 —
  *   prefix 관계가 아닌 한 Link 이동은 히스토리 push 이므로 forward 로 본다.
  * - depth >= 2 인 동일 depth 경로에서 앞쪽 segment 가 모두 같고 마지막 segment 한 자리만 다르면
- *   (`/whats-new/1` ↔ `/whats-new/2`) 같은 라우트의 dynamic 인스턴스 swap 으로 보고 transition 을
- *   끈다 → undefined 반환.
+ *   (`/whats-new/1` ↔ `/whats-new/2`) 같은 라우트의 dynamic 인스턴스 swap 이므로 **replace
+ *   호출인 경우에만** transition 을 끈다 → undefined 반환. 특정 탭이 자기 자신을 replace 로
+ *   전환하는 케이스 등에서 슬라이드가 어색해 도입된 예외이며, 같은 형태의 path 라도
+ *   `router.push` / `<Link>` (히스토리 push) 로 이동하면 사용자 의도는 "다른 인스턴스 페이지로
+ *   들어가기" 이므로 일반 forward 슬라이드를 적용한다.
  * - depth 동일 + prefix 무관 (`/login` ↔ `/signup` 등) 은 push 로 fallback.
  *   iOS 페이지 전환은 항상 슬라이드가 기본이고 fade 는 일반적이지 않다. fade 가 필요하면 호출자가
  *   `transitionTypes={['nav-fade']}` 로 명시한다.
  *
  * 같은 path 면 undefined 반환 → transition 미적용.
  */
-export function computeNavTransitionType(currentRaw: string, targetRaw: string): NavTransitionType | undefined {
+export function computeNavTransitionType(
+  currentRaw: string,
+  targetRaw: string,
+  options?: ComputeNavTransitionOptions
+): NavTransitionType | undefined {
   const current = normalizePath(currentRaw);
   const target = normalizePath(targetRaw);
 
@@ -52,8 +64,10 @@ export function computeNavTransitionType(currentRaw: string, targetRaw: string):
   if (tSegs.length > cSegs.length) return 'nav-forward';
 
   // depth 동일 + depth >= 2 + 앞쪽 segment 모두 같고 마지막 segment 만 다름 — 같은 라우트의
-  // dynamic 값 swap 으로 본다 (예: /whats-new/1 → /whats-new/2). 슬라이드가 어색하므로 transition off.
-  if (cSegs.length >= 2) {
+  // dynamic 값 swap 으로 본다 (예: /whats-new/1 → /whats-new/2). replace 호출에서는 슬라이드가
+  // 어색하므로 transition off; push 호출 (router.push / <Link>) 은 새 인스턴스로 들어가는 의도이므로
+  // 아래 forward fallback 으로 흘려보낸다.
+  if (options?.isReplace && cSegs.length >= 2) {
     const lastIdx = cSegs.length - 1;
     const leadingMatch = cSegs.slice(0, lastIdx).every((s, i) => s === tSegs[i]);
     if (leadingMatch && cSegs[lastIdx] !== tSegs[lastIdx]) return undefined;
@@ -83,16 +97,20 @@ export function extractHrefPath(href: unknown, fallback: string = '/'): string {
  * Link / useRouter 가 navigation 시 넘길 `transitionTypes` 를 확정한다.
  * - explicit 이 주어지면(빈 배열 포함) 그대로 사용 — `[]` 는 transition 미적용 의도.
  * - explicit 이 undefined 면 current → target path 로 방향을 자동 추론한다.
+ * - `options.isReplace` 는 caller 가 `router.replace` / `<Link replace>` 인지 표시.
+ *   동일 depth 마지막 segment swap 분기에서만 사용된다 (replace 일 때만 transition off,
+ *   push 는 forward).
  */
 export function resolveTransitionTypes(
   currentPath: string,
   href: unknown,
-  explicit: ReadonlyArray<string> | undefined
+  explicit: ReadonlyArray<string> | undefined,
+  options?: ComputeNavTransitionOptions
 ): Array<string> | undefined {
   if (explicit !== undefined) return [...explicit];
   // pathname 미명시(query/hash 만 변경) 인 경우 currentPath 를 fallback 으로 넘겨 같은 페이지로 처리.
   const targetPath = extractHrefPath(href, currentPath);
-  const inferred = computeNavTransitionType(currentPath, targetPath);
+  const inferred = computeNavTransitionType(currentPath, targetPath, options);
   return inferred ? [inferred] : undefined;
 }
 

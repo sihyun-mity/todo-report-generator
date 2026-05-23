@@ -18,6 +18,7 @@ type NextLinkProps = ComponentProps<typeof NextLink>;
  */
 export function Link({ transitionTypes: explicit, ...rest }: Readonly<NextLinkProps>) {
   const pathname = usePathname();
-  const resolved = resolveTransitionTypes(pathname, rest.href, explicit);
+  // `<Link replace>` 는 history.replaceState 로 동작하므로 router.replace 와 동일하게 취급한다.
+  const resolved = resolveTransitionTypes(pathname, rest.href, explicit, { isReplace: rest.replace === true });
   return <NextLink {...rest} transitionTypes={resolved} />;
 }

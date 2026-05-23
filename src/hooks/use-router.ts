@@ -70,8 +70,14 @@ export function useRouter(): AppRouter {
   });
 
   return useMemo<AppRouter>(() => {
-    const enrich = (href: string, options?: NavigateOptions): NavigateOptions | undefined => {
-      const resolved = resolveTransitionTypes(pathnameRef.current, href, options?.transitionTypes);
+    const enrich = (
+      href: string,
+      options: NavigateOptions | undefined,
+      kind: 'push' | 'replace'
+    ): NavigateOptions | undefined => {
+      const resolved = resolveTransitionTypes(pathnameRef.current, href, options?.transitionTypes, {
+        isReplace: kind === 'replace',
+      });
       if (!resolved || resolved.length === 0) {
         if (!options) return undefined;
         const withoutTypes: NavigateOptions = { ...options };
@@ -83,9 +89,9 @@ export function useRouter(): AppRouter {
 
     return {
       ...baseRouter,
-      push: (href, options) => baseRouter.push(href, enrich(href, options)),
+      push: (href, options) => baseRouter.push(href, enrich(href, options, 'push')),
       replace: (href, options) => {
-        const enrichedOptions = enrich(href, options);
+        const enrichedOptions = enrich(href, options, 'replace');
         const doReplace = (): void => baseRouter.replace(href, enrichedOptions);
         const sentinelCount = getBackStackSize();
         if (sentinelCount === 0) {
