@@ -17,6 +17,23 @@
  * - root 전환은 끈다 — page-shell 만 슬라이드.
  */
 
+/* ───────── 전환 중 입력 락 ─────────
+ * 전환이 진행되는 동안 `<html>` 에 `.vt-in-flight` 가 부여된다 (page-view-transition.tsx 의
+ * `patchStartViewTransition`). 이 시점부터 `transition.finished` 까지 입력을 차단해
+ * 네이티브 NavigationController 와 동일하게 추가 네비게이션이 끼어들지 않도록 한다.
+ *
+ * - `pointer-events: none` 으로 클릭/탭 차단.
+ * - `user-select: none` 으로 드래그 선택 차단 (전환 중 OLD/NEW snapshot 위에서 텍스트 선택이
+ *   되는 어색한 인터랙션 방지).
+ * - 차단 대상은 root 전체 — AppTopBar, page-shell, dialog 모두 포함. iOS 가 페이지 전환
+ *   중 탭바 입력까지 잠그는 것과 동일.
+ * - `prefers-reduced-motion` 환경은 transition 자체가 0.01ms 안에 끝나 락도 즉시 해제된다.
+ */
+:root.vt-in-flight {
+  pointer-events: none;
+  user-select: none;
+}
+
 ::view-transition-group(page-shell) {
   animation-duration: 0s;
 }
@@ -68,35 +85,35 @@
 :root:active-view-transition-type(nav-forward)::view-transition-old(page-shell),
 :root.vt-nav-forward::view-transition-old(page-shell),
 ::view-transition-old(.nav-forward) {
-  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-out;
+  animation: 300ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-out;
 }
 :root:active-view-transition-type(nav-forward)::view-transition-new(page-shell),
 :root.vt-nav-forward::view-transition-new(page-shell),
 ::view-transition-new(.nav-forward) {
-  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-in;
+  animation: 300ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-push-in;
 }
 
 /* ───────── nav-back (depth ↓, iOS pop) ───────── */
 :root:active-view-transition-type(nav-back)::view-transition-old(page-shell),
 :root.vt-nav-back::view-transition-old(page-shell),
 ::view-transition-old(.nav-back) {
-  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-out;
+  animation: 300ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-out;
 }
 :root:active-view-transition-type(nav-back)::view-transition-new(page-shell),
 :root.vt-nav-back::view-transition-new(page-shell),
 ::view-transition-new(.nav-back) {
-  animation: 360ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-in;
+  animation: 300ms cubic-bezier(0.32, 0.72, 0, 1) both vt-ios-pop-in;
 }
 
 /* ───────── nav-fade (호출자가 명시했을 때만) ─────────
  * delay 없이 OLD/NEW 가 동시에 crossfade 된다. */
 :root:active-view-transition-type(nav-fade)::view-transition-old(page-shell),
 ::view-transition-old(.nav-fade) {
-  animation: 220ms ease both vt-fade-out;
+  animation: 180ms ease both vt-fade-out;
 }
 :root:active-view-transition-type(nav-fade)::view-transition-new(page-shell),
 ::view-transition-new(.nav-fade) {
-  animation: 220ms ease both vt-fade-in;
+  animation: 180ms ease both vt-fade-in;
 }
 
 /* ───────── keyframes ─────────

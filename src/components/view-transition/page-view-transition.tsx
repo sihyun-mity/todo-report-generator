@@ -18,51 +18,59 @@ const ENTER_EXIT_MAP: ViewTransitionClassPerType = {
 };
 
 /**
- * View Transition 시작 시점의 스크롤 오프셋을 `--vt-old-shift` CSS 변수로 노출한다.
+ * View Transition 시작/종료 시점에 `<html>` 을 후킹한다. push/pop/popstate 모든 경로의
+ * 전환이 `document.startViewTransition` 한 곳을 통과하므로 여기 한 번에서 다음을 처리한다:
  *
- * `page-shell` view-transition-name 은 페이지 콘텐츠 전체 높이를 갖는 div 에 붙어 있다.
- * 스크롤이 내려간 상태에서 navigation 하면 `::view-transition-group(page-shell)` 가
- * NEW 페이지 기준(top:0)으로 즉시 스냅되면서, OLD 스냅샷이 최상단으로 끌어올려져
- * "스크롤이 풀린 채" 옆으로 넘어가는 부자연스러운 전환이 발생한다.
+ * 1. **스크롤 오프셋 (`--vt-old-shift`)**
+ *    `page-shell` view-transition-name 은 페이지 콘텐츠 전체 높이를 갖는 div 에 붙어 있다.
+ *    스크롤이 내려간 상태에서 navigation 하면 `::view-transition-group(page-shell)` 가
+ *    NEW 페이지 기준(top:0)으로 즉시 스냅되며, OLD 스냅샷이 최상단으로 끌어올려져
+ *    "스크롤이 풀린 채" 옆으로 넘어가는 부자연스러운 전환이 발생한다. startViewTransition
+ *    호출 시점(=OLD 캡처 직전, 같은 프레임이라 스크롤 값이 변하지 않는다)의 window.scrollY 를
+ *    음수 px 로 기록 → view-transitions.css 의 OLD 키프레임이 translateY 로 보정.
  *
- * 해결: startViewTransition 이 호출되는 순간(= OLD 스냅샷 캡처 직전, 같은 프레임이라
- * 스크롤 값이 변하지 않는다)의 window.scrollY 를 음수 px 로 기록한다. view-transitions.css
- * 의 OLD 키프레임이 이 값만큼 translateY 보정하므로, 사용자가 보던 스크롤 위치 그대로
- * 옆으로 슬라이드된다. document.startViewTransition 한 곳만 패치하므로 어떤 Link/router
- * 경로로 전환이 트리거되든 일관되게 동작한다.
+ * 2. **입력 락 (`.vt-in-flight`)**
+ *    전환이 진행되는 동안 `<html>` 에 클래스를 부여 → CSS 가 `pointer-events: none` 으로 입력 차단.
+ *    네이티브 NavigationController 와 동일하게 애니메이션 도중 추가 네비게이션이 끼어들지 않게 한다.
+ *    이 락이 없으면 (a) push 도중 다른 Link 클릭 시 React 가 새 transition 으로 직전 transition 을
+ *    skip 시켜 화면이 끊기고, (b) popstate 인수 도중 forward push 가 발생하면 우리가 다루고 있던
+ *    SVT 가 reject 되어 `popstate-view-transition` 의 큐/페닝 상태가 꼬인다.
+ *    `prefers-reduced-motion` 환경은 transition 자체가 0.01ms 라 락도 같이 즉시 풀린다.
  */
-function patchStartViewTransitionScrollCapture(): void {
+function patchStartViewTransition(): void {
   if (typeof document === 'undefined') return;
 
   type PatchableDocument = Document & {
     startViewTransition?: ((...args: Array<unknown>) => { finished?: Promise<unknown> }) & {
-      __vtScrollPatched?: boolean;
+      __vtPatched?: boolean;
     };
   };
 
   const doc = document as PatchableDocument;
   const original = doc.startViewTransition;
-  if (typeof original !== 'function' || original.__vtScrollPatched) return;
+  if (typeof original !== 'function' || original.__vtPatched) return;
 
   const patched = function patchedStartViewTransition(this: Document, ...args: Array<unknown>) {
     const root = document.documentElement;
     root.style.setProperty('--vt-old-shift', `${-Math.round(window.scrollY)}px`);
+    root.classList.add('vt-in-flight');
 
     const transition = original.apply(this, args);
-    // 전환 종료(성공/스킵/실패) 후 변수 제거 — 다음 렌더에 잔존 값이 새지 않도록.
+    // 전환 종료(성공/스킵/실패) 후 흔적 제거 — 다음 렌더에 잔존 값이 새지 않도록.
     transition?.finished?.finally(() => {
       root.style.removeProperty('--vt-old-shift');
+      root.classList.remove('vt-in-flight');
     });
     return transition;
   } as PatchableDocument['startViewTransition'];
 
-  patched!.__vtScrollPatched = true;
+  patched!.__vtPatched = true;
   doc.startViewTransition = patched;
 }
 
 // 'use client' 모듈이라 클라이언트에서만 실행된다. navigation 발생 전(모듈 import 시점)에
 // 패치를 설치해 첫 전환부터 보정이 적용되도록 한다.
-patchStartViewTransitionScrollCapture();
+patchStartViewTransition();
 
 type Props = PropsWithChildren<{
   /**

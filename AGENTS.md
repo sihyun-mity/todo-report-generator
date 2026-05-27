@@ -105,12 +105,12 @@ Next.js 기본 파일명이 아니다. 동작:
 
 - Root layout(`src/app/layout.tsx`)에서 children을 **`<PageViewTransition>`** wrapper로 감싸 모든 라우트 이동에 자동 적용한다. 이 wrapper는 내부에서 React `<ViewTransition>` 을 호출하고 `enter`/`exit` 클래스 맵에 `NAV_TRANSITION_TYPES`(`nav-forward`, `nav-back`, …)를 그대로 연결한다. 방향 타입이 주입되지 않은 navigation 의 `default` 는 `'none'` — directional 클래스를 부여하지 않는 안전 폴백이다.
 - SSR / 초기 hydration 동안엔 fragment 로 children 만 패스하고 `useIsClient()` 가 true 가 된 뒤에야 `<ViewTransition>` wrapping 을 활성화한다. 이렇게 하지 않으면 RSC 트리와 fiber 가 어긋나 hydration 오류가 난다 — `PageViewTransition` 을 우회해 React `<ViewTransition>` 을 직접 쓰지 말 것.
-- `PageViewTransition` 은 모듈 로드 시 `document.startViewTransition` 을 patch 해서 전환 시작 순간의 `window.scrollY` 를 `--vt-old-shift` CSS 변수로 노출한다. `page-shell` 의 OLD 키프레임이 이 값으로 translateY 보정하므로 스크롤된 상태로 navigation 해도 OLD 스냅샷이 최상단으로 끌어올려지지 않는다. 새 directional 효과를 추가할 때 이 변수를 활용한다.
+- `PageViewTransition` 모듈은 import 시점에 `document.startViewTransition` 을 한 번 래핑(`patchStartViewTransition`)해 push/pop/popstate 모든 전환에 두 가지 공통 처리를 부여한다. (a) **스크롤 보정**: OLD 캡처 직전의 `window.scrollY` 를 `--vt-old-shift` 음수 px 로 노출 → `page-shell` 의 OLD 키프레임이 이 값으로 translateY 보정하므로 스크롤된 상태로 navigation 해도 OLD 스냅샷이 최상단으로 끌어올려지지 않는다. (b) **입력 락**: `<html>` 에 `.vt-in-flight` 클래스를 토글 → `view-transitions.css` 가 `pointer-events: none + user-select: none` 으로 입력을 차단해 네이티브 NavigationController 처럼 전환 도중 Link/popstate 등 추가 네비게이션이 끼어들지 못하게 한다 (없으면 React 가 새 transition 으로 직전 transition 을 skip 시켜 화면이 끊기거나, popstate 큐/페닝 상태가 꼬임). 둘 다 `transition.finished` 의 `.finally` 에서 자동 해제.
 - 상위 → 하위로 진입하는 `<Link>`엔 `transitionTypes={['nav-forward']}` (좌→우 슬라이드), 복귀 링크엔 `transitionTypes={['nav-back']}` (우→좌 슬라이드)을 부여한다. 분류가 모호하면 prop을 생략해 default `page` 효과(fade + slide-up)로 둔다.
 - 전환 중에도 자기 자리에 고정돼야 하는 element(예: `AppTopBar`)엔 `style={{ viewTransitionName: '...' }}`을 부여하고 CSS에서 `::view-transition-group(name) { animation: none }`로 anchor한다.
 - 효과 정의는 `src/styles/view-transitions.css` 한 곳에 모은다. `prefers-reduced-motion: reduce`에서는 짧은 cross-fade만 유지하도록 매핑돼 있다.
 - React canary export(`ViewTransition`) 타입은 `src/types/react.d.ts`의 `import {} from 'react/canary'`로 활성화.
-- 브라우저 back/forward(popstate) 의 라우트 commit 시점 보고는 root layout 의 `<PopstateViewTransitionNotifier />` 가 담당한다 — 별도 패치를 추가하지 말 것.
+- 브라우저 back/forward(popstate) 는 root layout 의 `<PopstateViewTransitionNotifier />` 가 라우트 commit 시점을 보고하고, `popstate-view-transition.tsx` 가 자체 엔진으로 처리한다 (Next 의 urgent RESTORE 는 React `<ViewTransition>` 을 우회하므로). 진행 중 전환 도중 도착한 popstate 는 `stopImmediatePropagation()` 으로 Next 의 RESTORE 를 막고 큐(최신 1개 coalesce)에 적재 → 현재 leg 의 `transition.finished` cleanup 에서 drain 해 다음 leg 의 takeover 를 이어 시작한다. 연속 back 시 각 leg 의 애니메이션이 네이티브처럼 차례대로 재생되며, 3 연속 이상은 중간 1개를 collapse 하되 첫·마지막 leg 은 항상 재생. dialog/modal 은 URL 라우트가 아닌 sentinel 기반(`back-stack`)이라 `getBackStackSize() > 0` 검사로 자동 스킵된다 — 별도 modal route matcher 불필요.
 
 ### 디렉터리 구조
 

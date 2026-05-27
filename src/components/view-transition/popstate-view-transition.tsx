@@ -107,12 +107,28 @@ let pendingPopstateRestore: { readonly idx: number; readonly destPath: string } 
 /** 진행 중인 popstate 전환이 새 라우트 commit 을 기다리는 중이면 설정된다. */
 let pending: {
   readonly destPath: string;
+  /**
+   * 이 leg 의 도착 history idx. 빠른 연속 back 으로 `currentIdx` 가 이미 다음 leg 로
+   * 이동했어도, 이 leg 의 스크롤 복원은 자신의 destIdx 기준으로 한다.
+   */
+  readonly destIdx: number;
   readonly resolve: () => void;
   /** 전환 시작 시점(=OLD 캡처 직전)의 스크롤. OLD shift 재계산에 사용. */
   readonly oldScrollY: number;
 } | null = null;
 /** popstate 전환이 진행 중인지. 중첩 인수 방지. */
 let transitionInFlight = false;
+/**
+ * 진행 중 전환 도중 발생한 popstate. coalesce: 항상 최신 1 개만 보관.
+ * 현재 leg 의 cleanup 시점에 drain 해서 다음 leg 의 전환을 이어 시작 — 네이티브 앱처럼
+ * 연속 back 시 각 leg 의 애니메이션이 차례대로 재생되게 한다. 3 연속 이상은 중간 leg 을
+ * 1 개 건너뛰는 대신 마지막 leg 은 반드시 재생.
+ */
+let queuedPopstate: {
+  readonly destPath: string;
+  readonly destIdx: number;
+  readonly historyDirection: HistoryDirection;
+} | null = null;
 /** 우리가 redispatch 한 합성 popstate 인지 표시 — true 면 리스너는 그대로 흘려보낸다. */
 let reentrant = false;
 /**
@@ -240,10 +256,11 @@ function redispatchPopstate(): void {
 function takeOverPopstate(args: {
   readonly direction: HistoryDirection;
   readonly destPath: string;
+  readonly destIdx: number;
   readonly shell: HTMLElement;
   readonly startViewTransition: StartViewTransition;
 }): void {
-  const { direction, destPath, shell, startViewTransition } = args;
+  const { direction, destPath, destIdx, shell, startViewTransition } = args;
   const directionClass = `vt-${direction}`;
 
   transitionInFlight = true;
@@ -259,7 +276,7 @@ function takeOverPopstate(args: {
   const ready = new Promise<void>((resolve) => {
     resolveReady = resolve;
   });
-  pending = { destPath, resolve: resolveReady, oldScrollY };
+  pending = { destPath, destIdx, resolve: resolveReady, oldScrollY };
 
   const fallbackTimer = window.setTimeout(resolveReady, READY_TIMEOUT_MS);
 
@@ -269,6 +286,8 @@ function takeOverPopstate(args: {
     document.documentElement.classList.remove(directionClass);
     transitionInFlight = false;
     if (pending && pending.resolve === resolveReady) pending = null;
+    // 진행 중 도착한 popstate 가 있으면 이어서 처리 (네이티브 앱처럼 leg 별 애니메이션을 연쇄).
+    drainQueuedPopstate();
   };
 
   try {
@@ -316,9 +335,8 @@ function onPopState(event: PopStateEvent): void {
   lastTraverseNavigate = null;
 
   // 2) 인수 조건 검사 — 하나라도 어긋나면 기본 동작(Next 의 즉시 RESTORE)에 맡긴다.
-  if (historyDirection === null) return; //                방향 불명 (앱 외부에서 만든 entry 등)
+  if (historyDirection === null || destIdx === null) return; // 방향 불명 (앱 외부에서 만든 entry 등)
   if (getBackStackSize() > 0) return; //                   모달/바텀시트 sentinel pop — back-stack 처리
-  if (transitionInFlight) return; //                       직전 전환이 아직 진행 중
   // UA(브라우저)가 이미 자체 전환(미리보기)을 그렸으면 우리 전환을 얹지 않는다 → 중복 방지.
   if (navInfo !== null && navInfo.supported && Date.now() - navInfo.at < PROGRAMMATIC_NAV_WINDOW_MS) {
     if (navInfo.hasUAVisualTransition) return; //          UA 가 이미 시각 전환 수행 → skip
@@ -334,9 +352,46 @@ function onPopState(event: PopStateEvent): void {
   const shell = document.getElementById(PAGE_SHELL_ELEMENT_ID);
   if (!(shell instanceof HTMLElement)) return; //          page-shell 컨테이너 부재
 
-  // 3) 인수 — Next 의 즉시 RESTORE 를 막고 VT 안에서 다시 발생시킨다.
+  // 3) 진행 중 전환이 있으면 큐잉만 하고 cleanup 에서 이어 처리한다. propagation 차단 필수 —
+  // 그렇지 않으면 Next 의 urgent RESTORE 가 끼어들어 첫 leg 이 끝나기 전 DOM 이 최종 위치로 점프,
+  // 두번째 leg 의 애니메이션이 사라진다.
+  if (transitionInFlight) {
+    event.stopImmediatePropagation();
+    queuedPopstate = { destPath, destIdx, historyDirection };
+    return;
+  }
+
+  // 4) 인수 — Next 의 즉시 RESTORE 를 막고 VT 안에서 다시 발생시킨다.
   event.stopImmediatePropagation();
-  takeOverPopstate({ direction: historyDirection, destPath, shell, startViewTransition });
+  takeOverPopstate({ direction: historyDirection, destPath, destIdx, shell, startViewTransition });
+}
+
+/**
+ * 큐에 대기 중인 popstate 를 다음 leg 으로 시작한다. 직전 leg 의 cleanup 에서 호출.
+ *
+ * 처리 시점에 조건을 재검사: 그 사이 라우트가 바뀌어 back-stack 이 열렸을 수 있다.
+ *
+ * 동작: `takeOverPopstate` 가 update 콜백에서 `redispatchPopstate()` 로 합성 popstate 를
+ * 발생시키면, 그 시점의 `window.history.state` (= 마지막 queued leg 의 state) 가 실리고
+ * Next 는 현재 DOM 의 라우트에서 큐의 도착지로 정상 네비게이션한다.
+ */
+function drainQueuedPopstate(): void {
+  const q = queuedPopstate;
+  if (!q) return;
+  queuedPopstate = null;
+  if (q.destPath === lastCommittedPath) return;
+  if (getBackStackSize() > 0) return;
+  const startViewTransition = getStartViewTransition();
+  if (!startViewTransition) return;
+  const shell = document.getElementById(PAGE_SHELL_ELEMENT_ID);
+  if (!(shell instanceof HTMLElement)) return;
+  takeOverPopstate({
+    direction: q.historyDirection,
+    destPath: q.destPath,
+    destIdx: q.destIdx,
+    shell,
+    startViewTransition,
+  });
 }
 
 /**
@@ -355,7 +410,9 @@ function reportRouteCommitted(path: string): void {
   lastCommittedPath = path;
   if (pending && pending.destPath === path) {
     // 인수된 popstate: 스크롤 복원 + OLD shift 재계산 + ready resolve (NEW 캡처 진행).
-    const dest = getSavedScrollForIdx(currentIdx);
+    // `pending.destIdx` 사용 — 연속 back 으로 currentIdx 가 이미 다음 leg 로 이동했어도
+    // 이 leg 의 도착지 기준으로 스크롤을 복원한다.
+    const dest = getSavedScrollForIdx(pending.destIdx);
     window.scrollTo(dest.x, dest.y);
     applyPopOldShiftOverride(pending.oldScrollY, dest.y);
     pending.resolve();
