@@ -118,6 +118,7 @@ export function ToasterProvider() {
           maxWidth: 'min(calc(100vw - 2rem), 720px)',
           width: 'fit-content',
         },
+        className: '[&_[role=status]]:break-all',
         success: {
           iconTheme: {
             primary: '#10B981',
