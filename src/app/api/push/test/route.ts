@@ -26,7 +26,7 @@ export async function POST() {
 
   const payload = {
     title: '테스트 알림',
-    body: '알림이 정상적으로 도착했어요. 평일 오후 4시 30분에 작성 알림을 받게 됩니다.',
+    body: '알림이 정상적으로 도착했어요. 평일 오후 4시에 작성 알림을 받게 됩니다.',
     url: WORK_REPORT_REMINDER_URL,
     tag: WORK_REPORT_REMINDER_TAG,
   };

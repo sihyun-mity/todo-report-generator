@@ -11,4 +11,7 @@ export const WORK_REPORT_REMINDER_URL = '/';
 
 /** 작성 알림 문구 (크론 발송 payload). */
 export const WORK_REPORT_REMINDER_TITLE = '오늘 업무 보고 작성하기';
-export const WORK_REPORT_REMINDER_BODY = '아직 오늘 업무 보고를 작성하지 않았어요. 지금 빠르게 정리해볼까요?';
+export const WORK_REPORT_REMINDER_BODY = '아직 오늘 업무 보고를 작성하지 않았어요. 오후 5시 전까지 작성해주세요.';
+
+/** 로그인 후 홈에서 뜨는 구독 권유 다이얼로그를 "나중에/닫기"로 닫았음을 기억하는 localStorage 키. */
+export const PUSH_PROMPT_DISMISSED_KEY = 'push_subscribe_prompt_dismissed';

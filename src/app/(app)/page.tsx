@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { ReportForm } from '@/app/_components';
+import { PushSubscribePrompt } from '@/components';
 import { staticMetadata } from '@/utils';
 
 export const metadata: Metadata = staticMetadata({
@@ -11,6 +12,7 @@ export default function Home() {
   return (
     <main className="container mx-auto">
       <ReportForm />
+      <PushSubscribePrompt />
     </main>
   );
 }

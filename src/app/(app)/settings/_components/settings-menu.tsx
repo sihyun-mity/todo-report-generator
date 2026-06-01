@@ -58,7 +58,7 @@ export function SettingsMenu() {
           href="/settings/notifications"
           icon={<Bell size={18} />}
           title="작성 알림"
-          subtitle="평일 오후 4시 30분, 미작성 시 보고서 작성 알림 받기"
+          subtitle="평일 오후 4시, 미작성 시 보고서 작성 알림 받기"
         />
       </ul>
     </div>

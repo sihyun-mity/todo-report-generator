@@ -52,7 +52,7 @@ export function NotificationsSection() {
       } else {
         await subscribeToPush();
         setEnabled(true);
-        toast.success('작성 알림을 켰어요. 평일 오후 4시 30분에 알림을 보내드릴게요.');
+        toast.success('작성 알림을 켰어요. 평일 오후 4시에 알림을 보내드릴게요.');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -88,7 +88,7 @@ export function NotificationsSection() {
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6 lg:p-12">
       <SettingsSubHeader
         title="작성 알림"
-        description="평일 오후 4시 30분, 아직 오늘 업무 보고를 작성하지 않았다면 작성 알림을 보내드려요. 공휴일에는 보내지 않아요."
+        description="평일 오후 4시, 아직 오늘 업무 보고를 작성하지 않았다면 작성 알림을 보내드려요. 공휴일에는 보내지 않아요."
       />
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">

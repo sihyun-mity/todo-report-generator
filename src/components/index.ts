@@ -7,6 +7,7 @@ export * from './next-image';
 export * from './news';
 export * from './passkey-register-banner';
 export * from './portal';
+export * from './push-subscribe-prompt';
 export * from './theme-provider';
 export * from './theme-toggle';
 export * from './toaster-provider';
