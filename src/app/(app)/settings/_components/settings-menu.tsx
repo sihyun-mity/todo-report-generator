@@ -24,7 +24,7 @@ export function SettingsMenu() {
       <header className="mb-8">
         <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">계정 설정</h1>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          이메일, 비밀번호, 외부 계정 연동, 패스키를 항목별로 관리할 수 있어요.
+          로그인 수단부터 기기 보안, 작성 알림까지 항목별로 관리할 수 있어요.
         </p>
       </header>
 
@@ -54,6 +54,12 @@ export function SettingsMenu() {
           title="로그인 기기 관리"
           subtitle="로그인된 기기를 확인하고 원격으로 로그아웃"
         />
+
+        <li className="mt-2 flex items-center gap-3 px-1" aria-hidden>
+          <span className="text-[11px] font-semibold tracking-wide text-zinc-400 dark:text-zinc-500">기타</span>
+          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+        </li>
+
         <MenuLink
           href="/settings/notifications"
           icon={<Bell size={18} />}
