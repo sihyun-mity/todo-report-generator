@@ -14,5 +14,15 @@ declare namespace NodeJS {
     WEBAUTHN_ORIGIN: string;
     /** 챌린지 쿠키 서명/암호화용 64자 hex (서버 전용) */
     WEBAUTHN_CHALLENGE_SECRET: string;
+    /** Web Push VAPID 공개키 (브라우저 노출용) — `npx web-push generate-vapid-keys` 로 생성 */
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: string;
+    /** Web Push VAPID 비밀키 (서버 전용) */
+    VAPID_PRIVATE_KEY: string;
+    /** Web Push VAPID subject — `mailto:you@example.com` 형식 */
+    VAPID_SUBJECT: string;
+    /** Vercel Cron 호출 인증용 시크릿 (Authorization: Bearer 로 전달됨) */
+    CRON_SECRET: string;
+    /** 공공데이터포털 한국천문연구원 특일정보 API 서비스 키 (디코딩된 일반 인증키) */
+    DATA_GO_KR_SERVICE_KEY: string;
   }
 }

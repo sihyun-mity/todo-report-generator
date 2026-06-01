@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { ChevronRight, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
+import { Bell, ChevronRight, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
 import { Link } from '@/components';
 import { useAccountInfo } from '.';
 
@@ -53,6 +53,12 @@ export function SettingsMenu() {
           icon={<MonitorSmartphone size={18} />}
           title="로그인 기기 관리"
           subtitle="로그인된 기기를 확인하고 원격으로 로그아웃"
+        />
+        <MenuLink
+          href="/settings/notifications"
+          icon={<Bell size={18} />}
+          title="작성 알림"
+          subtitle="평일 오후 4시 30분, 미작성 시 보고서 작성 알림 받기"
         />
       </ul>
     </div>

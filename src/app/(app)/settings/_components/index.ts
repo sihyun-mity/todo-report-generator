@@ -1,5 +1,6 @@
 export * from './email-form';
 export * from './email-section';
+export * from './notifications-section';
 export * from './oauth-providers';
 export * from './passkeys-manager';
 export * from './password-form';
