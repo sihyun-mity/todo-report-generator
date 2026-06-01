@@ -43,18 +43,20 @@ export function NotificationsSection() {
 
   const handleToggle = async () => {
     if (busy) return;
+    const next = !enabled;
+    // 낙관적 갱신: 스위치를 즉시 뒤집고, 네트워크/권한 처리는 뒤에서 진행한다. 실패하면 원래대로 되돌린다.
+    setEnabled(next);
     setBusy(true);
     try {
-      if (enabled) {
-        await unsubscribeFromPush();
-        setEnabled(false);
-        toast.success('작성 알림을 껐어요.');
-      } else {
+      if (next) {
         await subscribeToPush();
-        setEnabled(true);
         toast.success('작성 알림을 켰어요. 평일 오후 4시에 알림을 보내드릴게요.');
+      } else {
+        await unsubscribeFromPush();
+        toast.success('작성 알림을 껐어요.');
       }
     } catch (error) {
+      setEnabled(!next);
       const message = error instanceof Error ? error.message : '';
       if (message === 'denied') {
         toast.error('알림 권한이 거부됐어요. 브라우저 설정에서 알림을 허용해주세요.');
@@ -130,10 +132,10 @@ export function NotificationsSection() {
                 type="button"
                 role="switch"
                 aria-checked={enabled}
+                aria-busy={busy}
                 aria-label="작성 알림"
                 onClick={handleToggle}
-                disabled={busy}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
                   enabled ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-700'
                 }`}
               >

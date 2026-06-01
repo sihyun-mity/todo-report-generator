@@ -27,7 +27,6 @@ const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
 export function SessionsManager() {
   const [sessions, setSessions] = useState<ReadonlyArray<Session> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokingOthers, setRevokingOthers] = useState(false);
 
   const fetchList = useCallback(async () => {
@@ -60,18 +59,22 @@ export function SessionsManager() {
       variant: 'danger',
     });
     if (!ok) return;
-    setRevokingId(session.id);
+
+    // 낙관적 갱신: 목록에서 즉시 제거하고, 실패하면 원래 목록으로 되돌린다.
+    const prev = sessions;
+    setSessions((cur) => cur?.filter((s) => s.id !== session.id) ?? cur);
     try {
       const res = await fetch(`/api/sessions/${session.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setSessions(prev);
         toast.error(body.error ?? '로그아웃에 실패했습니다.');
         return;
       }
       toast.success('해당 기기를 로그아웃했습니다.');
-      await fetchList();
-    } finally {
-      setRevokingId(null);
+    } catch {
+      setSessions(prev);
+      toast.error('로그아웃에 실패했습니다.');
     }
   };
 
@@ -83,11 +86,16 @@ export function SessionsManager() {
       variant: 'danger',
     });
     if (!ok) return;
+
+    // 낙관적 갱신: 이 기기를 제외한 모든 세션을 즉시 제거 → "다른 기기 모두 로그아웃" 버튼도 곧바로 사라진다.
+    const prev = sessions;
+    setSessions((cur) => cur?.filter((s) => s.is_current) ?? cur);
     setRevokingOthers(true);
     try {
       const res = await fetch('/api/sessions', { method: 'DELETE' });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setSessions(prev);
         toast.error(body.error ?? '로그아웃에 실패했습니다.');
         return;
       }
@@ -95,7 +103,9 @@ export function SessionsManager() {
       toast.success(
         body.revoked > 0 ? `${body.revoked}개 기기를 로그아웃했습니다.` : '로그아웃할 다른 기기가 없습니다.'
       );
-      await fetchList();
+    } catch {
+      setSessions(prev);
+      toast.error('로그아웃에 실패했습니다.');
     } finally {
       setRevokingOthers(false);
     }
@@ -169,7 +179,6 @@ export function SessionsManager() {
                       <button
                         type="button"
                         onClick={() => handleRevoke(session)}
-                        disabled={revokingId === session.id}
                         aria-label="로그아웃"
                         className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                       >

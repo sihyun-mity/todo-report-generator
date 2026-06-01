@@ -39,7 +39,6 @@ export function PasskeysManager() {
   const [registering, setRegistering] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   // SSR 단계에서는 null(확인 전), mount 직후 true/false로 확정 → hydration mismatch + 경고 깜빡임 둘 다 회피
   const [supported, setSupported] = useState<boolean | null>(null);
 
@@ -99,6 +98,11 @@ export function PasskeysManager() {
     if (!editingId) return;
     const id = editingId;
     const name = editingName.trim();
+
+    // 낙관적 갱신: 목록의 이름을 즉시 바꾸고 편집을 닫는다. 실패하면 원래 목록으로 되돌린다.
+    const prev = passkeys;
+    setPasskeys((cur) => cur?.map((pk) => (pk.id === id ? { ...pk, device_name: name } : pk)) ?? cur);
+    cancelEdit();
     try {
       const res = await fetch(`/api/passkeys/${id}`, {
         method: 'PATCH',
@@ -107,13 +111,13 @@ export function PasskeysManager() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setPasskeys(prev);
         toast.error(body.error ?? '이름 변경 실패');
         return;
       }
       toast.success('이름을 변경했습니다.');
-      cancelEdit();
-      await fetchList();
     } catch (e) {
+      setPasskeys(prev);
       toast.error((e as Error).message);
     }
   };
@@ -127,18 +131,22 @@ export function PasskeysManager() {
       variant: 'danger',
     });
     if (!ok) return;
-    setDeletingId(pk.id);
+
+    // 낙관적 갱신: 목록에서 즉시 제거하고, 실패하면 원래 목록으로 되돌린다.
+    const prev = passkeys;
+    setPasskeys((cur) => cur?.filter((p) => p.id !== pk.id) ?? cur);
     try {
       const res = await fetch(`/api/passkeys/${pk.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setPasskeys(prev);
         toast.error(body.error ?? '삭제 실패');
         return;
       }
       toast.success('패스키를 삭제했습니다.');
-      await fetchList();
-    } finally {
-      setDeletingId(null);
+    } catch (e) {
+      setPasskeys(prev);
+      toast.error((e as Error).message);
     }
   };
 
@@ -251,7 +259,6 @@ export function PasskeysManager() {
                         <button
                           type="button"
                           onClick={() => handleDelete(pk)}
-                          disabled={deletingId === pk.id}
                           aria-label="삭제"
                           className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                         >
