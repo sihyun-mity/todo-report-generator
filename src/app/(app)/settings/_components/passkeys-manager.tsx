@@ -103,6 +103,7 @@ export function PasskeysManager() {
     const prev = passkeys;
     setPasskeys((cur) => cur?.map((pk) => (pk.id === id ? { ...pk, device_name: name } : pk)) ?? cur);
     cancelEdit();
+    toast.success('이름을 변경했습니다.');
     try {
       const res = await fetch(`/api/passkeys/${id}`, {
         method: 'PATCH',
@@ -115,7 +116,6 @@ export function PasskeysManager() {
         toast.error(body.error ?? '이름 변경 실패');
         return;
       }
-      toast.success('이름을 변경했습니다.');
     } catch (e) {
       setPasskeys(prev);
       toast.error((e as Error).message);
@@ -135,6 +135,7 @@ export function PasskeysManager() {
     // 낙관적 갱신: 목록에서 즉시 제거하고, 실패하면 원래 목록으로 되돌린다.
     const prev = passkeys;
     setPasskeys((cur) => cur?.filter((p) => p.id !== pk.id) ?? cur);
+    toast.success('패스키를 삭제했습니다.');
     try {
       const res = await fetch(`/api/passkeys/${pk.id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -143,7 +144,6 @@ export function PasskeysManager() {
         toast.error(body.error ?? '삭제 실패');
         return;
       }
-      toast.success('패스키를 삭제했습니다.');
     } catch (e) {
       setPasskeys(prev);
       toast.error((e as Error).message);

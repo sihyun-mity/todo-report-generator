@@ -47,13 +47,15 @@ export function NotificationsSection() {
     // 낙관적 갱신: 스위치를 즉시 뒤집고, 네트워크/권한 처리는 뒤에서 진행한다. 실패하면 원래대로 되돌린다.
     setEnabled(next);
     setBusy(true);
+    // 끄기는 권한 요청이 없는 낙관적 동작이라 토스트를 즉시 띄운다.
+    // 켜기는 알림 권한 허용 여부(네트워크/시스템 결과)를 알아야 하므로 성공한 뒤에 띄운다.
+    if (!next) toast.success('작성 알림을 껐어요.');
     try {
       if (next) {
         await subscribeToPush();
         toast.success('작성 알림을 켰어요. 평일 오후 4시에 알림을 보내드릴게요.');
       } else {
         await unsubscribeFromPush();
-        toast.success('작성 알림을 껐어요.');
       }
     } catch (error) {
       setEnabled(!next);
@@ -141,7 +143,7 @@ export function NotificationsSection() {
               >
                 <span
                   className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    enabled ? 'translate-x-5' : 'translate-x-0.5'
+                    enabled ? 'translate-x-[22px]' : 'translate-x-0.5'
                   }`}
                 />
               </button>

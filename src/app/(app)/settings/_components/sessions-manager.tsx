@@ -63,6 +63,7 @@ export function SessionsManager() {
     // 낙관적 갱신: 목록에서 즉시 제거하고, 실패하면 원래 목록으로 되돌린다.
     const prev = sessions;
     setSessions((cur) => cur?.filter((s) => s.id !== session.id) ?? cur);
+    toast.success('해당 기기를 로그아웃했습니다.');
     try {
       const res = await fetch(`/api/sessions/${session.id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -71,7 +72,6 @@ export function SessionsManager() {
         toast.error(body.error ?? '로그아웃에 실패했습니다.');
         return;
       }
-      toast.success('해당 기기를 로그아웃했습니다.');
     } catch {
       setSessions(prev);
       toast.error('로그아웃에 실패했습니다.');
