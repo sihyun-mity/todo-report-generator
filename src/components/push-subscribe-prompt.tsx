@@ -88,13 +88,12 @@ export function PushSubscribePrompt() {
       release(DIALOG_PUSH_SUBSCRIBE);
       toast.success('작성 알림을 켰어요. 평일 오후 4시에 알림을 보내드릴게요.');
     } catch (error) {
+      // 실패해도 다이얼로그를 닫지 않는다 — 권한을 나중에 허용한 뒤 다시 "알림 켜기"로 재시도할 수 있어야 한다.
+      // (닫기는 사용자가 명시적으로 X / 나중에 / 바깥 클릭 / back / Esc 를 했을 때만 dismiss() 로 처리)
       const message = error instanceof Error ? error.message : '';
       if (message === 'denied') {
         toast.error('알림 권한이 거부됐어요. 브라우저 설정에서 허용한 뒤 다시 시도해주세요.');
-        dismiss();
-      } else if (message === 'unsupported') {
-        dismiss();
-      } else {
+      } else if (message !== 'unsupported') {
         toast.error(message || '알림 설정에 실패했어요.');
       }
     } finally {
