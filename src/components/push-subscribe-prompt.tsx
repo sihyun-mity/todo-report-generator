@@ -4,20 +4,25 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { BellRing, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
-import { PUSH_PROMPT_DISMISSED_KEY } from '@/constants';
+import { DIALOG_PRIORITY_PUSH_SUBSCRIBE, DIALOG_PUSH_SUBSCRIBE, PUSH_PROMPT_DISMISSED_KEY } from '@/constants';
 import { isGuestMode } from '@/lib/guest';
 import { getExistingSubscription, isPushSupported, subscribeToPush } from '@/lib/push/push-client';
+import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '.';
 
 // 로그인 직후 홈에서 한 번 뜨는 작성 알림 구독 권유 다이얼로그.
 // 노출 조건: 로그인 계정 + 푸시 지원 + 권한 거부 안 함 + 이 기기 미구독 + "나중에"로 닫은 적 없음.
 // ((app) 그룹은 로그인/게스트만 접근하므로 !isGuestMode() = 로그인 사용자)
 export function PushSubscribePrompt() {
-  const [open, setOpen] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
 
+  const request = useDialogQueueStore((s) => s.request);
+  const release = useDialogQueueStore((s) => s.release);
+  // 큐에서 자신이 활성일 때만 실제로 열린다 (다른 자동 다이얼로그와 동시 노출 방지).
+  const isActive = useIsActiveDialog(DIALOG_PUSH_SUBSCRIBE);
+
   // 페이지 진입 View Transition 이 진행 중이면 전환이 끝난 뒤에 열리도록 한 박자 미룬다.
-  const deferredOpen = useDeferOpenDuringViewTransition(open);
+  const deferredOpen = useDeferOpenDuringViewTransition(isActive);
 
   const { lock, unlock } = useScrollLock({ autoLock: false });
   useEffect(() => {
@@ -40,12 +45,14 @@ export function PushSubscribePrompt() {
     (async () => {
       const sub = await getExistingSubscription().catch(() => null);
       if (cancelled || sub) return; // 이미 이 기기에서 구독 중이면 띄우지 않음
-      setOpen(true);
+      request(DIALOG_PUSH_SUBSCRIBE, DIALOG_PRIORITY_PUSH_SUBSCRIBE);
     })();
+    // 홈을 벗어나 언마운트되면 큐에 항목이 남지 않도록 정리한다.
     return () => {
       cancelled = true;
+      release(DIALOG_PUSH_SUBSCRIBE);
     };
-  }, []);
+  }, [request, release]);
 
   // 닫기(나중에 / X / 바깥 클릭 / back / Esc) — 다시 묻지 않도록 기억한다.
   const dismiss = useCallback(() => {
@@ -54,8 +61,8 @@ export function PushSubscribePrompt() {
     } catch {
       // 무시
     }
-    setOpen(false);
-  }, []);
+    release(DIALOG_PUSH_SUBSCRIBE);
+  }, [release]);
 
   useDismissOnBack(deferredOpen, dismiss);
 
@@ -78,7 +85,7 @@ export function PushSubscribePrompt() {
       } catch {
         // 무시
       }
-      setOpen(false);
+      release(DIALOG_PUSH_SUBSCRIBE);
       toast.success('작성 알림을 켰어요. 평일 오후 4시에 알림을 보내드릴게요.');
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -127,10 +134,7 @@ export function PushSubscribePrompt() {
               작성 알림을 켜보세요
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
-              업무 보고는 <span className="font-semibold text-zinc-900 dark:text-zinc-100">평일 오후 5시 전까지</span>{' '}
-              작성해야 해요. 깜빡하지 않도록, 아직 작성하지 않았다면{' '}
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100">평일 오후 4시</span>에 알림을
-              보내드릴게요.
+              아직 오늘 업무 보고를 작성하지 않았다면, 평일 오후 4시에 알림으로 알려드릴게요.
             </p>
             <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
               알림은 이 기기(브라우저)에서 받게 되며, 언제든{' '}

@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '..';
 import { NewsMarkdown } from '.';
 import { createClient } from '@/lib/supabase/client';
-import { NEWS_GUEST_STORAGE_KEY } from '@/constants';
+import { DIALOG_NEWS, DIALOG_PRIORITY_NEWS, NEWS_GUEST_STORAGE_KEY } from '@/constants';
+import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import type { News } from '@/types';
 
 type Props = {
@@ -19,11 +20,14 @@ type Props = {
 };
 
 export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<Props>) {
-  const [open, setOpen] = useState(false);
+  const request = useDialogQueueStore((s) => s.request);
+  const release = useDialogQueueStore((s) => s.release);
+  // 자동 노출 큐에서 자신이 활성일 때만 연다 (작성 알림 구독 권유 등과 동시 노출 방지).
+  const isActive = useIsActiveDialog(DIALOG_NEWS);
 
   // 자동으로 열리는 다이얼로그라, 페이지 진입 View Transition 이 진행 중이면 dim 이 전환
-  // 스냅샷 위로 깜빡인다. 전환이 끝난 뒤에 실제로 열리도록 open 을 한 번 통과시킨다.
-  const deferredOpen = useDeferOpenDuringViewTransition(open);
+  // 스냅샷 위로 깜빡인다. 전환이 끝난 뒤에 실제로 열리도록 한 번 통과시킨다.
+  const deferredOpen = useDeferOpenDuringViewTransition(isActive);
 
   // 다이얼로그가 열려 있는 동안 배경 스크롤 잠금 — import-modal 과 동일한 패턴
   const { lock, unlock } = useScrollLock({ autoLock: false });
@@ -69,12 +73,11 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
         shouldOpen = false;
       }
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (shouldOpen) setOpen(true);
-  }, [latestNews, userId, alreadyReadByUser]);
+    if (shouldOpen) request(DIALOG_NEWS, DIALOG_PRIORITY_NEWS);
+  }, [latestNews, userId, alreadyReadByUser, request]);
 
   const markReadAndClose = useCallback(async () => {
-    setOpen(false);
+    release(DIALOG_NEWS);
     if (!latestNews) return;
 
     if (userId) {
@@ -98,7 +101,7 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
         // ignore
       }
     }
-  }, [latestNews, userId]);
+  }, [latestNews, userId, release]);
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 새소식 다이얼로그가 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(deferredOpen, () => void markReadAndClose());

@@ -1,3 +1,4 @@
+export * from './dialog.constants';
 export * from './guest.constants';
 export * from './media.constants';
 export * from './news.constants';
