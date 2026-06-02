@@ -157,7 +157,7 @@ export const ProjectList = ({
         <div ref={setDroppableRef} className="space-y-6">
           {isVacant ? (
             <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400 dark:border-zinc-700 dark:text-zinc-500">
-              여기로 프로젝트를 끌어다 놓으세요.
+              새 프로젝트를 추가하거나 여기로 프로젝트를 끌어다 놓으세요.
             </div>
           ) : (
             projects.map((project) => (
