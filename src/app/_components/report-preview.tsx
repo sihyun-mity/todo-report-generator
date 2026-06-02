@@ -1,8 +1,10 @@
 'use client';
 
-import { AlertCircle, Check, Copy, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, Check, Copy, Maximize2, RotateCcw } from 'lucide-react';
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
+import { ReportPreviewDialog } from '.';
 
 type ReportPreviewProps = {
   text: string;
@@ -26,6 +28,7 @@ export const ReportPreview = ({
   onCopy,
   onReset,
 }: Readonly<ReportPreviewProps>) => {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const charCount = text.length;
   const hasDate = reportDate.month.trim() !== '' && reportDate.day.trim() !== '';
 
@@ -40,7 +43,19 @@ export const ReportPreview = ({
             </p>
           )}
         </div>
-        <span className="text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{charCount}자</span>
+        <div className="flex items-end gap-1.5">
+          <span className="text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{charCount}자</span>
+          {/* 큰 화면으로 미리보기 — 데스크탑(lg)에서만 노출. 모바일은 이미 전체 너비로 표시된다. */}
+          <button
+            type="button"
+            onClick={() => setIsDialogOpen(true)}
+            aria-label="크게 보기"
+            title="크게 보기"
+            className="hidden items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200/60 hover:text-zinc-600 lg:inline-flex dark:text-zinc-500 dark:hover:bg-zinc-700/40 dark:hover:text-zinc-300"
+          >
+            <Maximize2 size={15} />
+          </button>
+        </div>
       </div>
       <pre className="mb-6 overflow-x-auto rounded-lg border border-zinc-100 bg-white p-4 text-sm whitespace-pre-wrap text-zinc-700 dark:border-zinc-700/30 dark:bg-background/50 dark:text-zinc-200">
         {text}
@@ -88,6 +103,16 @@ export const ReportPreview = ({
           <span>{copyError}</span>
         </div>
       )}
+
+      <ReportPreviewDialog
+        isOpen={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        text={text}
+        reportDate={reportDate}
+        copied={copied}
+        isCopyDisabled={isCopyDisabled}
+        onCopy={onCopy}
+      />
     </div>
   );
 };

@@ -12,5 +12,6 @@ export * from './report-form';
 export * from './report-header';
 export * from './report-history';
 export * from './report-preview';
+export * from './report-preview-dialog';
 export * from './report-preview-skeleton';
 export * from './task-item';
