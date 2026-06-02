@@ -57,6 +57,13 @@ export type ReportFormStore = {
   removeTask: (bucket: ProjectsBucket, projectId: string, taskId: string) => void;
   updateTask: (bucket: ProjectsBucket, projectId: string, taskId: string, updates: Partial<Task>) => void;
   reorderProjects: (bucket: ProjectsBucket, fromId: string, toId: string) => void;
+  // 프로젝트를 다른 버킷(금일↔익일)으로 이동. toIndex는 대상 버킷에서 삽입될 위치.
+  moveProjectToBucket: (
+    fromBucket: ProjectsBucket,
+    toBucket: ProjectsBucket,
+    projectId: string,
+    toIndex: number
+  ) => void;
   reorderTasks: (bucket: ProjectsBucket, projectId: string, fromId: string, toId: string) => void;
   markHydratedFromHistory: () => void;
   resetForm: () => void;

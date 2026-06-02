@@ -1,23 +1,12 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, Plus, Sun } from 'lucide-react';
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
-import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { Project, Task } from '@/types';
 import { cn, createId, hasProjectContent } from '@/utils';
-import { ProjectItem, ProjectItemPreview } from '.';
+import { ProjectItem } from '.';
 
 type Accent = 'today' | 'tomorrow';
 
@@ -40,7 +29,6 @@ type ProjectListProps = {
   onAddTask: (projectId: string, taskId: string) => void;
   onUpdateTask: (projectId: string, taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (projectId: string, taskId: string, options?: RemoveOptions) => void;
-  onReorderProjects: (fromId: string, toId: string) => void;
   onReorderTasks: (projectId: string, fromId: string, toId: string) => void;
   onImportIncomplete?: () => void;
   focusRequest?: ProjectListFocusRequest | null;
@@ -67,13 +55,13 @@ export const ProjectList = ({
   onAddTask,
   onUpdateTask,
   onRemoveTask,
-  onReorderProjects,
   onReorderTasks,
   onImportIncomplete,
   focusRequest,
 }: Readonly<ProjectListProps>) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  // 버킷 전체를 droppable로 등록 — 비어 있어도 다른 버킷에서 끌어온 프로젝트를 받을 수 있다.
+  const { setNodeRef: setDroppableRef } = useDroppable({ id: accent });
   // Backspace 삭제 후 이전 항목 포커스, 또는 외부 focusRequest를 sync 받는 통합 상태.
   const [projectFocus, setProjectFocus] = useState<{
     projectId: string;
@@ -97,9 +85,6 @@ export const ProjectList = ({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.nonce]);
-  // DndContext가 내부적으로 동적 id를 생성하면 SSR/CSR 사이에서 값이 달라져 hydration 경고가 난다.
-  // useId로 안정적인 id를 부여해 SSR/CSR 양쪽에서 동일한 markup이 나오도록 한다.
-  const dndContextId = useId();
 
   // 새로 추가된 프로젝트의 ID를 상위에서 받기 전에 미리 생성해두고,
   // 같은 ID를 전달해 ProjectItem에서 autoFocus가 트리거되도록 한다
@@ -109,26 +94,8 @@ export const ProjectList = ({
     onAddProject(newProjectId);
   };
 
-  // PointerSensor: 마우스/펜. 8px 이상 움직여야 드래그로 인식 → input 클릭/포커스와 충돌 방지.
-  // TouchSensor: 모바일 터치. 200ms 길게 눌러야 드래그 시작 → 스크롤과 충돌 방지.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveProjectId(String(event.active.id));
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveProjectId(null);
-    if (!over || active.id === over.id) return;
-    onReorderProjects(String(active.id), String(over.id));
-  };
-
-  const handleDragCancel = () => setActiveProjectId(null);
+  // 드래그 정렬·버킷 간 이동은 상위 ProjectBoard의 단일 DndContext가 처리한다.
+  // 여기서는 SortableContext와 droppable 컨테이너 등록만 담당한다.
 
   // 빈 프로젝트(이름·모든 작업 내용 비어있음)에서 Backspace 시 호출.
   // 이전 프로젝트가 있을 때만 삭제 + 그 프로젝트의 마지막 작업으로 포커스 이동.
@@ -150,8 +117,9 @@ export const ProjectList = ({
 
   // 빈 상태: 프로젝트가 하나뿐이고 내용도 비어 있을 때 가이드를 한 줄 띄운다
   const isEmpty = projects.length === 1 && !hasProjectContent(projects[0]);
+  // 버킷의 모든 프로젝트를 다른 버킷으로 옮겨 비어버린 상태 — drop 안내 placeholder를 보여준다.
+  const isVacant = projects.length === 0;
   const projectIds = projects.map((p) => p.id);
-  const activeProject = activeProjectId ? projects.find((p) => p.id === activeProjectId) : null;
 
   return (
     <div className="mb-8 w-full">
@@ -185,17 +153,14 @@ export const ProjectList = ({
           프로젝트명을 입력하고 작업을 한 줄씩 추가해 보세요.
         </p>
       )}
-      <DndContext
-        id={dndContextId}
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <SortableContext items={projectIds} strategy={verticalListSortingStrategy}>
-          <div className="space-y-6">
-            {projects.map((project) => (
+      <SortableContext items={projectIds} strategy={verticalListSortingStrategy}>
+        <div ref={setDroppableRef} className="space-y-6">
+          {isVacant ? (
+            <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400 dark:border-zinc-700 dark:text-zinc-500">
+              여기로 프로젝트를 끌어다 놓으세요.
+            </div>
+          ) : (
+            projects.map((project) => (
               <ProjectItem
                 key={project.id}
                 project={project}
@@ -212,11 +177,10 @@ export const ProjectList = ({
                 externalFocusTaskId={projectFocus?.projectId === project.id ? projectFocus.taskId : undefined}
                 externalFocusNonce={projectFocus?.projectId === project.id ? projectFocus.nonce : 0}
               />
-            ))}
-          </div>
-        </SortableContext>
-        <DragOverlay>{activeProject ? <ProjectItemPreview project={activeProject} /> : null}</DragOverlay>
-      </DndContext>
+            ))
+          )}
+        </div>
+      </SortableContext>
     </div>
   );
 };

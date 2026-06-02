@@ -75,6 +75,22 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
       return { [bucket]: next };
     }),
 
+  // 프로젝트를 다른 버킷(금일↔익일)으로 이동. 소스에서 제거하고 대상의 toIndex에 삽입한다.
+  // 크로스 버킷 드래그 중 onDragOver에서 매 hover마다 호출되므로 한 번의 set으로 두 배열을 함께 갱신한다.
+  moveProjectToBucket: (fromBucket, toBucket, projectId, toIndex) =>
+    set((state) => {
+      if (fromBucket === toBucket) return state;
+      const from = state[fromBucket];
+      const fromIndex = from.findIndex((p) => p.id === projectId);
+      if (fromIndex === -1) return state;
+      const moved = from[fromIndex];
+      const nextFrom = from.filter((p) => p.id !== projectId);
+      const nextTo = [...state[toBucket]];
+      const clamped = Math.max(0, Math.min(toIndex, nextTo.length));
+      nextTo.splice(clamped, 0, moved);
+      return { [fromBucket]: nextFrom, [toBucket]: nextTo };
+    }),
+
   reorderTasks: (bucket, projectId, fromId, toId) =>
     set((state) => {
       if (fromId === toId) return state;

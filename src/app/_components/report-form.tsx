@@ -8,6 +8,7 @@ import {
   ImportLocalDialog,
   ImportModal,
   MobileCopyBar,
+  ProjectBoard,
   ProjectList,
   ProjectListSkeleton,
   ReportHeader,
@@ -503,7 +504,7 @@ export function ReportForm() {
         />
 
         {isFormReady ? (
-          <>
+          <ProjectBoard>
             <ProjectList
               title="금일 업무 진행 현황"
               accent="today"
@@ -514,7 +515,6 @@ export function ReportForm() {
               onAddTask={today.addTask}
               onUpdateTask={today.updateTask}
               onRemoveTask={todayRemove.removeTask}
-              onReorderProjects={today.reorderProjects}
               onReorderTasks={today.reorderTasks}
               focusRequest={todayFocusRequest}
             />
@@ -528,12 +528,11 @@ export function ReportForm() {
               onAddTask={tomorrow.addTask}
               onUpdateTask={tomorrow.updateTask}
               onRemoveTask={tomorrowRemove.removeTask}
-              onReorderProjects={tomorrow.reorderProjects}
               onReorderTasks={tomorrow.reorderTasks}
               onImportIncomplete={handleImportIncomplete}
               focusRequest={tomorrowFocusRequest}
             />
-          </>
+          </ProjectBoard>
         ) : (
           <>
             <ProjectListSkeleton title="금일 업무 진행 현황" accent="today" />
