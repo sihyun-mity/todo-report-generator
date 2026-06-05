@@ -1,7 +1,8 @@
 'use client';
 
 import { type RefObject, useCallback, useLayoutEffect } from 'react';
-import { IS_SERVER } from 'swr/_internal';
+
+const IS_SERVER = typeof window === 'undefined';
 
 type Props = {
   focusedRef: RefObject<HTMLElement | null>;

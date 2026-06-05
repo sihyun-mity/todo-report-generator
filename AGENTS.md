@@ -125,12 +125,14 @@ src/
 │   ├── api/                     # passkey · 세션(로그인 기기) route handlers
 │   ├── layout.tsx
 │   └── robots.ts
+├── actions/                     # `*.actions.ts` — `'use server'` Server Action (react-query queryFn 이 호출)
 ├── components/                  # 공용 UI 컴포넌트 (back-stack, news, view-transition 등 하위 디렉터리 + 배럴)
 ├── constants/                   # `*.constants.ts` 파일로 상수 모음
 ├── core/                        # fetch 등 인프라 레이어
 ├── enums/                       # `*.enum.ts` (현재 비어 있음 — index.ts 가 빈 `export {}`)
 ├── hooks/                       # `use-*.ts` — kebab-case + 네임드 export
 ├── lib/                         # supabase / webauthn / guest / news — 외부 의존 얇은 래퍼
+├── providers/                   # 전역 Provider — query-provider(react-query) + query-keys 팩토리
 ├── stores/                      # Zustand `use-*-store.ts`
 ├── styles/                      # globals.css · view-transitions.css 등 글로벌 스타일
 ├── types/                       # `*.type.ts` + 전역 `.d.ts` (environments / query / react)
@@ -169,5 +171,8 @@ src/
 - Path alias: `@/*` → `src/*`, `#/*` → `public/*`
 - React Compiler 활성화 (`next.config.ts` `reactCompiler: true`) — `useMemo`/`useCallback` 과도 사용 지양
 - Vercel 배포 리전: `icn1` (Seoul, `vercel.json`)
-- 상태 관리: Zustand (`src/stores/`), 데이터 페칭: SWR
+- 상태 관리: Zustand (`src/stores/`), 서버 데이터 페칭: `@tanstack/react-query` (SWR 미사용 — 제거됨)
+  - `QueryProvider`(`src/providers/query-provider/`)가 root layout 에 마운트된다.
+  - 쿼리 키는 `@lukemorales/query-key-factory` 로 `src/providers/query-provider/query-keys/` 에 도메인별로 정의하고 `mergeQueryKeys` 로 합친다. 소비 측은 `import { queries } from '@/providers'` 후 `useQuery(queries.<domain>.<query>(...))`.
+  - queryFn 은 `src/actions/*.actions.ts` 의 `'use server'` Server Action 을 호출한다 (예: 공휴일 `queries.holidays.byYear`, 서버시간 `queries.serverTime.now`).
 - 토스트는 `react-hot-toast`
