@@ -80,3 +80,23 @@ export async function isKoreanHoliday(supabase: SupabaseClient, dateKey: string)
   const { data } = await supabase.from('kr_holidays').select('holiday_date').eq('holiday_date', dateKey).maybeSingle();
   return Boolean(data);
 }
+
+export type KoreanHoliday = { date: string; name: string };
+
+/**
+ * 주어진 연도의 대한민국 공휴일(임시·대체공휴일 포함) 전체를 반환한다.
+ * 미적재 연도는 즉시 API 에서 가져와 캐시한 뒤 조회한다. (캘린더 표시용)
+ */
+export async function getKoreanHolidaysForYear(supabase: SupabaseClient, year: number): Promise<Array<KoreanHoliday>> {
+  await ensureYearSynced(supabase, year);
+
+  const { data } = await supabase
+    .from('kr_holidays')
+    .select('holiday_date, name')
+    .gte('holiday_date', `${year}-01-01`)
+    .lte('holiday_date', `${year}-12-31`)
+    .order('holiday_date', { ascending: true })
+    .returns<Array<{ holiday_date: string; name: string }>>();
+
+  return (data ?? []).map((row) => ({ date: row.holiday_date, name: row.name }));
+}

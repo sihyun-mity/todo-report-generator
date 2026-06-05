@@ -2,7 +2,14 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import { useIsClient } from 'usehooks-ts';
+import {
+  CALENDAR_HOLIDAY_COLOR,
+  CALENDAR_SATURDAY_COLOR,
+  CALENDAR_SUNDAY_COLOR,
+  CALENDAR_WEEKDAY_COLOR,
+  type CalendarDayColor,
+} from '@/constants';
+import { useKrHolidays, useServerNow } from '@/hooks';
 import type { ReportHistoryItem } from '@/types';
 import { cn } from '@/utils';
 
@@ -19,6 +26,14 @@ type Props = {
 };
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 요일·공휴일에 따른 날짜 텍스트 색상. 공휴일이 요일보다 우선한다 (토요일 공휴일도 빨강).
+function getDayColor(dow: number, isHoliday: boolean): CalendarDayColor {
+  if (isHoliday) return CALENDAR_HOLIDAY_COLOR;
+  if (dow === 0) return CALENDAR_SUNDAY_COLOR;
+  if (dow === 6) return CALENDAR_SATURDAY_COLOR;
+  return CALENDAR_WEEKDAY_COLOR;
+}
 
 export const toDateKey = (y: number, m: number, d: number) =>
   `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -50,13 +65,17 @@ export function ReportCalendar({
     return result;
   }, [viewYear, viewMonth]);
 
-  // hydration 안전: 서버에서는 today 강조를 표시하지 않고, 클라이언트 마운트 후 보정한다.
-  const isClient = useIsClient();
+  // 오늘 강조는 서버 시간 기준으로 판정한다 (클라이언트 시계 오차 보정 + hydration 안전:
+  // now 는 클라이언트 마운트 후에야 채워지므로 SSR/초기 렌더에서는 null).
+  const { now } = useServerNow({ autoUpdate: false });
   const todayKey = useMemo(() => {
-    if (!isClient) return null;
-    const now = new Date();
-    return toDateKey(now.getFullYear(), now.getMonth() + 1, now.getDate());
-  }, [isClient]);
+    if (now === undefined) return null;
+    const today = new Date(now);
+    return toDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  }, [now]);
+
+  // 보이는 월(연도)의 대한민국 공휴일 — dateKey('YYYY-MM-DD') → 공휴일명
+  const { holidayMap } = useKrHolidays(viewYear);
 
   const handlePrev = () => {
     if (viewMonth === 1) onChangeMonth(viewYear - 1, 12);
@@ -103,7 +122,11 @@ export function ReportCalendar({
         {DAY_LABELS.map((label, idx) => (
           <div
             key={label}
-            className={cn('py-1 font-medium', idx === 0 && 'text-red-400', idx === 6 && 'text-blue-400')}
+            className={cn(
+              'py-1 font-medium',
+              idx === 0 && CALENDAR_SUNDAY_COLOR.strong,
+              idx === 6 && CALENDAR_SATURDAY_COLOR.strong
+            )}
           >
             {label}
           </div>
@@ -116,6 +139,9 @@ export function ReportCalendar({
           const hasRecord = datesWithRecords.has(key);
           const isSelected = selectedDateKey === key;
           const isToday = todayKey === key;
+          const dow = idx % 7;
+          const holidayName = holidayMap.get(key);
+          const dayColor = getDayColor(dow, holidayName !== undefined);
           return (
             <button
               key={key}
@@ -125,13 +151,20 @@ export function ReportCalendar({
               className={cn(
                 'relative flex aspect-square flex-col items-center justify-center rounded-md text-[11px] transition-colors',
                 isSelected && 'bg-blue-500 text-white',
-                !isSelected &&
-                  hasRecord &&
-                  'cursor-pointer text-zinc-700 hover:bg-white dark:text-zinc-200 dark:hover:bg-zinc-800',
-                !isSelected && !hasRecord && 'cursor-default text-zinc-400 dark:text-zinc-600',
+                !isSelected && (hasRecord ? dayColor.strong : dayColor.muted),
+                !isSelected && hasRecord && 'cursor-pointer hover:bg-white dark:hover:bg-zinc-800',
+                !isSelected && !hasRecord && 'cursor-default',
                 isToday && !isSelected && 'ring-1 ring-blue-300 dark:ring-blue-700'
               )}
-              title={hasRecord ? `${viewMonth}월 ${d}일 보고서 보기` : undefined}
+              title={
+                holidayName
+                  ? hasRecord
+                    ? `${holidayName} · ${viewMonth}월 ${d}일 보고서 보기`
+                    : holidayName
+                  : hasRecord
+                    ? `${viewMonth}월 ${d}일 보고서 보기`
+                    : undefined
+              }
             >
               <span className="leading-none">{d}</span>
               <span

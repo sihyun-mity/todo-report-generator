@@ -2,6 +2,7 @@ export * from './use-all-search-params';
 export * from './use-container';
 export * from './use-focus-scroll';
 export * from './use-grab-slide';
+export * from './use-kr-holidays';
 export * from './use-media';
 export * from './use-on-click-outside';
 export * from './use-projects';
