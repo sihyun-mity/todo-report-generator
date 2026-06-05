@@ -59,7 +59,12 @@ const importPromptSeenKey = (userId: string) => `report-history-import-prompt-se
 const serializeReport = (date: ReportDate, today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Project>): string =>
   JSON.stringify({ d: date, t: today, n: tomorrow });
 
-export function ReportForm() {
+type Props = {
+  // 서버(page.tsx)에서 계산한 KST 오늘 날짜 키('YYYY-MM-DD'). 캘린더 초기 뷰 월의 기준값.
+  serverDateKey: string;
+};
+
+export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const isClient = useIsClient();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -560,6 +565,7 @@ export function ReportForm() {
         <ReportHistory
           history={history}
           allDateKeys={allReportDates}
+          serverDateKey={serverDateKey}
           mode={historyMode}
           isLoaded={isHistoryLoaded}
           loadingMonths={loadingMonths}

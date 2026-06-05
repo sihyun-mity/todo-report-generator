@@ -94,10 +94,10 @@ Next.js 기본 파일명이 아니다. 동작:
 
 `report-history.tsx` / `report-calendar.tsx`는 SSR 시점에서 `new Date()`로 인한 hydration mismatch를 회피해야 한다.
 
-- **`syncStage` 상태머신** (`'init' → 'today' | 'records' → 'records'`): SSR/초기 렌더에서는 결정적 placeholder(`viewYear=2026, viewMonth=1`)로 시작하고, 클라이언트 마운트 후 렌더 중 setState로 today 또는 latest 기록월로 보정한다. **effect 안에서 setState하지 않는다** — React 19 `react-hooks/set-state-in-effect` 룰을 따라 렌더 본문에서 if문으로 1회성 보정한다.
+- **서버 날짜를 prop으로 주입** (`serverDateKey`): "오늘"은 클라이언트 `new Date()`가 아니라 `page.tsx`(서버 컴포넌트)가 `kstDateKey()`로 계산한 KST 날짜 키('YYYY-MM-DD')를 `page → ReportForm → ReportHistory → ReportCalendar`로 내려 쓴다. SSR HTML과 클라 첫 렌더가 같은 값을 쓰므로 캘린더 초기 뷰 월과 today 강조가 **첫 페인트부터 실제 현재 월/날짜로 결정적**이다 (과거의 `viewYear=2026, viewMonth=1` 하드코딩 placeholder 점프 제거). `useServerNow`(react-query, 서버시간)는 마운트 후 today 강조를 자기보정하는 보조 수단으로만 쓰고, 미도착(`now===undefined`) 구간엔 `serverDateKey`로 폴백한다.
+- **`syncStage` 상태머신** (`'today' → 'records'`): 초기엔 `serverDateKey`의 월(today)로 시작하고, 기록 데이터가 도착하면 렌더 본문 if문에서 **1회성**으로 최신 기록월(오늘 월로 클램프)로 점프한다. SSR 시점엔 store가 비어 `recordMonths`가 0건이라 보정이 돌지 않아 서버 HTML과 일치한다. 기준 "오늘"이 항상 `serverDateKey`라 결정적이므로 별도 `isClient` 가드가 필요 없다. **effect 안에서 setState하지 않는다** — React 19 `react-hooks/set-state-in-effect` 룰을 따라 렌더 본문에서 if문으로 보정한다.
 - **prop 변화로 state 리셋**: 월이 바뀔 때 `localPage`를 1로 되돌리는 등은 `pageMonthAnchor` 같은 anchor state + 렌더 중 비교로 처리 (effect 사용 X).
-- **클라이언트 전용 값**: `useIsClient()` + `useMemo`로 SSR에서는 null로 두고 마운트 후 채우는 방식. 캘린더 today 강조가 이 패턴을 사용한다.
-- **로딩 중 레이아웃 유지**: `isLoaded` / `loadingMonths` / `syncStage`로 스켈레톤(헤더 라벨, 카드)을 렌더해 컴포넌트가 비어 보이지 않도록 한다. 캘린더 헤더는 `isReady` prop으로 placeholder 단계에서 라벨을 스켈레톤으로 가리고 chevron을 비활성화한다. 카드 스켈레톤(`HistoryCardSkeleton`)은 실제 카드의 `p-3 + mb-1 + 22px 상단 행 + text-[11px] 2줄 + mt-2 + text-[10px] timestamp` 구조를 그대로 따라가 레이아웃 점프를 막는다.
+- **로딩 중 레이아웃 유지**: `isLoaded` / `loadingMonths`로 카드 스켈레톤을 렌더해 컴포넌트가 비어 보이지 않도록 한다. 캘린더 월 라벨은 서버 날짜로 첫 렌더부터 확정되므로 `isReady`는 `true`로 고정하고, 기록 도트는 데이터 도착 시 채워진다. 카드 스켈레톤(`HistoryCardSkeleton`)은 실제 카드의 `p-3 + mb-1 + 22px 상단 행 + text-[11px] 2줄 + mt-2 + text-[10px] timestamp` 구조를 그대로 따라가 레이아웃 점프를 막는다.
 
 ### View Transitions
 

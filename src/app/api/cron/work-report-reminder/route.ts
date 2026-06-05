@@ -8,20 +8,11 @@ import {
 import { isKoreanHoliday } from '@/lib/holidays/kr-holidays';
 import { sendPush, type StoredSubscription } from '@/lib/push/web-push';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { kstDateKey } from '@/utils';
 
 export const dynamic = 'force-dynamic';
 // 외부 API(공휴일) + 다건 푸시 — 충분한 실행 시간 확보
 export const maxDuration = 60;
-
-// KST 기준 오늘 날짜 키('YYYY-MM-DD'). 클라이언트가 로컬시간으로 저장하는 report_date 와 동일 형식.
-function kstTodayKey(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
 
 // dateKey 의 요일(0=일 ~ 6=토)을 KST 기준으로 계산.
 function weekdayOf(dateKey: string): number {
@@ -42,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const today = kstTodayKey();
+  const today = kstDateKey();
 
   // 주말(크론 스케줄로도 평일만 호출되지만 방어적으로) 또는 공휴일이면 발송하지 않는다.
   const day = weekdayOf(today);

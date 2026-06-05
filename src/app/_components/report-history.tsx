@@ -3,7 +3,6 @@
 import { ChevronLeft, ChevronRight, Copy, History, RotateCcw, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MouseEvent, useEffect, useMemo, useState } from 'react';
-import { useIsClient } from 'usehooks-ts';
 import type { ReportHistoryItem, ReportHistoryMode } from '@/types';
 import { MAX_HISTORY_ITEMS } from '@/constants';
 import { ReportCalendar, getItemDateKey } from '.';
@@ -12,6 +11,8 @@ import { getChunkedArray } from '@/utils';
 type Props = {
   history: ReadonlyArray<ReportHistoryItem>;
   allDateKeys: ReadonlyArray<string>;
+  // 서버(page.tsx)가 계산한 KST 오늘 날짜 키('YYYY-MM-DD'). 캘린더 초기 뷰 월의 결정적 기준값.
+  serverDateKey: string;
   mode: ReportHistoryMode;
   isLoaded: boolean;
   loadingMonths: ReadonlySet<string>;
@@ -60,6 +61,7 @@ function HistoryCardSkeleton() {
 export function ReportHistory({
   history,
   allDateKeys,
+  serverDateKey,
   mode,
   isLoaded,
   loadingMonths,
@@ -68,43 +70,34 @@ export function ReportHistory({
   loadHistoryAction,
   deleteHistoryAction,
 }: Readonly<Props>) {
-  const isClient = useIsClient();
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const recordMonths = useMemo(() => collectRecordMonths(allDateKeys), [allDateKeys]);
 
-  // 초기 캘린더 뷰는 hydration 안전을 위해 결정적인 placeholder로 둔다.
-  // syncStage: 'init'(SSR/초기) → ('today' | 'records') → 'records'(데이터 수신 후 고정)
-  const [syncStage, setSyncStage] = useState<'init' | 'today' | 'records'>('init');
-  const [viewYear, setViewYear] = useState(2026);
-  const [viewMonth, setViewMonth] = useState(1);
+  // 초기 캘린더 뷰는 서버(page.tsx)가 내려준 KST 오늘(serverDateKey)의 월로 시작한다.
+  // SSR/하이드레이션이 같은 값을 쓰므로 첫 페인트부터 실제 현재 월을 그려 placeholder 점프가 없다.
+  // syncStage: 'today'(초기 — 오늘 월) → 'records'(기록 수신 후 최신 기록월로 1회 점프 후 고정)
+  const [syncStage, setSyncStage] = useState<'today' | 'records'>('today');
+  const [viewYear, setViewYear] = useState(() => Number(serverDateKey.slice(0, 4)));
+  const [viewMonth, setViewMonth] = useState(() => Number(serverDateKey.slice(5, 7)));
 
-  // 렌더 중 1회성 보정 (effect 대신 권장 패턴): 데이터 도착 시 latest 기록월로 점프,
-  // 아직 데이터 없고 클라이언트면 today로 임시 보정 — 추후 데이터가 오면 latest로 한 번 더 갱신.
-  // 단, 최신 기록 월이 오늘 월보다 미래면(예: 4월에 5월 기록이 존재) 오늘 월로 클램프한다.
-  // 모든 전환은 isClient=true 일 때만 수행 — 캐시된 store로 재진입할 때 isClient=false 시점에
-  // records로 고정돼 클램프가 적용되지 않는 케이스를 방지.
-  if (isClient) {
-    if (recordMonths.length > 0 && syncStage !== 'records') {
-      const [latestY, latestM] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
-      let nextY = latestY;
-      let nextM = latestM;
-      const now = new Date();
-      const todayY = now.getFullYear();
-      const todayM = now.getMonth() + 1;
-      if (nextY > todayY || (nextY === todayY && nextM > todayM)) {
-        nextY = todayY;
-        nextM = todayM;
-      }
-      setViewYear(nextY);
-      setViewMonth(nextM);
-      setSyncStage('records');
-    } else if (recordMonths.length === 0 && syncStage === 'init') {
-      const now = new Date();
-      setViewYear(now.getFullYear());
-      setViewMonth(now.getMonth() + 1);
-      setSyncStage('today');
+  // 렌더 중 1회성 보정 (effect 대신 권장 패턴): 기록 데이터가 도착하면 최신 기록월로 점프한다.
+  // 단, 최신 기록월이 오늘 월보다 미래면(예: 4월에 5월 기록이 존재) 오늘 월로 클램프한다.
+  // 기준 "오늘"은 항상 serverDateKey 라 SSR/클라 어디서 실행돼도 결정적 — 별도 isClient 가드가 필요 없다.
+  // (SSR 시점엔 store가 비어 recordMonths가 0건 → 보정이 돌지 않으므로 서버 HTML과 그대로 일치한다)
+  if (recordMonths.length > 0 && syncStage !== 'records') {
+    const [latestY, latestM] = recordMonths[0].split('-').map((s) => parseInt(s, 10));
+    let nextY = latestY;
+    let nextM = latestM;
+    const todayY = Number(serverDateKey.slice(0, 4));
+    const todayM = Number(serverDateKey.slice(5, 7));
+    if (nextY > todayY || (nextY === todayY && nextM > todayM)) {
+      nextY = todayY;
+      nextM = todayM;
     }
+    setViewYear(nextY);
+    setViewMonth(nextM);
+    setSyncStage('records');
   }
 
   // 외부 focus 요청(기록 추가/삭제 실행취소 등) — 같은 nonce가 처리되었는지를 anchor로 추적해 1회성 보정한다.
@@ -119,15 +112,15 @@ export function ReportHistory({
     setViewYear(fy);
     setViewMonth(fm);
     setSelectedDateKey(null);
-    if (syncStage === 'init') setSyncStage('records');
+    // 외부 요청으로 특정 월에 고정 — 이후 자동 보정(records 점프)이 덮어쓰지 않도록 고정 상태로 둔다.
+    if (syncStage !== 'records') setSyncStage('records');
   }
 
   // 캘린더가 표시 중인 월의 데이터를 자동 로드 (로그인 사용자: lazy fetch).
-  // 초기 placeholder 월(2026-01)은 의미 없는 호출이 되므로 syncStage 'init'에서는 건너뛴다.
+  // 초기 월도 서버가 내려준 실제 현재 월이라 곧바로 로드한다 (store가 동일 월 중복 호출은 합친다).
   useEffect(() => {
-    if (syncStage === 'init') return;
     void loadMonth(viewYear, viewMonth);
-  }, [syncStage, viewYear, viewMonth, loadMonth]);
+  }, [viewYear, viewMonth, loadMonth]);
 
   const itemsByDateKey = useMemo(() => {
     const map = new Map<string, ReportHistoryItem>();
@@ -208,9 +201,11 @@ export function ReportHistory({
       <ReportCalendar
         dateKeys={allDateKeys}
         selectedDateKey={selectedDateKey}
+        todayDateKey={serverDateKey}
         viewYear={viewYear}
         viewMonth={viewMonth}
-        isReady={syncStage !== 'init'}
+        // 월은 서버 날짜로 첫 렌더부터 확정 — 헤더 라벨/이동 버튼을 곧바로 활성화한다.
+        isReady
         onChangeMonth={handleChangeMonth}
         onSelectDate={handleSelectDate}
       />

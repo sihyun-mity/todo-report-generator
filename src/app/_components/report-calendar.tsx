@@ -17,6 +17,8 @@ type Props = {
   // 'YYYY-MM-DD' 도트 표시용 — 페이지네이션 미적재 월의 항목도 포함되어야 한다
   dateKeys: ReadonlyArray<string>;
   selectedDateKey: string | null;
+  // 서버(page.tsx)가 내려준 KST 오늘 날짜 키('YYYY-MM-DD'). 오늘 강조의 결정적 첫 페인트 기준값.
+  todayDateKey: string;
   viewYear: number;
   viewMonth: number;
   // false면 헤더 라벨 자리에 스켈레톤을 보여주고 월 이동 버튼을 비활성화한다 (SSR/초기 placeholder 단계 대응)
@@ -46,6 +48,7 @@ export const getItemDateKey = (item: ReportHistoryItem) => {
 export function ReportCalendar({
   dateKeys,
   selectedDateKey,
+  todayDateKey,
   viewYear,
   viewMonth,
   isReady,
@@ -65,14 +68,15 @@ export function ReportCalendar({
     return result;
   }, [viewYear, viewMonth]);
 
-  // 오늘 강조는 서버 시간 기준으로 판정한다 (클라이언트 시계 오차 보정 + hydration 안전:
-  // now 는 클라이언트 마운트 후에야 채워지므로 SSR/초기 렌더에서는 null).
+  // 오늘 강조 기준 날짜.
+  // 첫 페인트(SSR/하이드레이션)에서는 서버가 내려준 todayDateKey(KST)를 그대로 써서 결정적으로 칠하고,
+  // 마운트 후 useServerNow(서버 시간)가 도착하면 그 값으로 자기보정한다 (세션이 자정을 넘는 경우 등).
   const { now } = useServerNow({ autoUpdate: false });
   const todayKey = useMemo(() => {
-    if (now === undefined) return null;
+    if (now === undefined) return todayDateKey;
     const today = new Date(now);
     return toDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
-  }, [now]);
+  }, [now, todayDateKey]);
 
   // 보이는 월(연도)의 대한민국 공휴일 — dateKey('YYYY-MM-DD') → 공휴일명
   const { holidayMap } = useKrHolidays(viewYear);

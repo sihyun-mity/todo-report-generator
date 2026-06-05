@@ -1,6 +1,7 @@
 export * from './array';
 export * from './boolean';
 export * from './class';
+export * from './date';
 export * from './device';
 export * from './element';
 export * from './id';
