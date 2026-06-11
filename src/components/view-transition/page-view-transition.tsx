@@ -1,7 +1,6 @@
 'use client';
 
 import { type PropsWithChildren, type ViewTransitionClassPerType, ViewTransition } from 'react';
-import { useIsClient } from 'usehooks-ts';
 import { DEFAULT_PAGE_VIEW_TRANSITION_NAME, NAV_TRANSITION_TYPES } from '@/constants';
 
 /**
@@ -88,17 +87,15 @@ type Props = PropsWithChildren<{
  * 호출해 `::view-transition-old(.nav-*)` / `::view-transition-new(.nav-*)` 셀렉터로 정의된
  * 슬라이드 애니메이션이 실행된다.
  *
- * SSR + 초기 hydration 단계에서는 fragment 로 children 만 패스해 RSC 트리와 정확히 일치시키고,
- * hydration 이 끝난 뒤(`useIsClient`) 비로소 ViewTransition wrapping 을 활성화한다. 이렇게 하지
- * 않으면 초기 페이지가 hydration 되기 전에 사용자가 다른 페이지로 navigation 했을 때
- * `<ViewTransition>` 가 만든 fiber 가 RSC 트리와 어긋나며 hydration 오류가 발생한다.
+ * **SSR·CSR 모두 동일하게 `<ViewTransition>` 로 감싼다 — hydration 게이트(useIsClient)를 두지 않는다.**
+ * React 의 `<ViewTransition>` 은 DOM 을 추가하지 않는 logical fiber 라 SSR/hydration 출력이 children
+ * 그대로로 일치한다(hydration mismatch 없음). 과거엔 `useIsClient` 로 hydration 전엔 fragment, 후엔
+ * ViewTransition 으로 "승격"했는데, 이때 `#page-shell` 의 자식 wrapper 타입이 Fragment → ViewTransition
+ * 으로 바뀌며 React 가 children(=페이지 전체)을 통째로 unmount→remount 했다. 그 결과 모든 라우트 진입이
+ * 마운트 2회가 되어 새소식 dialog 가 두 번 뜨고 화면이 두 번 깜빡이는 리프레시 현상이 발생했다.
+ * wrapper 타입을 처음부터 고정해 이 remount 를 제거한다.
  */
 export function PageViewTransition({ children, name = DEFAULT_PAGE_VIEW_TRANSITION_NAME }: Readonly<Props>) {
-  const isClient = useIsClient();
-
-  if (!isClient) {
-    return <>{children}</>;
-  }
   return (
     <ViewTransition enter={ENTER_EXIT_MAP} exit={ENTER_EXIT_MAP} name={name}>
       {children}
