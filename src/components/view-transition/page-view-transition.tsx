@@ -17,6 +17,20 @@ const ENTER_EXIT_MAP: ViewTransitionClassPerType = {
 };
 
 /**
+ * `.vt-in-flight` 입력 락 백스톱 타임아웃(ms). 전환 애니메이션은 ~300ms 라 평상시엔 항상
+ * `transition.finished` 가 먼저 락을 푼다. 브라우저 버그 등으로 `finished` 가 영영 settle 되지
+ * 않아도 `:root.vt-in-flight { pointer-events:none }` 가 전체 페이지에 영구히 걸려 앱이 멈추는
+ * 것을 막는 안전선.
+ */
+const VT_LOCK_SAFETY_TIMEOUT_MS = 2000;
+
+/**
+ * in-flight 락 세대 카운터. 전환이 겹칠 때(직전 전환이 skip 되고 새 전환이 시작) 옛 전환의
+ * cleanup 이 새 전환의 락을 덮어 풀어버리지 않도록, 자기 세대일 때만 정리한다.
+ */
+let vtLockGeneration = 0;
+
+/**
  * View Transition 시작/종료 시점에 `<html>` 을 후킹한다. push/pop/popstate 모든 경로의
  * 전환이 `document.startViewTransition` 한 곳을 통과하므로 여기 한 번에서 다음을 처리한다:
  *
@@ -51,14 +65,26 @@ function patchStartViewTransition(): void {
 
   const patched = function patchedStartViewTransition(this: Document, ...args: Array<unknown>) {
     const root = document.documentElement;
+    const generation = ++vtLockGeneration;
     root.style.setProperty('--vt-old-shift', `${-Math.round(window.scrollY)}px`);
     root.classList.add('vt-in-flight');
 
-    const transition = original.apply(this, args);
-    // 전환 종료(성공/스킵/실패) 후 흔적 제거 — 다음 렌더에 잔존 값이 새지 않도록.
-    transition?.finished?.finally(() => {
+    // 흔적 제거 — 다음 렌더에 잔존 값이 새지 않도록. 단, 더 새로운 전환이 락을 다시 잡았으면
+    // (generation 이 갱신됨) 그 전환의 락을 건드리지 않는다.
+    const cleanup = () => {
+      if (generation !== vtLockGeneration) return;
       root.style.removeProperty('--vt-old-shift');
       root.classList.remove('vt-in-flight');
+    };
+
+    // finished 가 영영 settle 되지 않아도 입력 락이 영구히 걸리지 않도록 하는 백스톱.
+    const safety = window.setTimeout(cleanup, VT_LOCK_SAFETY_TIMEOUT_MS);
+
+    const transition = original.apply(this, args);
+    // 전환 종료(성공/스킵/실패) 시점에 정리 + 백스톱 타이머 해제.
+    transition?.finished?.finally(() => {
+      window.clearTimeout(safety);
+      cleanup();
     });
     return transition;
   } as PatchableDocument['startViewTransition'];
