@@ -9,6 +9,7 @@ import {
   PointerSensor,
   TouchSensor,
   closestCorners,
+  pointerWithin,
   useSensor,
   useSensors,
   type CollisionDetection,
@@ -72,7 +73,10 @@ const findProjectTarget = (
 // 프로젝트 드래그와 작업 드래그가 하나의 DndContext를 공유하므로, 드래그 종류에 맞는 droppable만
 // 후보로 남겨 서로 간섭하지 않게 한다.
 // - 프로젝트 드래그: 버킷 + 프로젝트 droppable만 (작업 제외).
-// - 작업 드래그: 다른 작업 + 프로젝트(빈 프로젝트 포함) droppable만 (버킷·자기 자신 제외).
+// - 작업 드래그: 모든 작업(자기 자신 포함) + 프로젝트(빈 프로젝트 포함) droppable만 (버킷 제외).
+//   자기 자신을 후보에 포함해야, 원래 자리로 돌아왔을 때 over===active가 되어 "그대로 놓으면 변경 없음"이 된다.
+// 추가로, 포인터가 어떤 droppable 위에도 없으면(리스트 바깥) 대상 없음(over=null)으로 둔다 →
+// 그대로 놓으면 handleDragEnd가 원래 상태로 초기화한다(Esc 취소와 동일 결과).
 const collisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const { today, tomorrow } = useReportFormStore.getState();
@@ -82,9 +86,15 @@ const collisionDetection: CollisionDetection = (args) => {
   const containers = args.droppableContainers.filter((c) => {
     const id = String(c.id);
     if (isProjectDrag) return id === 'today' || id === 'tomorrow' || projectIds.has(id);
-    return id !== 'today' && id !== 'tomorrow' && id !== activeId;
+    return id !== 'today' && id !== 'tomorrow';
   });
-  return closestCorners({ ...args, droppableContainers: containers });
+  const filteredArgs = { ...args, droppableContainers: containers };
+
+  // 키보드 드래그(방향키)는 포인터 좌표가 없다 — 좌표 게이팅을 건너뛰고 정렬만 한다.
+  if (args.pointerCoordinates == null) return closestCorners(filteredArgs);
+  // 포인터가 리스트 바깥이라 어떤 droppable 위에도 없으면 대상 없음으로 둔다 → 그대로 놓으면 초기화.
+  if (pointerWithin(filteredArgs).length === 0) return [];
+  return closestCorners(filteredArgs);
 };
 
 // 금일/익일 두 ProjectList를 감싸는 단일 DndContext.
@@ -118,8 +128,10 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     setActiveId(id);
   };
 
-  // 컨테이너 경계를 넘는 순간 항목을 대상 컨테이너로 실제로 옮긴다(라이브 미리보기).
-  // 같은 컨테이너 내 이동은 여기서 처리하지 않고 SortableContext의 자동 정렬에 맡긴다.
+  // 프로젝트의 버킷 간 이동만 여기서 라이브로 옮긴다(라이브 미리보기).
+  // 작업의 프로젝트 간 이동은 여기서 하지 않는다 — 드래그 내내 원래 위치를 드롭 슬롯으로 남겨두어,
+  // 사용자가 원래 자리에 그대로 놓으면 변경 없이 취소되도록 하기 위함이다(실제 이동은 onDragEnd에서).
+  // 같은 컨테이너 내 정렬 미리보기는 (프로젝트·작업 모두) SortableContext가 자동 처리한다.
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
@@ -127,35 +139,8 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const overId = String(over.id);
     const state = useReportFormStore.getState();
     // 드래그 종류는 React state(activeType) 대신 실제 id로 판별 — dragStart 직후의 리렌더 타이밍에 의존하지 않는다.
-    const activeLoc = findTaskLocation(activeId, state.today, state.tomorrow);
-
-    if (activeLoc) {
-      const target = findProjectTarget(overId, state.today, state.tomorrow);
-      if (!target) return;
-      // 같은 프로젝트 내 이동은 SortableContext의 자동 정렬에 맡긴다.
-      if (target.project.id === activeLoc.projectId) return;
-
-      const overTasks = target.project.tasks;
-      let newIndex: number;
-      if (overId === target.project.id) {
-        // 프로젝트 본문(빈 프로젝트 포함) 위 — 맨 끝에 삽입.
-        newIndex = overTasks.length;
-      } else {
-        const overIndex = overTasks.findIndex((t) => t.id === overId);
-        const translated = active.rect.current.translated;
-        const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
-        newIndex = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overTasks.length;
-      }
-      state.moveTaskToProject(
-        activeLoc.bucket,
-        activeLoc.projectId,
-        target.bucket,
-        target.project.id,
-        activeId,
-        newIndex
-      );
-      return;
-    }
+    // 작업 드래그는 onDragOver에서 아무 것도 하지 않는다(원래 슬롯 유지).
+    if (findTaskLocation(activeId, state.today, state.tomorrow)) return;
 
     // 프로젝트 드래그: 버킷 경계를 넘는 이동만 처리.
     const activeContainer = findContainer(activeId, state.today, state.tomorrow);
@@ -179,10 +164,15 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const snapshot = snapshotRef.current;
     setActiveId(null);
     setActiveType(null);
     snapshotRef.current = null;
-    if (!over) return;
+    // 유효한 드롭 대상 없이(리스트 바깥에) 놓으면 onDragOver로 옮겨둔 상태를 버리고 원래 자리로 되돌린다.
+    if (!over) {
+      if (snapshot) useReportFormStore.setState({ today: snapshot.today, tomorrow: snapshot.tomorrow });
+      return;
+    }
     const activeId = String(active.id);
     const overId = String(over.id);
     if (activeId === overId) return;
@@ -192,10 +182,33 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     if (activeLoc) {
       const target = findProjectTarget(overId, state.today, state.tomorrow);
       if (!target) return;
-      // 프로젝트 간 이동은 onDragOver에서 이미 끝났다. 같은 프로젝트 내 최종 위치만 확정한다.
-      if (target.project.id === activeLoc.projectId && overId !== target.project.id) {
-        state.reorderTasks(activeLoc.bucket, activeLoc.projectId, activeId, overId);
+      if (target.project.id === activeLoc.projectId) {
+        // 같은 프로젝트 내 재정렬. (원래 자리에 놓으면 위의 activeId===overId 분기에서 이미 걸러져 변경 없음)
+        if (overId !== target.project.id) {
+          state.reorderTasks(activeLoc.bucket, activeLoc.projectId, activeId, overId);
+        }
+        return;
       }
+      // 다른 프로젝트로 이동 — 원래 슬롯을 유지하려고 미뤄둔 실제 이동을 드롭 시점에 수행한다.
+      const overTasks = target.project.tasks;
+      let newIndex: number;
+      if (overId === target.project.id) {
+        // 프로젝트 본문(빈 프로젝트 포함) 위 — 맨 끝에 삽입.
+        newIndex = overTasks.length;
+      } else {
+        const overIndex = overTasks.findIndex((t) => t.id === overId);
+        const translated = active.rect.current.translated;
+        const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
+        newIndex = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overTasks.length;
+      }
+      state.moveTaskToProject(
+        activeLoc.bucket,
+        activeLoc.projectId,
+        target.bucket,
+        target.project.id,
+        activeId,
+        newIndex
+      );
       return;
     }
 
