@@ -106,6 +106,33 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
       return { [bucket]: list.map((p) => (p.id === projectId ? { ...p, tasks: nextTasks } : p)) };
     }),
 
+  // 작업을 다른 프로젝트로 이동. 소스 프로젝트에서 제거하고 대상 프로젝트의 toIndex에 삽입한다.
+  // 크로스 프로젝트 드래그 중 onDragOver에서 매 hover마다 호출되므로, 버킷이 같으면 한 번의 set으로
+  // 하나의 배열을, 버킷이 다르면 두 배열을 함께 갱신한다.
+  moveTaskToProject: (fromBucket, fromProjectId, toBucket, toProjectId, taskId, toIndex) =>
+    set((state) => {
+      if (fromBucket === toBucket && fromProjectId === toProjectId) return state;
+      const fromProject = state[fromBucket].find((p) => p.id === fromProjectId);
+      const movedTask = fromProject?.tasks.find((t) => t.id === taskId);
+      if (!movedTask) return state;
+
+      const removeFrom = (list: Array<Project>) =>
+        list.map((p) => (p.id === fromProjectId ? { ...p, tasks: p.tasks.filter((t) => t.id !== taskId) } : p));
+      const insertInto = (list: Array<Project>) =>
+        list.map((p) => {
+          if (p.id !== toProjectId) return p;
+          const nextTasks = [...p.tasks];
+          const clamped = Math.max(0, Math.min(toIndex, nextTasks.length));
+          nextTasks.splice(clamped, 0, movedTask);
+          return { ...p, tasks: nextTasks };
+        });
+
+      if (fromBucket === toBucket) {
+        return { [fromBucket]: insertInto(removeFrom(state[fromBucket])) };
+      }
+      return { [fromBucket]: removeFrom(state[fromBucket]), [toBucket]: insertInto(state[toBucket]) };
+    }),
+
   markHydratedFromHistory: () => set({ hasHydratedFromHistory: true }),
 
   resetForm: () =>

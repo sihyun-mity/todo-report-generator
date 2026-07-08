@@ -14,7 +14,6 @@ export const useProjects = (bucket: ProjectsBucket) => {
   const removeTaskAction = useReportFormStore((s) => s.removeTask);
   const updateTaskAction = useReportFormStore((s) => s.updateTask);
   const reorderProjectsAction = useReportFormStore((s) => s.reorderProjects);
-  const reorderTasksAction = useReportFormStore((s) => s.reorderTasks);
 
   const setProjects: Dispatch<SetStateAction<Array<Project>>> = (updater) => setBucket(bucket, updater);
   const addProject = (id?: string) => addProjectAction(bucket, id);
@@ -25,8 +24,6 @@ export const useProjects = (bucket: ProjectsBucket) => {
   const updateTask = (projectId: string, taskId: string, updates: Partial<Task>) =>
     updateTaskAction(bucket, projectId, taskId, updates);
   const reorderProjects = (fromId: string, toId: string) => reorderProjectsAction(bucket, fromId, toId);
-  const reorderTasks = (projectId: string, fromId: string, toId: string) =>
-    reorderTasksAction(bucket, projectId, fromId, toId);
 
   return {
     projects,
@@ -38,7 +35,6 @@ export const useProjects = (bucket: ProjectsBucket) => {
     removeTask,
     updateTask,
     reorderProjects,
-    reorderTasks,
   };
 };
 

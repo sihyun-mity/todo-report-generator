@@ -1,23 +1,8 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { GripVertical, Plus, Trash2 } from 'lucide-react';
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Project, Task } from '@/types';
 import { createId } from '@/utils';
@@ -30,7 +15,6 @@ type ProjectItemProps = {
   onAddTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (taskId: string, options?: RemoveOptions) => void;
-  onReorderTasks: (fromId: string, toId: string) => void;
   onBackspaceEmpty?: () => void;
   canRemove: boolean;
   autoFocus?: boolean;
@@ -57,7 +41,6 @@ export const ProjectItem = ({
   onAddTask,
   onUpdateTask,
   onRemoveTask,
-  onReorderTasks,
   onBackspaceEmpty,
   canRemove,
   autoFocus,
@@ -67,8 +50,6 @@ export const ProjectItem = ({
 }: Readonly<ProjectItemProps>) => {
   const [taskFocus, setTaskFocus] = useState<TaskFocus | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  // DndContext가 자동 생성하는 id가 SSR/CSR에서 달라지면 hydration 경고가 난다 — useId로 고정.
-  const tasksDndContextId = useId();
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
   const style = {
@@ -76,13 +57,6 @@ export const ProjectItem = ({
     transition,
     opacity: isDragging ? 0 : 1,
   };
-
-  // 작업 목록 정렬 전용 sensor — 프로젝트 sensor와 동일 정책.
-  const taskSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
 
   useEffect(() => {
     if (autoFocus && nameInputRef.current) {
@@ -177,12 +151,6 @@ export const ProjectItem = ({
     }
   };
 
-  const handleTasksDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    onReorderTasks(String(active.id), String(over.id));
-  };
-
   const taskIds = project.tasks.map((t) => t.id);
 
   return (
@@ -223,14 +191,16 @@ export const ProjectItem = ({
         </button>
       </div>
       <div className="ml-2 space-y-3 sm:ml-4">
-        <DndContext
-          id={tasksDndContextId}
-          sensors={taskSensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleTasksDragEnd}
-        >
-          <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-            {project.tasks.map((task, index) => (
+        {/* 작업 정렬·프로젝트 간 이동은 상위 ProjectBoard의 단일 DndContext가 처리한다.
+            여기서는 SortableContext 등록만 담당한다. */}
+        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+          {project.tasks.length === 0 ? (
+            // 프로젝트 간 이동으로 작업이 모두 빠져나간 상태 — 다른 작업을 받을 수 있는 drop 안내.
+            <div className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:text-zinc-500">
+              여기로 작업을 끌어다 놓으세요.
+            </div>
+          ) : (
+            project.tasks.map((task, index) => (
               <TaskItem
                 key={task.id}
                 task={task}
@@ -243,9 +213,9 @@ export const ProjectItem = ({
                 focusField={taskFocus?.taskId === task.id ? taskFocus.field : null}
                 focusNonce={taskFocus?.taskId === task.id ? taskFocus.nonce : 0}
               />
-            ))}
-          </SortableContext>
-        </DndContext>
+            ))
+          )}
+        </SortableContext>
         <button
           onClick={handleAddTask}
           className="ml-2 flex cursor-pointer items-center gap-1 text-sm font-medium text-blue-500 transition-colors hover:text-blue-600 sm:ml-4"

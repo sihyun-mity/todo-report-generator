@@ -65,6 +65,15 @@ export type ReportFormStore = {
     toIndex: number
   ) => void;
   reorderTasks: (bucket: ProjectsBucket, projectId: string, fromId: string, toId: string) => void;
+  // 작업을 다른 프로젝트(버킷도 넘나들 수 있음)로 이동. toIndex는 대상 프로젝트에서 삽입될 위치.
+  moveTaskToProject: (
+    fromBucket: ProjectsBucket,
+    fromProjectId: string,
+    toBucket: ProjectsBucket,
+    toProjectId: string,
+    taskId: string,
+    toIndex: number
+  ) => void;
   markHydratedFromHistory: () => void;
   resetForm: () => void;
   resetSession: () => void;

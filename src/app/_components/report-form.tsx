@@ -520,7 +520,6 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
               onAddTask={today.addTask}
               onUpdateTask={today.updateTask}
               onRemoveTask={todayRemove.removeTask}
-              onReorderTasks={today.reorderTasks}
               focusRequest={todayFocusRequest}
             />
             <ProjectList
@@ -533,7 +532,6 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
               onAddTask={tomorrow.addTask}
               onUpdateTask={tomorrow.updateTask}
               onRemoveTask={tomorrowRemove.removeTask}
-              onReorderTasks={tomorrow.reorderTasks}
               onImportIncomplete={handleImportIncomplete}
               focusRequest={tomorrowFocusRequest}
             />

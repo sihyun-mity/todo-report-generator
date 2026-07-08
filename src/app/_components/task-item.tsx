@@ -185,3 +185,18 @@ export const TaskItem = ({
     </div>
   );
 };
+
+// DragOverlay에서 그릴 정적 미리보기 — 진행률 input/preset 팝업 등 인터랙션 없는 단순 형태.
+export const TaskItemPreview = ({ task }: Readonly<{ task: Task }>) => (
+  <div className="pointer-events-none flex items-center gap-1 rounded-md bg-white shadow-lg sm:gap-1.5 dark:bg-zinc-900">
+    <span className="shrink-0 p-1 text-zinc-300 dark:text-zinc-600">
+      <GripVertical size={14} />
+    </span>
+    <div className="min-w-0 flex-1 truncate rounded-md border border-zinc-200 px-2 py-1.5 text-sm text-zinc-700 sm:px-3 dark:border-zinc-700/50 dark:text-zinc-200">
+      {task.content || '작업 내용'}
+    </div>
+    <div className="w-14 shrink-0 rounded-md border border-zinc-200 py-1.5 pr-2 pl-1 text-right text-sm text-zinc-500 sm:w-20 dark:border-zinc-700/50 dark:text-zinc-400">
+      {task.progress}%
+    </div>
+  </div>
+);

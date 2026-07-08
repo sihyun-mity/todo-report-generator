@@ -11,16 +11,19 @@ import {
   closestCorners,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import type { Project, ProjectsBucket } from '@/types';
+import type { Project, ProjectsBucket, Task } from '@/types';
 import { useReportFormStore } from '@/stores';
-import { ProjectItemPreview } from '.';
+import { ProjectItemPreview, TaskItemPreview } from '.';
 
-// 드래그 중인 id가 어느 버킷에 속하는지 판별.
+const BUCKETS: ReadonlyArray<ProjectsBucket> = ['today', 'tomorrow'];
+
+// 드래그 중인 프로젝트 id가 어느 버킷에 속하는지 판별.
 // id가 버킷 droppable 자체('today'/'tomorrow')면 그 버킷, 아니면 프로젝트가 들어있는 버킷을 반환.
 const findContainer = (
   id: string,
@@ -33,13 +36,66 @@ const findContainer = (
   return null;
 };
 
+type TaskLocation = { bucket: ProjectsBucket; projectId: string };
+
+// 작업 id가 어느 버킷의 어느 프로젝트에 속하는지 판별.
+const findTaskLocation = (
+  taskId: string,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): TaskLocation | null => {
+  for (const bucket of BUCKETS) {
+    const list = bucket === 'today' ? today : tomorrow;
+    for (const p of list) {
+      if (p.tasks.some((t) => t.id === taskId)) return { bucket, projectId: p.id };
+    }
+  }
+  return null;
+};
+
+// 작업 드래그 중 over id → 대상 프로젝트. over가 작업이면 그 작업의 프로젝트, 프로젝트면 그 프로젝트.
+const findProjectTarget = (
+  overId: string,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): { bucket: ProjectsBucket; project: Project } | null => {
+  for (const bucket of BUCKETS) {
+    const list = bucket === 'today' ? today : tomorrow;
+    const asProject = list.find((p) => p.id === overId);
+    if (asProject) return { bucket, project: asProject };
+    const owner = list.find((p) => p.tasks.some((t) => t.id === overId));
+    if (owner) return { bucket, project: owner };
+  }
+  return null;
+};
+
+// 프로젝트 드래그와 작업 드래그가 하나의 DndContext를 공유하므로, 드래그 종류에 맞는 droppable만
+// 후보로 남겨 서로 간섭하지 않게 한다.
+// - 프로젝트 드래그: 버킷 + 프로젝트 droppable만 (작업 제외).
+// - 작업 드래그: 다른 작업 + 프로젝트(빈 프로젝트 포함) droppable만 (버킷·자기 자신 제외).
+const collisionDetection: CollisionDetection = (args) => {
+  const activeId = String(args.active.id);
+  const { today, tomorrow } = useReportFormStore.getState();
+  const projectIds = new Set([...today, ...tomorrow].map((p) => p.id));
+  const isProjectDrag = projectIds.has(activeId);
+
+  const containers = args.droppableContainers.filter((c) => {
+    const id = String(c.id);
+    if (isProjectDrag) return id === 'today' || id === 'tomorrow' || projectIds.has(id);
+    return id !== 'today' && id !== 'tomorrow' && id !== activeId;
+  });
+  return closestCorners({ ...args, droppableContainers: containers });
+};
+
 // 금일/익일 두 ProjectList를 감싸는 단일 DndContext.
-// 같은 버킷 내 정렬은 SortableContext가 자동 처리하고, 버킷 간 이동만 onDragOver에서 직접 옮긴다.
-// store를 직접 읽고/쓰므로 별도 prop 전달 없이 자기완결적으로 동작한다.
+// 프로젝트 정렬·버킷 간 이동과 작업 정렬·프로젝트 간 이동을 모두 여기서 처리한다.
+// 같은 컨테이너(버킷/프로젝트) 내 정렬은 SortableContext가 자동 처리하고, 컨테이너 경계를 넘는
+// 이동만 onDragOver에서 직접 옮긴다. store를 직접 읽고/쓰므로 별도 prop 전달 없이 자기완결적으로 동작한다.
 export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) => {
   // DndContext가 자동 생성하는 id는 SSR/CSR에서 달라져 hydration 경고가 난다 — useId로 고정.
   const dndContextId = useId();
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<'project' | 'task' | null>(null);
   // 드래그 취소 시 onDragOver로 옮겨둔 상태를 되돌리기 위한 스냅샷.
   const snapshotRef = useRef<{ today: Array<Project>; tomorrow: Array<Project> } | null>(null);
 
@@ -56,17 +112,52 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
   const handleDragStart = (event: DragStartEvent) => {
     const state = useReportFormStore.getState();
     snapshotRef.current = { today: state.today, tomorrow: state.tomorrow };
-    setActiveProjectId(String(event.active.id));
+    const id = String(event.active.id);
+    const isProject = [...state.today, ...state.tomorrow].some((p) => p.id === id);
+    setActiveType(isProject ? 'project' : 'task');
+    setActiveId(id);
   };
 
-  // 버킷 경계를 넘는 순간 프로젝트를 대상 버킷으로 실제로 옮긴다(라이브 미리보기).
-  // 같은 버킷 내 이동은 여기서 처리하지 않고 SortableContext의 자동 정렬에 맡긴다.
+  // 컨테이너 경계를 넘는 순간 항목을 대상 컨테이너로 실제로 옮긴다(라이브 미리보기).
+  // 같은 컨테이너 내 이동은 여기서 처리하지 않고 SortableContext의 자동 정렬에 맡긴다.
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
     const state = useReportFormStore.getState();
+    // 드래그 종류는 React state(activeType) 대신 실제 id로 판별 — dragStart 직후의 리렌더 타이밍에 의존하지 않는다.
+    const activeLoc = findTaskLocation(activeId, state.today, state.tomorrow);
+
+    if (activeLoc) {
+      const target = findProjectTarget(overId, state.today, state.tomorrow);
+      if (!target) return;
+      // 같은 프로젝트 내 이동은 SortableContext의 자동 정렬에 맡긴다.
+      if (target.project.id === activeLoc.projectId) return;
+
+      const overTasks = target.project.tasks;
+      let newIndex: number;
+      if (overId === target.project.id) {
+        // 프로젝트 본문(빈 프로젝트 포함) 위 — 맨 끝에 삽입.
+        newIndex = overTasks.length;
+      } else {
+        const overIndex = overTasks.findIndex((t) => t.id === overId);
+        const translated = active.rect.current.translated;
+        const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
+        newIndex = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overTasks.length;
+      }
+      state.moveTaskToProject(
+        activeLoc.bucket,
+        activeLoc.projectId,
+        target.bucket,
+        target.project.id,
+        activeId,
+        newIndex
+      );
+      return;
+    }
+
+    // 프로젝트 드래그: 버킷 경계를 넘는 이동만 처리.
     const activeContainer = findContainer(activeId, state.today, state.tomorrow);
     const overContainer = findContainer(overId, state.today, state.tomorrow);
     if (!activeContainer || !overContainer || activeContainer === overContainer) return;
@@ -88,13 +179,26 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveProjectId(null);
+    setActiveId(null);
+    setActiveType(null);
     snapshotRef.current = null;
     if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
     if (activeId === overId) return;
     const state = useReportFormStore.getState();
+    const activeLoc = findTaskLocation(activeId, state.today, state.tomorrow);
+
+    if (activeLoc) {
+      const target = findProjectTarget(overId, state.today, state.tomorrow);
+      if (!target) return;
+      // 프로젝트 간 이동은 onDragOver에서 이미 끝났다. 같은 프로젝트 내 최종 위치만 확정한다.
+      if (target.project.id === activeLoc.projectId && overId !== target.project.id) {
+        state.reorderTasks(activeLoc.bucket, activeLoc.projectId, activeId, overId);
+      }
+      return;
+    }
+
     const activeContainer = findContainer(activeId, state.today, state.tomorrow);
     const overContainer = findContainer(overId, state.today, state.tomorrow);
     if (!activeContainer || !overContainer) return;
@@ -110,19 +214,30 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
       useReportFormStore.setState({ today: snapshot.today, tomorrow: snapshot.tomorrow });
     }
     snapshotRef.current = null;
-    setActiveProjectId(null);
+    setActiveId(null);
+    setActiveType(null);
   };
 
-  const activeProject = activeProjectId
-    ? ([...today, ...tomorrow].find((p) => p.id === activeProjectId) ?? null)
-    : null;
+  const allProjects = [...today, ...tomorrow];
+  const activeProject =
+    activeType === 'project' && activeId ? (allProjects.find((p) => p.id === activeId) ?? null) : null;
+  let activeTask: Task | null = null;
+  if (activeType === 'task' && activeId) {
+    for (const p of allProjects) {
+      const found = p.tasks.find((t) => t.id === activeId);
+      if (found) {
+        activeTask = found;
+        break;
+      }
+    }
+  }
 
   return (
     <DndContext
       id={dndContextId}
       sensors={sensors}
-      collisionDetection={closestCorners}
-      // 항목 높이가 제각각(작업 수에 따라)이고 버킷 간 이동으로 목록 구성이 바뀌므로,
+      collisionDetection={collisionDetection}
+      // 항목 높이가 제각각(작업 수에 따라)이고 컨테이너 간 이동으로 목록 구성이 바뀌므로,
       // 매 프레임 droppable rect를 다시 측정해 정렬 애니메이션이 끊기지 않게 한다.
       // (기본값 WhileDragging은 드래그 시작 시 한 번만 측정 → 아래로 밀 때 자리가 한 번에 생김)
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
@@ -132,7 +247,13 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
       onDragCancel={handleDragCancel}
     >
       {children}
-      <DragOverlay>{activeProject ? <ProjectItemPreview project={activeProject} /> : null}</DragOverlay>
+      <DragOverlay>
+        {activeProject ? (
+          <ProjectItemPreview project={activeProject} />
+        ) : activeTask ? (
+          <TaskItemPreview task={activeTask} />
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 };
