@@ -12,10 +12,12 @@ import {
   pointerWithin,
   useSensor,
   useSensors,
+  type Active,
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type Over,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { Project, ProjectsBucket, Task } from '@/types';
@@ -68,6 +70,34 @@ const findProjectTarget = (
     if (owner) return { bucket, project: owner };
   }
   return null;
+};
+
+type TaskDropTarget = { bucket: ProjectsBucket; projectId: string; index: number };
+
+// 작업 드래그가 현재 가리키는 삽입 위치(대상 프로젝트 + tasks 내 index).
+const findTaskDropTarget = (
+  active: Active,
+  over: Over,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): TaskDropTarget | null => {
+  const overId = String(over.id);
+  const target = findProjectTarget(overId, today, tomorrow);
+  if (!target) return null;
+
+  const overTasks = target.project.tasks;
+  let index: number;
+  if (overId === target.project.id) {
+    // 프로젝트 본문(빈 프로젝트 포함) 위 — 맨 끝에 삽입.
+    index = overTasks.length;
+  } else {
+    const overIndex = overTasks.findIndex((t) => t.id === overId);
+    const translated = active.rect.current.translated;
+    // 드래그 중인 항목의 중심이 over 항목의 중간보다 아래면 그 아래에 끼워 넣는다.
+    const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
+    index = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overTasks.length;
+  }
+  return { bucket: target.bucket, projectId: target.project.id, index };
 };
 
 // 프로젝트 드래그와 작업 드래그가 하나의 DndContext를 공유하므로, 드래그 종류에 맞는 droppable만
@@ -128,19 +158,33 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     setActiveId(id);
   };
 
-  // 프로젝트의 버킷 간 이동만 여기서 라이브로 옮긴다(라이브 미리보기).
-  // 작업의 프로젝트 간 이동은 여기서 하지 않는다 — 드래그 내내 원래 위치를 드롭 슬롯으로 남겨두어,
-  // 사용자가 원래 자리에 그대로 놓으면 변경 없이 취소되도록 하기 위함이다(실제 이동은 onDragEnd에서).
-  // 같은 컨테이너 내 정렬 미리보기는 (프로젝트·작업 모두) SortableContext가 자동 처리한다.
+  // 컨테이너 경계를 넘는 이동(프로젝트의 버킷 간, 작업의 프로젝트 간)을 여기서 라이브로 옮긴다.
+  // 대상 컨테이너의 SortableContext가 실제로 항목을 품게 되므로, 같은 컨테이너 내 재정렬과 똑같이
+  // 자리가 벌어지는 미리보기가 그대로 나타난다. 같은 컨테이너 내 정렬 미리보기는 SortableContext가 자동 처리.
+  // 되돌리기는 스냅샷이 담당한다 — Esc(onDragCancel)와 리스트 바깥 드롭(over=null)에서 원래 상태로 복원.
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
     const state = useReportFormStore.getState();
+
     // 드래그 종류는 React state(activeType) 대신 실제 id로 판별 — dragStart 직후의 리렌더 타이밍에 의존하지 않는다.
-    // 작업 드래그는 onDragOver에서 아무 것도 하지 않는다(원래 슬롯 유지).
-    if (findTaskLocation(activeId, state.today, state.tomorrow)) return;
+    const activeTaskLoc = findTaskLocation(activeId, state.today, state.tomorrow);
+    if (activeTaskLoc) {
+      // 작업 드래그: 프로젝트 경계를 넘는 이동만 처리 (같은 프로젝트 내 정렬은 SortableContext + onDragEnd).
+      const target = findTaskDropTarget(active, over, state.today, state.tomorrow);
+      if (!target || target.projectId === activeTaskLoc.projectId) return;
+      state.moveTaskToProject(
+        activeTaskLoc.bucket,
+        activeTaskLoc.projectId,
+        target.bucket,
+        target.projectId,
+        activeId,
+        target.index
+      );
+      return;
+    }
 
     // 프로젝트 드래그: 버킷 경계를 넘는 이동만 처리.
     const activeContainer = findContainer(activeId, state.today, state.tomorrow);
@@ -180,34 +224,24 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const activeLoc = findTaskLocation(activeId, state.today, state.tomorrow);
 
     if (activeLoc) {
-      const target = findProjectTarget(overId, state.today, state.tomorrow);
+      const target = findTaskDropTarget(active, over, state.today, state.tomorrow);
       if (!target) return;
-      if (target.project.id === activeLoc.projectId) {
-        // 같은 프로젝트 내 재정렬. (원래 자리에 놓으면 위의 activeId===overId 분기에서 이미 걸러져 변경 없음)
-        if (overId !== target.project.id) {
+      // 프로젝트 간 이동은 onDragOver에서 이미 끝났다(activeLoc이 곧 대상 프로젝트).
+      // 여기서는 같은 프로젝트 내 최종 위치만 확정한다.
+      if (target.projectId === activeLoc.projectId) {
+        if (overId !== target.projectId) {
           state.reorderTasks(activeLoc.bucket, activeLoc.projectId, activeId, overId);
         }
         return;
       }
-      // 다른 프로젝트로 이동 — 원래 슬롯을 유지하려고 미뤄둔 실제 이동을 드롭 시점에 수행한다.
-      const overTasks = target.project.tasks;
-      let newIndex: number;
-      if (overId === target.project.id) {
-        // 프로젝트 본문(빈 프로젝트 포함) 위 — 맨 끝에 삽입.
-        newIndex = overTasks.length;
-      } else {
-        const overIndex = overTasks.findIndex((t) => t.id === overId);
-        const translated = active.rect.current.translated;
-        const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
-        newIndex = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overTasks.length;
-      }
+      // onDragOver를 거치지 않고 드롭된 경우(예: 단일 프레임 드롭)에 대한 방어.
       state.moveTaskToProject(
         activeLoc.bucket,
         activeLoc.projectId,
         target.bucket,
-        target.project.id,
+        target.projectId,
         activeId,
-        newIndex
+        target.index
       );
       return;
     }
