@@ -16,6 +16,13 @@ export const CUSTOM_POINTER_PARALLAX_MAX = 3;
 export const CUSTOM_POINTER_CARET_WIDTH = 2;
 
 /**
+ * 클릭 완료 후 커서 아래 요소를 매 프레임 재히트테스트하는 시간(ms).
+ * 클릭이 일으키는 DOM 변경(작업 추가 등)은 이벤트 처리 이후에 커밋되므로,
+ * pointerup 시점의 단발 판정으로는 새 레이아웃을 반영할 수 없다.
+ */
+export const CUSTOM_POINTER_CLICK_RECHECK_MS = 250;
+
+/**
  * 포인터가 요소를 감싸는 하이라이트로 변형되는 스냅 대상.
  * `.cursor-pointer` 는 Tailwind 유틸을 단 커스텀 클릭 영역(카드 등)을 포괄한다.
  * 새로 만드는 요소가 여기에 안 걸리면 `data-pointer-snap` 을 붙여 옵트인한다.
