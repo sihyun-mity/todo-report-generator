@@ -1,0 +1,33 @@
+/**
+ * iPadOS 트랙패드 스타일 커스텀 포인터 (CustomPointer 컴포넌트가 그린다).
+ * hover + fine 포인터 환경에서만 <html> 에 활성화 클래스가 붙어 네이티브 커서를 숨긴다.
+ * 위치·크기·모서리는 JS(rAF lerp)가 직접 쓰므로 여기서 transition 을 걸지 않는다 —
+ * 모드별 배경색 전환만 CSS transition 으로 처리한다.
+ */
+html.custom-pointer-active body,
+html.custom-pointer-active body * {
+  cursor: none !important;
+}
+
+#custom-pointer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* 토스트(react-hot-toast)·다이얼로그 등 모든 레이어 위 */
+  z-index: 2147483000;
+  pointer-events: none;
+  opacity: 0;
+  background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  transition: background-color 150ms ease;
+  will-change: transform, width, height, opacity;
+}
+
+/* 요소를 감싸는 하이라이트 — 은은한 워시로 요소 내용이 비쳐 보이게 */
+#custom-pointer[data-mode='snap'] {
+  background-color: color-mix(in srgb, var(--foreground) 11%, transparent);
+}
+
+/* 텍스트 캐럿 바 — 얇아서 더 진하게 */
+#custom-pointer[data-mode='caret'] {
+  background-color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
