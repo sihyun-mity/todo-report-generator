@@ -279,28 +279,31 @@ export function ReportHistory({
                     <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
                       {item.month}월 {item.day}일 보고서
                     </span>
-                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {/* 버튼 히트 영역을 간격 없이 맞닿게 해 커스텀 포인터가 버튼→카드→버튼으로 스냅이 튀지 않게 한다.
+                        패딩 p-1.5 + gap 0 은 기존 p-1 + gap-1 과 피치·아이콘 간격이 동일하고,
+                        음수 마진은 커진 박스가 상단 행 높이(22px)와 아이콘 위치를 밀지 않도록 상쇄한다. */}
+                    <div className="-my-0.5 -mr-0.5 flex items-center opacity-0 transition-opacity group-hover:opacity-100">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           navigator.clipboard.writeText(item.content);
                           toast.success('내용이 클립보드에 복사되었습니다.');
                         }}
-                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+                        className="rounded p-1.5 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
                         title="다시 복사"
                       >
                         <Copy size={14} />
                       </button>
                       <button
                         onClick={(e) => loadHistoryAction(item, e)}
-                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
+                        className="rounded p-1.5 text-zinc-400 hover:bg-white hover:text-blue-600 dark:hover:bg-zinc-800"
                         title="불러오기"
                       >
                         <RotateCcw size={14} />
                       </button>
                       <button
                         onClick={(e) => deleteHistoryAction(item.id, e)}
-                        className="rounded p-1 text-zinc-400 hover:bg-white hover:text-red-600 dark:hover:bg-zinc-800"
+                        className="rounded p-1.5 text-zinc-400 hover:bg-white hover:text-red-600 dark:hover:bg-zinc-800"
                         title="삭제"
                       >
                         <Trash2 size={14} />
