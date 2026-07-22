@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ReportForm } from '@/app/_components';
+import { CommitConstellation, ReportForm } from '@/app/_components';
 import { GuestLoginBanner, PushSubscribePrompt } from '@/components';
 import { kstDateKey, staticMetadata } from '@/utils';
 
@@ -16,6 +16,8 @@ export default function Home() {
 
   return (
     <main className="container mx-auto">
+      {/* 배경 커밋 그래프 성좌 — 작성 화면(홈)에서만 노출 */}
+      <CommitConstellation />
       {/* "지금 작성하는 기록은…" 문구가 작성 맥락을 전제하므로 작성 화면에서만 노출한다 */}
       <GuestLoginBanner />
       <ReportForm serverDateKey={serverDateKey} />

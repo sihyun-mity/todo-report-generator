@@ -1,3 +1,4 @@
+export * from './backdrop';
 export * from './date-picker';
 export * from './import-local-dialog';
 export * from './import-modal';

@@ -3,8 +3,9 @@ import { AppTopBar, PasskeyRegisterBanner } from '@/components';
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
+  // isolate: 배경 이펙트(-z-10 canvas)가 이 div 의 bg 위·콘텐츠 아래에 정확히 끼도록 스태킹 컨텍스트를 만든다
   return (
-    <div className="min-h-screen-enhanced bg-background text-foreground">
+    <div className="isolate min-h-screen-enhanced bg-background text-foreground">
       <AppTopBar />
       <PasskeyRegisterBanner />
       {children}

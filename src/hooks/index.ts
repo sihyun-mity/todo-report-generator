@@ -1,4 +1,5 @@
 export * from './use-all-search-params';
+export * from './use-backdrop-canvas';
 export * from './use-container';
 export * from './use-focus-scroll';
 export * from './use-grab-slide';
