@@ -51,6 +51,13 @@ const DARK_PALETTE: Palette = {
 const LINK_DISTANCE = 110;
 const CURSOR_LINK_DISTANCE = 160;
 const CURSOR_PULL_DISTANCE = 180;
+// 커서 인력은 이 반경 밖에서만 작동하고, 안쪽에선 살짝 밀어낸다 —
+// 노드가 커서 정중앙에 겹겹이 쌓이는 대신 고리 형태로 맴돌게 한다.
+const CURSOR_HOLD_DISTANCE = 56;
+// 커서가 이 시간 이상 제자리면 인력을 서서히 꺼서(페이드) 노드들이 기본 부유로 흩어진다.
+const IDLE_PULL_DELAY = 2;
+const IDLE_PULL_FADE = 1.5;
+const POINTER_MOVE_EPSILON = 1.5;
 const WRAP_MARGIN = 40;
 const MAX_NODES = 80;
 const MIN_NODES = 24;
@@ -88,6 +95,9 @@ export const createCommitConstellation: BackdropEffectFactory = (env) => {
   const ripples: Array<Ripple> = [];
   const hashLabels: Array<HashLabel> = [];
   let nextAmbientPulse = 2 + Math.random() * 3;
+  let pointerIdleTime = 0;
+  let lastPointerX = pointer.x;
+  let lastPointerY = pointer.y;
 
   const syncNodeCount = () => {
     const targetCount = Math.max(
@@ -104,6 +114,7 @@ export const createCommitConstellation: BackdropEffectFactory = (env) => {
     resize: syncNodeCount,
 
     pointerDown: (x, y) => {
+      pointerIdleTime = 0;
       ripples.push({ x, y, age: 0 });
       hashLabels.push({ x, y, text: randomHash(), age: 0 });
       for (const node of nodes) {
@@ -122,20 +133,41 @@ export const createCommitConstellation: BackdropEffectFactory = (env) => {
       const palette = env.theme() === 'dark' ? DARK_PALETTE : LIGHT_PALETTE;
       const { width, height } = size;
 
+      // 커서 유휴 시간 추적 — 제자리에 오래 머물면 인력을 점점 꺼서 노드가 적체되지 않게 한다
+      const pointerMoved = Math.hypot(pointer.x - lastPointerX, pointer.y - lastPointerY) > POINTER_MOVE_EPSILON;
+      if (pointerMoved) {
+        pointerIdleTime = 0;
+        lastPointerX = pointer.x;
+        lastPointerY = pointer.y;
+      } else {
+        pointerIdleTime += dt;
+      }
+      const pullFade =
+        pointer.active && pointerIdleTime < IDLE_PULL_DELAY + IDLE_PULL_FADE
+          ? 1 - Math.max(0, (pointerIdleTime - IDLE_PULL_DELAY) / IDLE_PULL_FADE)
+          : 0;
+
       for (const node of nodes) {
         // 기본 부유 속도로 서서히 복원 (커서 인력·클릭 반동에서 회복)
         const relax = Math.min(1, dt * 0.8);
         node.vx += (node.baseVx - node.vx) * relax;
         node.vy += (node.baseVy - node.vy) * relax;
 
-        if (pointer.active) {
+        if (pullFade > 0) {
           const dx = pointer.x - node.x;
           const dy = pointer.y - node.y;
           const dist = Math.hypot(dx, dy);
           if (dist > 1 && dist < CURSOR_PULL_DISTANCE) {
-            const pull = 42 * (1 - dist / CURSOR_PULL_DISTANCE);
-            node.vx += (dx / dist) * pull * dt;
-            node.vy += (dy / dist) * pull * dt;
+            if (dist < CURSOR_HOLD_DISTANCE) {
+              // 정중앙 뭉침 방지 — 유지 반경 안쪽은 살짝 밀어내 고리를 유지
+              const push = 30 * (1 - dist / CURSOR_HOLD_DISTANCE) * pullFade;
+              node.vx -= (dx / dist) * push * dt;
+              node.vy -= (dy / dist) * push * dt;
+            } else {
+              const pull = 42 * (1 - dist / CURSOR_PULL_DISTANCE) * pullFade;
+              node.vx += (dx / dist) * pull * dt;
+              node.vy += (dy / dist) * pull * dt;
+            }
           }
         }
 
