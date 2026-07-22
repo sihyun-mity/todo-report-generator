@@ -23,6 +23,13 @@ export const CUSTOM_POINTER_CARET_WIDTH = 2;
 export const CUSTOM_POINTER_CLICK_RECHECK_MS = 250;
 
 /**
+ * 터치 종료 후 pointerType 'mouse' 이벤트를 계속 무시하는 시간(ms).
+ * 일부 안드로이드 브라우저(인앱 웹뷰·DeX 등)는 터치를 'mouse' 로 보고하므로,
+ * 터치 세션 중과 직후엔 mouse 포인터 이벤트를 신뢰할 수 없다.
+ */
+export const CUSTOM_POINTER_TOUCH_SUPPRESS_MS = 800;
+
+/**
  * 포인터가 요소를 감싸는 하이라이트로 변형되는 스냅 대상.
  * `.cursor-pointer` 는 Tailwind 유틸을 단 커스텀 클릭 영역(카드 등)을 포괄한다.
  * 새로 만드는 요소가 여기에 안 걸리면 `data-pointer-snap` 을 붙여 옵트인한다.

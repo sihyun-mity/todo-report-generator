@@ -11,6 +11,7 @@ import {
   CUSTOM_POINTER_SNAP_PADDING,
   CUSTOM_POINTER_SNAP_SELECTOR,
   CUSTOM_POINTER_TEXT_SELECTOR,
+  CUSTOM_POINTER_TOUCH_SUPPRESS_MS,
 } from '@/constants';
 
 type PointerMode = 'dot' | 'snap' | 'caret';
@@ -43,6 +44,8 @@ function resolveRadius(target: HTMLElement, width: number): number {
  * - 평소: 커서를 따라다니는 반투명 원형 도트
  * - 인터랙션 요소 위: 요소를 감싸는 라운드 하이라이트로 변형 + 커서 방향으로 살짝 끌려가는 시차 효과
  * - 텍스트 입력 위: I-beam 캐럿 바
+ * - 터치: iPadOS 처럼 화면을 만지는 순간 즉시 사라진다 — 하이브리드 기기나
+ *   터치를 'mouse' 로 잘못 보고하는 브라우저에서도 touch 이벤트 기반으로 확실히 해제
  *
  * `(hover: hover) and (pointer: fine)` 환경에서만 활성화되며, 활성화 시 `<html>` 에
  * CUSTOM_POINTER_ACTIVE_CLASS 를 붙여 네이티브 커서를 숨긴다(스타일은 custom-pointer.css).
@@ -69,6 +72,8 @@ export function CustomPointer() {
     let mouseX = -1000;
     let mouseY = -1000;
     let recheckUntil = 0;
+    // 터치 세션 중(Infinity)·직후엔 pointerType 'mouse' 이벤트도 터치로 간주해 무시한다
+    let touchSuppressUntil = 0;
 
     const shape: PointerShape = {
       x: -1000,
@@ -212,12 +217,26 @@ export function CustomPointer() {
     const hide = () => {
       visible = false;
       pressed = false;
+      // 숨는 시점에 스냅/캐럿 상태를 완전히 해제해 하이라이트가 잔류하지 않게 한다
+      mode = 'dot';
+      snapTarget = null;
+      recheckUntil = 0;
       schedule();
     };
 
+    // 터치 입력 감지 시 — iPadOS 처럼 화면을 만지는 순간 포인터는 페이드 없이 즉시 사라진다
+    const hideForTouch = () => {
+      hide();
+      shape.opacity = 0;
+      pointer.style.opacity = '0';
+    };
+
+    const isTouchLike = (event: PointerEvent) =>
+      event.pointerType !== 'mouse' || performance.now() < touchSuppressUntil;
+
     const handlePointerMove = (event: PointerEvent) => {
-      if (event.pointerType !== 'mouse') {
-        hide();
+      if (isTouchLike(event)) {
+        hideForTouch();
         return;
       }
       mouseX = event.clientX;
@@ -235,8 +254,8 @@ export function CustomPointer() {
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (event.pointerType !== 'mouse') {
-        hide();
+      if (isTouchLike(event)) {
+        hideForTouch();
         return;
       }
       pressed = true;
@@ -246,11 +265,29 @@ export function CustomPointer() {
       schedule();
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: PointerEvent) => {
+      if (isTouchLike(event)) {
+        hideForTouch();
+        return;
+      }
       pressed = false;
       // 클릭 완료 — 결과로 DOM 이 바뀔 수 있으니 커서 아래 요소를 다시 판정한다
       recheckUntil = performance.now() + CUSTOM_POINTER_CLICK_RECHECK_MS;
       schedule();
+    };
+
+    // 일부 안드로이드 브라우저(인앱 웹뷰·DeX 등)는 터치를 pointerType 'mouse' 로 보고해
+    // pointer 이벤트의 타입 검사를 통과한다. touch 이벤트는 실제 터치에서만 발생하므로
+    // 이를 직접 구독해 어떤 기기에서든 터치 시작 즉시 하이라이트를 해제하고,
+    // 터치 세션이 끝난 뒤에도 잠시 mouse 포인터 이벤트를 무시한다(잘못 보고된 잔여 이벤트 차단).
+    const handleTouchStart = () => {
+      touchSuppressUntil = Number.POSITIVE_INFINITY;
+      hideForTouch();
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length > 0) return;
+      touchSuppressUntil = performance.now() + CUSTOM_POINTER_TOUCH_SUPPRESS_MS;
     };
 
     const handleScroll = () => {
@@ -269,6 +306,9 @@ export function CustomPointer() {
       window.addEventListener('pointerdown', handlePointerDown, true);
       window.addEventListener('pointerup', handlePointerUp, true);
       window.addEventListener('pointercancel', handlePointerUp, true);
+      window.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true });
+      window.addEventListener('touchend', handleTouchEnd, { capture: true, passive: true });
+      window.addEventListener('touchcancel', handleTouchEnd, { capture: true, passive: true });
       // 네이티브 드래그 중엔 OS 드래그 커서가 표시되므로 커스텀 포인터를 숨긴다
       window.addEventListener('dragstart', hide, true);
       window.addEventListener('blur', hide);
@@ -284,6 +324,9 @@ export function CustomPointer() {
       window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('pointercancel', handlePointerUp, true);
+      window.removeEventListener('touchstart', handleTouchStart, true);
+      window.removeEventListener('touchend', handleTouchEnd, true);
+      window.removeEventListener('touchcancel', handleTouchEnd, true);
       window.removeEventListener('dragstart', hide, true);
       window.removeEventListener('blur', hide);
       document.documentElement.removeEventListener('pointerleave', hide);
@@ -293,6 +336,8 @@ export function CustomPointer() {
       rafId = 0;
       visible = false;
       pressed = false;
+      // 터치 도중 비활성화되면 touchend 를 못 받으므로, 억제 상태가 Infinity 로 굳지 않게 리셋
+      touchSuppressUntil = 0;
       shape.opacity = 0;
       pointer.style.opacity = '0';
       document.documentElement.classList.remove(CUSTOM_POINTER_ACTIVE_CLASS);
