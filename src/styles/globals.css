@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tailwindcss-safe-area';
 @import './colors.css';
+@import './custom-pointer.css';
 @import './fonts.css';
 @import './gsap.css';
 @import './layout.css';

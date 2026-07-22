@@ -4,6 +4,7 @@ import '@/styles/globals.css';
 import {
   BackButtonHandler,
   ConfirmDialogHost,
+  CustomPointer,
   MobileDetector,
   PageViewTransition,
   PopstateViewTransitionNotifier,
@@ -79,6 +80,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           <MobileDetector />
 
           <ConfirmDialogHost />
+
+          {/* hover + fine 포인터 환경에서 인터랙션 요소를 iPadOS 스타일로 강조하는 커스텀 포인터 */}
+          <CustomPointer />
 
           {/* For Portal Component */}
           <div id="next-app-portal" />

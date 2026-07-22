@@ -2,6 +2,7 @@ export * from './app-top-bar';
 export * from './back-stack';
 export * from './confirm-dialog';
 export * from './confirm-dialog-host';
+export * from './custom-pointer';
 export * from './guest-login-banner';
 export * from './mobile-detector';
 export * from './next-image';
