@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import {
   CUSTOM_POINTER_ACTIVE_CLASS,
   CUSTOM_POINTER_CARET_WIDTH,
+  CUSTOM_POINTER_CLICK_RECHECK_MS,
   CUSTOM_POINTER_DOT_SIZE,
   CUSTOM_POINTER_ELEMENT_ID,
   CUSTOM_POINTER_PARALLAX_MAX,
@@ -67,6 +68,7 @@ export function CustomPointer() {
     let caretHeight = CUSTOM_POINTER_DOT_SIZE;
     let mouseX = -1000;
     let mouseY = -1000;
+    let recheckUntil = 0;
 
     const shape: PointerShape = {
       x: -1000,
@@ -108,9 +110,28 @@ export function CustomPointer() {
 
     /** 목표 상태 계산 → lerp → DOM 반영. 목표에 도달했으면 true */
     const applyFrame = (): boolean => {
-      // 스냅 대상이 DOM 에서 사라졌으면(다이얼로그 닫힘 등) 현재 좌표로 다시 히트 테스트
-      if (mode === 'snap' && snapTarget && !snapTarget.isConnected) {
-        retarget(document.elementFromPoint(mouseX, mouseY));
+      // 클릭이 일으킨 DOM 변경은 이벤트 이후에 커밋되므로, 클릭 직후 잠시 매 프레임 재판정한다
+      if (recheckUntil !== 0) {
+        if (visible && performance.now() <= recheckUntil) {
+          retarget(document.elementFromPoint(mouseX, mouseY));
+        } else {
+          recheckUntil = 0;
+        }
+      }
+
+      if (mode === 'snap' && snapTarget) {
+        // 스냅 대상이 DOM 에서 사라졌거나(다이얼로그 닫힘 등) 레이아웃 변화로 커서가
+        // 대상 밖으로 벗어났으면(목록에 행 추가로 밀림 등) 현재 좌표로 다시 히트 테스트
+        const rect = snapTarget.getBoundingClientRect();
+        const stale =
+          !snapTarget.isConnected ||
+          mouseX < rect.left ||
+          mouseX > rect.right ||
+          mouseY < rect.top ||
+          mouseY > rect.bottom;
+        if (stale) {
+          retarget(document.elementFromPoint(mouseX, mouseY));
+        }
       }
 
       let goalX = mouseX;
@@ -173,8 +194,9 @@ export function CustomPointer() {
 
     const tick = () => {
       const settled = applyFrame();
-      // 스냅 중엔 스크롤·레이아웃 변화로 rect 가 계속 움직일 수 있어 루프를 유지한다
-      if (!settled || (mode === 'snap' && visible)) {
+      // 스냅 중엔 스크롤·레이아웃 변화로 rect 가 계속 움직일 수 있어 루프를 유지하고,
+      // 클릭 직후 재판정 구간에도 DOM 커밋을 기다리며 루프를 유지한다
+      if (!settled || recheckUntil !== 0 || (mode === 'snap' && visible)) {
         rafId = window.requestAnimationFrame(tick);
       } else {
         rafId = 0;
@@ -226,6 +248,8 @@ export function CustomPointer() {
 
     const handlePointerUp = () => {
       pressed = false;
+      // 클릭 완료 — 결과로 DOM 이 바뀔 수 있으니 커서 아래 요소를 다시 판정한다
+      recheckUntil = performance.now() + CUSTOM_POINTER_CLICK_RECHECK_MS;
       schedule();
     };
 
