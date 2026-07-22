@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { GUEST_MODE_COOKIE, PENDING_NEWS_SEEN_COOKIE } from '@/constants';
-import { markNewsAsReadForUser } from '@/lib/news';
+import { markNewsAsReadUpTo } from '@/lib/news';
 import { forwardedHeadersOption } from '@/lib/supabase/forwarded-headers';
 
 // OAuth 코드 교환은 supabase가 발급하는 access/refresh 토큰을 chunked 쿠키로 저장한다.
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (userId) {
-        await markNewsAsReadForUser(supabase, userId, pendingNewsSeen);
+        await markNewsAsReadUpTo(supabase, userId, pendingNewsSeen);
       }
     } catch {
       // 마이그레이션이 실패해도 로그인 자체는 성공시킨다 — 다이얼로그가 한 번 더 뜰 뿐.

@@ -75,6 +75,24 @@ Next.js 기본 파일명이 아니다. 동작:
 
 `auth` 스키마(예: `auth.sessions`)는 PostgREST로 노출되지 않으므로, 클라이언트에서 읽거나 변경해야 하면 `public` 스키마에 `SECURITY DEFINER` 함수를 두고 `supabase.rpc()`로 호출한다. 함수 안에서 본인 식별은 `auth.uid()`, 현재 세션 식별은 JWT의 `auth.jwt() ->> 'session_id'`로 한다. `search_path = ''`로 고정하고 모든 객체를 스키마 한정한다. 실행 권한은 `authenticated`에만 부여(`anon`/`public`은 revoke). 로그인 기기 관리(`list_user_sessions` / `revoke_user_session` / `revoke_other_user_sessions`)가 이 패턴을 쓴다.
 
+### 새소식 (News) 대상 체계
+
+`public.news.audience` 컬럼이 소식마다 노출 대상을 지정한다 (`src/enums/news-audience.enum.ts`).
+
+| 값 | 뜻 | 노출 |
+| --- | --- | --- |
+| `all` (기본값) | 모두 | 회원 + 비회원(게스트/비인증) |
+| `member` | 회원 전용 | 로그인 사용자만 |
+| `guest` | 비회원 전용 | 게스트/비인증만 |
+
+- **필터링 책임은 애플리케이션 레이어**(`src/lib/news.ts`)에 있다. `news` 의 RLS 는 "누구나 읽기"를 유지한다 — 소식 본문은 비밀이 아니라 관련성 문제이고, RLS 로 막으면 게스트 → 로그인 전환 시 게스트가 마지막으로 본 소식(비회원 전용일 수 있음)의 발행 시각을 회원 세션이 조회하지 못해 읽음 상태 이전이 깨진다. **새 조회 경로를 만들면 `newsAudiencesFor(isMember)` 필터를 반드시 함께 건다.**
+- `fetchLatestNews` / `fetchAllNews` / `fetchNewsById` 는 모두 `isMember` 를 받는다. 로그인 여부는 `getViewerUserId(supabase)` 로 구한다(게스트/stale token 에서 `auth.getUser()` 가 던질 수 있어 try/catch 내장).
+- 대상이 맞지 않는 소식은 `fetchNewsById` 가 `null` 을 돌려주므로 `/whats-new/[id]` 직접 접근도 `notFound()` 로 막힌다.
+- 읽음 상태는 기존대로 회원 = `user_news_reads`, 게스트 = localStorage 단일 키(`NEWS_GUEST_STORAGE_KEY`). 다이얼로그는 **조회자 대상 기준 최신 1건**만 검사한다.
+- **회원의 읽음 기록은 전부 `markNewsAsReadUpTo` 한 곳을 거친다** — 첫 접속 자동 처리(`NewsDialogMount`) · 다이얼로그 확인(`NewsDialog`) · 게스트→로그인 전환(`migrateGuestNewsLastSeen`, `/auth/callback`). 단건 마크는 *"다이얼로그가 최신 1건만 검사한다"* 는 구현 세부에 의존해, 대상 분류가 바뀌어 **더 오래된 소식이 최신 자리로 올라오면 이미 지나간 소식이 뒤늦게 뜬다**. 기준 시점 이전 구간 전체를 읽음 처리해 이 결합을 끊는다. 새 읽음 경로를 추가할 때도 단건 upsert 를 쓰지 말 것.
+- 게스트는 단일 키라 위와 같은 구간 기록이 불가능하다. 따라서 **이미 발행된 소식의 `audience` 를 나중에 바꾸면 게스트에게 지나간 소식이 다시 뜰 수 있다** (게스트 관점 최신 id 가 뒤로 밀리면 저장된 값과 불일치). 대상은 발행 시점에 확정하고, 부득이하게 바꿔야 하면 게스트 재노출을 감수한다.
+- 소식 추가는 Supabase Studio 수동 insert. `audience` 를 지정하지 않으면 `all` 이다.
+
 ### 페이지 metadata
 
 모든 `page.tsx`는 `staticMetadata({ title, description })`로 metadata를 정의한다 (`src/utils/meta.ts`).
@@ -130,7 +148,7 @@ src/
 ├── components/                  # 공용 UI 컴포넌트 (back-stack, news, view-transition 등 하위 디렉터리 + 배럴)
 ├── constants/                   # `*.constants.ts` 파일로 상수 모음
 ├── core/                        # fetch 등 인프라 레이어
-├── enums/                       # `*.enum.ts` (현재 비어 있음 — index.ts 가 빈 `export {}`)
+├── enums/                       # `*.enum.ts` (as const 객체 + `src/types` 의 파생 union 타입 조합)
 ├── hooks/                       # `use-*.ts` — kebab-case + 네임드 export
 ├── lib/                         # supabase / webauthn / guest / news — 외부 의존 얇은 래퍼
 ├── providers/                   # 전역 Provider — query-provider(react-query) + query-keys 팩토리

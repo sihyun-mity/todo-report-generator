@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import { fetchAllNews } from '@/lib/news';
+import { fetchAllNews, getViewerUserId } from '@/lib/news';
 import { createClient } from '@/lib/supabase/server';
-import { Link } from '@/components';
+import { Link, NewsAudienceBadge } from '@/components';
 import { staticMetadata } from '@/utils';
 
 export const metadata: Metadata = staticMetadata({
@@ -36,7 +36,10 @@ function toPlainPreview(markdown: string, max = 140) {
 
 export default async function WhatsNewListPage() {
   const supabase = await createClient();
-  const news = await fetchAllNews(supabase);
+  // 로그인 여부에 따라 보이는 소식이 달라진다 — 회원은 `모두`+`회원 전용`, 비회원은 `모두`+`비회원 전용`.
+  const userId = await getViewerUserId(supabase);
+  const isMember = !!userId;
+  const news = await fetchAllNews(supabase, isMember);
 
   return (
     <main className="container mx-auto max-w-3xl px-4 py-10">
@@ -45,6 +48,15 @@ export default async function WhatsNewListPage() {
         <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
           일일 업무 보고 생성기의 업데이트 소식을 모아둔 공간이에요.
         </p>
+        {!isMember && (
+          <p className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            지금은 비회원에게 해당하는 소식만 보이고 있어요.{' '}
+            <Link href="/login" className="font-semibold text-blue-500 transition hover:text-blue-600">
+              로그인
+            </Link>
+            하면 회원 전용 소식도 함께 볼 수 있어요.
+          </p>
+        )}
       </header>
 
       {news.length === 0 ? (
@@ -59,9 +71,12 @@ export default async function WhatsNewListPage() {
                 href={`/whats-new/${item.id}`}
                 className="block rounded-2xl border border-zinc-200 bg-white p-5 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
               >
-                <time className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                  {formatDate(item.published_at)}
-                </time>
+                <div className="flex flex-wrap items-center gap-2">
+                  <time className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+                    {formatDate(item.published_at)}
+                  </time>
+                  <NewsAudienceBadge audience={item.audience} />
+                </div>
                 <h2 className="mt-1 text-base font-bold text-zinc-900 sm:text-lg dark:text-zinc-100">{item.title}</h2>
                 <p className="mt-2 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-300">
                   {toPlainPreview(item.content)}

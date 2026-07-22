@@ -4,7 +4,8 @@ import { useCallback, useEffect } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '..';
-import { NewsMarkdown } from '.';
+import { NewsAudienceBadge, NewsMarkdown } from '.';
+import { markNewsAsReadUpTo } from '@/lib/news';
 import { createClient } from '@/lib/supabase/client';
 import { DIALOG_NEWS, DIALOG_PRIORITY_NEWS, NEWS_GUEST_STORAGE_KEY } from '@/constants';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
@@ -82,15 +83,9 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
 
     if (userId) {
       try {
-        const supabase = createClient();
-        await supabase.from('user_news_reads').upsert(
-          {
-            user_id: userId,
-            news_id: latestNews.id,
-            read_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,news_id' }
-        );
+        // 단건이 아니라 "이 시점까지 지나갔다"로 기록한다 — 나중에 이 소식의 대상(audience)이 바뀌어
+        // 더 오래된 소식이 최신 자리로 올라와도 이미 확인한 구간이 다시 뜨지 않는다.
+        await markNewsAsReadUpTo(createClient(), userId, latestNews.id);
       } catch (e) {
         console.error('[NewsDialog] mark read failed', e);
       }
@@ -140,7 +135,10 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold tracking-wide text-blue-500 uppercase">새소식</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold tracking-wide text-blue-500 uppercase">새소식</span>
+                  <NewsAudienceBadge audience={latestNews.audience} />
+                </div>
                 <h2
                   id="news-dialog-title"
                   className="mt-0.5 text-base font-bold text-zinc-900 sm:text-lg dark:text-zinc-100"
