@@ -36,7 +36,7 @@ This file is the single source of truth for AI agent guidance in this repository
 
 1. **로그인 사용자** — Supabase 세션 쿠키 기반. 데이터는 Supabase DB(RLS 적용).
 2. **게스트** — `guest-mode` 쿠키(`GUEST_MODE_COOKIE` @ `src/constants/guest.constants.ts`)만 존재. 보고서 기록은 `localStorage`(`REPORT_HISTORY_STORAGE_KEY` 키)에 저장. Supabase 호출을 건너뛰어 stale refresh token 오류를 회피한다.
-3. **비인증** — 위 둘 다 없음. `/login`으로 리다이렉트.
+3. **비인증** — 위 둘 다 없음. **게스트가 기본값** — 미들웨어가 게스트 쿠키를 심어 게스트로 승격시키고 그대로 통과시킨다 (`/login` 리다이렉트 없음). 첫 방문자는 로그인 페이지를 거치지 않고 바로 보고서 작성 폼을 본다. 로그인은 선택사항으로, 게스트에게는 상단바 로그인 버튼·`GuestLoginBanner`(작성 화면(홈)에서만 노출, dismiss 가능)·사용자 메뉴로만 추천한다. 로그인 페이지는 첫 화면이 아니므로 카드에 홈으로 돌아가는 닫기(X) 버튼이 있다.
 
 `isGuestMode()` 체크는 `useEffect`, 클라이언트 컴포넌트, 데이터 훅 곳곳에 있다. 새 데이터 경로를 만들 때 이 분기를 따라가야 한다.
 
@@ -44,8 +44,9 @@ This file is the single source of truth for AI agent guidance in this repository
 
 Next.js 기본 파일명이 아니다. 동작:
 - `/api/*`는 무조건 통과 — route handler가 자체 인증. (리다이렉트하면 JSON 대신 HTML이 반환되어 패스키 로그인 등에서 깨진다)
-- 게스트 쿠키가 있고 Supabase 세션 쿠키 흔적이 전혀 없으면 `supabase.auth.getUser()` 호출 자체를 건너뛰고 `/settings/*` 같은 `AUTH_ONLY_PATH_PREFIXES`만 홈으로 리다이렉트한다.
+- 게스트 쿠키가 있고 Supabase 세션 쿠키 흔적이 전혀 없으면 `supabase.auth.getUser()` 호출 자체를 건너뛰고 `/settings/*` 같은 `AUTH_ONLY_PATH_PREFIXES`만 `/login`으로 리다이렉트한다 (인증이 필요한 곳이므로 홈이 아니라 로그인 화면).
 - `supabase.auth.getUser()` 오류는 삼켜서 비로그인으로 간주 (stale 토큰 허용).
+- 비인증(게스트 쿠키도 세션도 없음) + 보호 경로 요청이면 `/login` 리다이렉트 대신 `guest-mode` 쿠키를 request/response 양쪽에 세팅하고 통과시킨다 — 게스트가 기본 진입 상태다.
 - 세션 갱신 시 GoTrue가 서버 런타임의 UA/IP로 `auth.sessions`를 덮어쓰지 않도록 `forwardedHeadersOption(request.headers)`로 원래 브라우저 요청 정보를 전달한다.
 
 ### Route groups

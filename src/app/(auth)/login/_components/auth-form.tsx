@@ -2,7 +2,7 @@
 
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { ClipboardList, Github, KeyRound, Mail } from 'lucide-react';
+import { ClipboardList, Github, KeyRound, Mail, X } from 'lucide-react';
 import { Link } from '@/components';
 import { useRouter } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
@@ -83,7 +83,7 @@ function SignupForm() {
     }
     enableGuestMode();
     resetSessionStores();
-    toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
+    toast.success('로그인 없이 계속합니다. 기록은 이 브라우저에만 저장돼요.');
     // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
     router.push('/', { transitionTypes: ['nav-forward'] });
     router.refresh();
@@ -328,7 +328,7 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
     }
     enableGuestMode();
     resetSessionStores();
-    toast.success('게스트로 시작합니다. 기록은 이 브라우저에만 저장돼요.');
+    toast.success('로그인 없이 계속합니다. 기록은 이 브라우저에만 저장돼요.');
     // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
     router.push('/', { transitionTypes: ['nav-forward'] });
     router.refresh();
@@ -420,7 +420,18 @@ function AuthCard({ title, children }: Readonly<AuthCardProps>) {
           </p>
         </header>
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-6 text-lg font-bold tracking-tight text-zinc-900 dark:text-white">{title}</h2>
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white">{title}</h2>
+            {/* 로그인은 첫 화면이 아닌 선택 단계 — 작성 화면으로 돌아가는 닫기 버튼을 항상 노출한다.
+                '/' 는 prefix 관계로 nav-back 이 자동 추론되어 복귀 슬라이드로 전환된다. */}
+            <Link
+              href="/"
+              aria-label="닫고 작성 화면으로 돌아가기"
+              className="-m-1.5 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              <X size={18} />
+            </Link>
+          </div>
           {children}
         </div>
       </div>
@@ -475,7 +486,7 @@ type GuestSectionProps = {
   onStart: () => void;
 };
 // 카드 맨 아래에 위치. "또는" Divider로 분리한 후 가벼운 border만 있는 outline 버튼.
-// 다른 로그인 버튼은 색상·shadow로 강조되므로 게스트 버튼은 자연스럽게 한 단계 약하게 보인다.
+// 게스트가 서비스의 기본 진입 상태이므로 "로그인 없이 계속하기"로 표현한다.
 function GuestSection({ onStart }: Readonly<GuestSectionProps>) {
   return (
     <>
@@ -485,7 +496,7 @@ function GuestSection({ onStart }: Readonly<GuestSectionProps>) {
         onClick={onStart}
         className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
       >
-        게스트로 시작하기
+        로그인 없이 계속하기
       </button>
       <p className="mt-2 text-center text-[11px] text-zinc-500 dark:text-zinc-400">
         기록은 이 브라우저에만 저장되며, 나중에 로그인하면 계정으로 이전할 수 있어요.

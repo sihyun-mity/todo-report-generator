@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, User, UserRound } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, Trash2, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { clearGuestLocalData, disableGuestMode, isGuestMode } from '@/lib/guest';
+import { clearGuestLocalData, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside, useRouter } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { Link, ThemeToggle } from '.';
@@ -63,25 +64,25 @@ export function AppTopBar() {
     router.refresh();
   };
 
-  const handleExitGuest = async () => {
+  // 게스트가 기본 진입 상태이므로 "게스트 모드 종료" 개념은 없다.
+  // 대신 이 브라우저에 쌓인 게스트 데이터(보고서 기록·새소식 상태)를 지우는 초기화 동작만 제공한다.
+  const handleClearGuestData = async () => {
     setIsOpen(false);
-    // 종료 시 이 브라우저에 저장된 게스트 보고서 기록과 새소식 알림 상태가 함께 삭제되므로
-    // 사용자 확인을 한 번 받는다 — 로그인/가입(=마이그레이션 전환)과 동작이 다르다는 점을 분명히 한다.
     const ok = await confirm({
-      title: '게스트 모드를 종료할까요?',
+      title: '이 브라우저의 기록을 삭제할까요?',
       description:
-        '이 브라우저에 저장된 보고서 기록이 모두 삭제돼요. 작성한 기록을 계정으로 이어서 사용하고 싶다면 종료 대신 로그인 또는 회원가입을 이용해주세요.',
-      confirmText: '종료하고 삭제',
+        '이 브라우저에 저장된 보고서 기록이 모두 삭제돼요. 기록을 계정으로 옮겨 보관하고 싶다면 삭제 대신 로그인 또는 회원가입을 이용해주세요.',
+      confirmText: '모두 삭제',
       cancelText: '취소',
       variant: 'danger',
     });
     if (!ok) return;
 
-    disableGuestMode();
     clearGuestLocalData();
     resetSessionStores();
-    router.push('/login');
-    router.refresh();
+    // reset()은 initialize 캐시만 비우므로, 화면에 빈 상태가 반영되도록 즉시 재적재한다
+    void useReportHistoryStore.getState().initialize();
+    toast.success('이 브라우저에 저장된 기록을 모두 삭제했어요.');
   };
 
   return (
@@ -99,6 +100,17 @@ export function AppTopBar() {
           <div className="hidden sm:block">
             <ThemeToggle />
           </div>
+
+          {/* 게스트에게만 노출되는 컴팩트 로그인 진입점 — 강조하지 않되 항상 한 번의 클릭 거리에 둔다 */}
+          {isGuest && (
+            <Link
+              href="/login"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700 transition-all hover:bg-zinc-50 dark:border-zinc-700/50 dark:bg-card/50 dark:text-zinc-300 dark:hover:bg-[#2c2e33]"
+            >
+              <LogIn size={14} />
+              <span className="hidden sm:inline">로그인</span>
+            </Link>
+          )}
 
           <div ref={menuRef} className="relative">
             <button
@@ -125,7 +137,7 @@ export function AppTopBar() {
                         게스트 모드
                       </div>
                       <div className="mt-0.5 text-xs text-zinc-700 dark:text-zinc-200">
-                        기록은 이 브라우저에만 저장돼요.
+                        기록은 이 브라우저에만 저장돼요. 로그인하면 계정에 안전하게 보관돼요.
                       </div>
                     </div>
                     <div className="border-b border-zinc-100 px-4 py-3 sm:hidden dark:border-zinc-800">
@@ -164,11 +176,11 @@ export function AppTopBar() {
                     <button
                       role="menuitem"
                       type="button"
-                      onClick={handleExitGuest}
-                      className="flex w-full items-center gap-2 border-t border-zinc-100 px-4 py-2.5 text-left text-sm text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                      onClick={handleClearGuestData}
+                      className="flex w-full items-center gap-2 border-t border-zinc-100 px-4 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-red-400 dark:hover:bg-zinc-800"
                     >
-                      <LogOut size={14} />
-                      게스트 모드 종료
+                      <Trash2 size={14} />
+                      브라우저 기록 모두 삭제
                     </button>
                   </>
                 ) : (

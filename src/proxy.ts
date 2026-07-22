@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { GUEST_MODE_COOKIE } from '@/constants';
+import { GUEST_MODE_COOKIE, GUEST_MODE_MAX_AGE_SECONDS } from '@/constants';
 import { forwardedHeadersOption } from '@/lib/supabase/forwarded-headers';
 
 const PUBLIC_PATH_PREFIXES = ['/login', '/signup', '/auth'];
@@ -35,13 +35,16 @@ export async function proxy(request: NextRequest) {
   const isAuthOnlyPath = AUTH_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isGuest = request.cookies.get(GUEST_MODE_COOKIE)?.value === '1';
 
+  // 인증 필수 경로에 비로그인 상태로 접근하면 로그인 화면을 보여준다 (홈으로 우회시키지 않는다)
+  const redirectToLogin = () => {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    return NextResponse.redirect(loginUrl);
+  };
+
   // 게스트 쿠키가 있고 Supabase 세션 흔적도 전혀 없으면 확정적 게스트 — Supabase 조회 생략(stale 토큰 오류 회피)
   if (isGuest && !hasSupabaseSessionCookie(request)) {
-    if (isAuthOnlyPath) {
-      const homeUrl = request.nextUrl.clone();
-      homeUrl.pathname = '/';
-      return NextResponse.redirect(homeUrl);
-    }
+    if (isAuthOnlyPath) return redirectToLogin();
     return response;
   }
 
@@ -77,18 +80,25 @@ export async function proxy(request: NextRequest) {
 
   // 세션이 없고 게스트 쿠키만 남은 경우(세션이 만료된 게스트)도 게스트로 동작
   if (!user && isGuest) {
-    if (isAuthOnlyPath) {
-      const homeUrl = request.nextUrl.clone();
-      homeUrl.pathname = '/';
-      return NextResponse.redirect(homeUrl);
-    }
+    if (isAuthOnlyPath) return redirectToLogin();
     return response;
   }
 
+  // 비인증 상태는 게스트를 기본값으로 간주 — /login으로 보내지 않고 게스트 쿠키를 심어
+  // 게스트 모드로 통과시킨다. 로그인은 선택사항(추천 UI로만 노출).
   if (!user && !isPublicPath) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = '/login';
-    return NextResponse.redirect(loginUrl);
+    if (isAuthOnlyPath) return redirectToLogin();
+    // request에도 심어 이번 요청의 서버 렌더가 게스트로 인지하게 하고, response로 브라우저에 영속화한다.
+    request.cookies.set(GUEST_MODE_COOKIE, '1');
+    response = NextResponse.next({ request });
+    response.cookies.set({
+      name: GUEST_MODE_COOKIE,
+      value: '1',
+      maxAge: GUEST_MODE_MAX_AGE_SECONDS,
+      path: '/',
+      sameSite: 'lax',
+    });
+    return response;
   }
 
   if (user && isPublicPath) {
