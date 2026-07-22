@@ -39,7 +39,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useIsomorphicLayoutEffect } from 'usehooks-ts';
-import { getBackStackSize } from '@/components/back-stack/back-stack';
+import { getBackStackSize, notePopstateDirection } from '@/components/back-stack/back-stack';
 import { DEFAULT_PAGE_VIEW_TRANSITION_NAME, PAGE_SHELL_ELEMENT_ID } from '@/constants';
 import { normalizePath } from '@/utils';
 
@@ -327,6 +327,13 @@ function onPopState(event: PopStateEvent): void {
     // 이 값을 보고 스크롤만 복원한다 (`'manual'` 모드 하에서 브라우저 자동 복원 부재 보정).
     pendingPopstateRestore = { idx: destIdx, destPath: normalizePath(window.location.pathname) };
   }
+  // back-stack 에도 방향을 전달한다. 이 리스너는 모듈 로드 시점 등록이라 `BackButtonHandler` 의
+  // effect 리스너보다 먼저 실행되므로, back-stack 이 stale sentinel 을 흡수할 때 사용자가 이동한
+  // 방향(back/forward)을 그대로 쓸 수 있다. 인수(stopImmediatePropagation)해서 나중에 redispatch
+  // 하는 경우에도 그 사이 값이 갱신되지 않아 원래 방향이 유지된다.
+  notePopstateDirection(
+    historyDirection === 'nav-back' ? 'back' : historyDirection === 'nav-forward' ? 'forward' : null
+  );
 
   // programmatic 플래그 / UA 전환 정보는 popstate 당 한 번만 소비한다.
   const isProgrammatic = programmaticNavAt !== 0 && Date.now() - programmaticNavAt < PROGRAMMATIC_NAV_WINDOW_MS;
