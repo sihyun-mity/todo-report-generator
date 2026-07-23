@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Plus, Sun } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -117,7 +117,10 @@ export const ProjectList = ({
   const isEmpty = projects.length === 1 && !hasProjectContent(projects[0]);
   // 버킷의 모든 프로젝트를 다른 버킷으로 옮겨 비어버린 상태 — drop 안내 placeholder를 보여준다.
   const isVacant = projects.length === 0;
-  const projectIds = projects.map((p) => p.id);
+  // SortableContext에 넘기는 items는 참조가 안정적이어야 한다 — dnd-kit useSortable이 items의
+  // 참조 동일성으로 "항목 변경"을 감지해 변경 프레임에 transition을 끄기 때문(itemsHaveChanged).
+  // 매 렌더 새 배열을 넘기면 드래그 중 변위 항목이 disabledTransition으로 애니메이션 없이 점프한다.
+  const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   return (
     <div className="mb-8 w-full">
