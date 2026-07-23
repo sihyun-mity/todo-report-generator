@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -151,7 +151,9 @@ export const ProjectItem = ({
     }
   };
 
-  const taskIds = project.tasks.map((t) => t.id);
+  // SortableContext items는 참조가 안정적이어야 한다 — 매 렌더 새 배열이면 dnd-kit이 매 프레임
+  // "항목 변경"으로 오인해(itemsHaveChanged) 변위되는 작업에 transition을 꺼 애니메이션 없이 점프한다.
+  const taskIds = useMemo(() => project.tasks.map((t) => t.id), [project.tasks]);
 
   return (
     <div
