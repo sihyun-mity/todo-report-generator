@@ -8,6 +8,7 @@ import {
   CUSTOM_POINTER_DOT_SIZE,
   CUSTOM_POINTER_ELEMENT_ID,
   CUSTOM_POINTER_PARALLAX_MAX,
+  CUSTOM_POINTER_SCROLL_IDLE_MS,
   CUSTOM_POINTER_SNAP_PADDING,
   CUSTOM_POINTER_SNAP_SELECTOR,
   CUSTOM_POINTER_TEXT_SELECTOR,
@@ -74,6 +75,8 @@ export function CustomPointer() {
     let recheckUntil = 0;
     // 터치 세션 중(Infinity)·직후엔 pointerType 'mouse' 이벤트도 터치로 간주해 무시한다
     let touchSuppressUntil = 0;
+    let scrolling = false;
+    let scrollIdleTimer = 0;
 
     const shape: PointerShape = {
       x: -1000,
@@ -86,6 +89,14 @@ export function CustomPointer() {
     };
 
     const retarget = (node: EventTarget | null) => {
+      // 스크롤 중에는 항상 기본 도트 모양을 유지한다 — 인터랙션 영역이 커서를
+      // 지나갈 때마다 하이라이트가 변하지 않게, 재판정은 스크롤이 멎은 뒤에만 한다
+      if (scrolling) {
+        mode = 'dot';
+        snapTarget = null;
+        return;
+      }
+
       const element = node instanceof Element ? node : null;
 
       const caret = element?.closest<HTMLElement>(CUSTOM_POINTER_TEXT_SELECTOR) ?? null;
@@ -292,8 +303,17 @@ export function CustomPointer() {
 
     const handleScroll = () => {
       if (!visible) return;
-      // 스크롤로 커서 아래 요소가 바뀌었을 수 있으니 다시 히트 테스트
-      retarget(document.elementFromPoint(mouseX, mouseY));
+      // 스크롤 중에는 기본 도트로 고정하고, 멎은 뒤에 커서 아래 요소를 다시 히트 테스트
+      scrolling = true;
+      mode = 'dot';
+      snapTarget = null;
+      window.clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = window.setTimeout(() => {
+        scrolling = false;
+        if (!visible) return;
+        retarget(document.elementFromPoint(mouseX, mouseY));
+        schedule();
+      }, CUSTOM_POINTER_SCROLL_IDLE_MS);
       schedule();
     };
 
@@ -334,6 +354,8 @@ export function CustomPointer() {
       window.removeEventListener('resize', handleScroll);
       window.cancelAnimationFrame(rafId);
       rafId = 0;
+      window.clearTimeout(scrollIdleTimer);
+      scrolling = false;
       visible = false;
       pressed = false;
       // 터치 도중 비활성화되면 touchend 를 못 받으므로, 억제 상태가 Infinity 로 굳지 않게 리셋

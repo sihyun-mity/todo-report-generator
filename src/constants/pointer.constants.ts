@@ -23,6 +23,13 @@ export const CUSTOM_POINTER_CARET_WIDTH = 2;
 export const CUSTOM_POINTER_CLICK_RECHECK_MS = 250;
 
 /**
+ * 마지막 scroll 이벤트 이후 이 시간(ms)이 지나야 스크롤이 끝난 것으로 보고
+ * 커서 아래 요소를 다시 판정한다. 스크롤 중에는 항상 기본 도트 모양을 유지해
+ * 인터랙션 영역이 커서를 지나갈 때마다 하이라이트가 변하지 않게 한다.
+ */
+export const CUSTOM_POINTER_SCROLL_IDLE_MS = 140;
+
+/**
  * 터치 종료 후 pointerType 'mouse' 이벤트를 계속 무시하는 시간(ms).
  * 일부 안드로이드 브라우저(인앱 웹뷰·DeX 등)는 터치를 'mouse' 로 보고하므로,
  * 터치 세션 중과 직후엔 mouse 포인터 이벤트를 신뢰할 수 없다.
