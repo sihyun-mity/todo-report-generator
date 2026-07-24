@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AppTopBar, PasskeyRegisterBanner } from '@/components';
+import { AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
@@ -9,6 +9,9 @@ export default function AppLayout({ children }: LayoutProps<'/'>) {
       <AppTopBar />
       <PasskeyRegisterBanner />
       {children}
+
+      {/* 첫 진입 화면 모드 선택 dialog: 다이얼로그 큐에서 가장 먼저(새소식보다 앞서) 노출된다 */}
+      <ThemePromptDialog />
 
       {/* 새소식 dialog: (auth) 경로(/login, /signup)에는 노출되지 않도록 (app) 그룹 layout 에서만 마운트 */}
       <Suspense>

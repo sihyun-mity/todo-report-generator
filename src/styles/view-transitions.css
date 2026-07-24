@@ -80,6 +80,25 @@
   mix-blend-mode: normal;
 }
 
+/* ───────── 자동 노출 다이얼로그(화면 모드 선택 등) group: 전환 중에도 그대로 유지 ─────────
+ * 첫 진입 직후에는 기록·서버시간 등 데이터가 도착할 때마다 React `<ViewTransition>` 이 전환을
+ * 연달아 실행한다. 전환 중 화면은 `::view-transition` 스냅샷으로 대체되는데, 자동 다이얼로그는
+ * Portal(`dynamic(ssr:false)`) 로드가 한 박자 늦어 스냅샷이 찍힌 뒤에 DOM 에 붙는다. 그러면
+ * root 스냅샷에 다이얼로그가 없어 전환 동안 사라졌다가 전환이 끝나면 다시 나타나는 깜빡임이 된다.
+ *
+ * toaster 와 같은 처리를 한다 — 별도 group 으로 분리하고 OLD 는 숨겨 잔상을 없앤 뒤 NEW 만
+ * 즉시 표시. 자동 다이얼로그는 큐(`useDialogQueueStore`)가 한 번에 하나만 열도록 보장하므로
+ * 이 이름이 동시에 둘 이상 존재할 일은 없다. */
+::view-transition-old(auto-dialog) {
+  animation: none !important;
+  opacity: 0 !important;
+}
+::view-transition-new(auto-dialog) {
+  animation: none !important;
+  opacity: 1 !important;
+  mix-blend-mode: normal;
+}
+
 /* ───────── nav-forward (depth ↑, iOS push) ─────────
  * 새 화면이 오른쪽에서 슬라이드 인, 옛 화면은 살짝 왼쪽으로 밀리며 dim + 페이드. */
 :root:active-view-transition-type(nav-forward)::view-transition-old(page-shell),
