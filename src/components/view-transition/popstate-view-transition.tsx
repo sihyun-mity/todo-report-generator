@@ -41,7 +41,7 @@ import { usePathname } from 'next/navigation';
 import { useIsomorphicLayoutEffect } from 'usehooks-ts';
 import { getBackStackSize, notePopstateDirection } from '@/components/back-stack/back-stack';
 import { DEFAULT_PAGE_VIEW_TRANSITION_NAME, PAGE_SHELL_ELEMENT_ID } from '@/constants';
-import { normalizePath } from '@/utils';
+import { isViewTransitionDisabled, normalizePath } from '@/utils';
 
 /** 새 라우트 commit 보고가 끝내 오지 않을 때(네비게이션 중단/에러) 전환을 풀어주는 안전 타임아웃. */
 const READY_TIMEOUT_MS = 700;
@@ -236,6 +236,10 @@ function applyPopOldShiftOverride(oldScrollY: number, newScrollY: number): void 
 
 /** 스크롤 캡처 패치가 적용된 `document.startViewTransition` 을 돌려준다. 미지원 시 null. */
 function getStartViewTransition(): StartViewTransition | null {
+  // [임시] WebKit(Safari/iOS) 는 OOM 완화를 위해 전환을 끈다 — 미지원 환경과 동일하게 취급해
+  // popstate 인수 자체를 하지 않는다 (Next 의 기본 RESTORE 로 위임). 스크롤 복원은 비-인수
+  // 경로인 `pendingPopstateRestore` 가 그대로 처리하므로 뒤로가기 동작에는 영향이 없다.
+  if (isViewTransitionDisabled()) return null;
   const fn = (document as Document & { startViewTransition?: StartViewTransition }).startViewTransition;
   return typeof fn === 'function' ? fn.bind(document) : null;
 }

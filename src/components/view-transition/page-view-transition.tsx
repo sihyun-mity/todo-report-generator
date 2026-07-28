@@ -2,6 +2,7 @@
 
 import { type PropsWithChildren, type ViewTransitionClassPerType, ViewTransition } from 'react';
 import { DEFAULT_PAGE_VIEW_TRANSITION_NAME, NAV_TRANSITION_TYPES } from '@/constants';
+import { isViewTransitionDisabled } from '@/utils';
 
 /**
  * NavTransitionType 와 동일 이름의 클래스를 pseudo 에 부여하기 위한 enter/exit map.
@@ -64,6 +65,33 @@ function patchStartViewTransition(): void {
   if (typeof original !== 'function' || original.__vtPatched) return;
 
   const patched = function patchedStartViewTransition(this: Document, ...args: Array<unknown>) {
+    // [임시] WebKit(Safari/iOS) — OOM 완화용 전면 비활성화 (`isViewTransitionDisabled`).
+    // 진짜 전환을 시작하지 않고 updateCallback(DOM 교체)만 실행한다. 전환을 시작하지 않으면
+    // 브라우저가 OLD/NEW 페이지 비트맵 스냅샷을 아예 만들지 않는다. skipTransition() 을 쓰면
+    // ready/finished 가 AbortError("Transition was skipped") 로 reject 되어 (React 가 만든 파생
+    // 프로미스까지) uncaught 로 새므로, 아예 전환을 만들지 않아 에러 자체를 없앤다. 화면은
+    // updateCallback 으로 즉시 최종 상태가 되고 애니메이션만 생략된다.
+    if (isViewTransitionDisabled()) {
+      const arg = args[0] as undefined | (() => unknown) | { update?: () => unknown };
+      const update = typeof arg === 'function' ? arg : arg?.update;
+      let updateCallbackDone: Promise<unknown>;
+      try {
+        updateCallbackDone = Promise.resolve(typeof update === 'function' ? update() : undefined);
+      } catch (error) {
+        updateCallbackDone = Promise.reject(error);
+      }
+      const settled = updateCallbackDone.then(
+        () => undefined,
+        () => undefined
+      );
+      return {
+        ready: settled,
+        finished: settled,
+        updateCallbackDone,
+        skipTransition: () => {},
+      } as unknown as ReturnType<NonNullable<PatchableDocument['startViewTransition']>>;
+    }
+
     const root = document.documentElement;
     const generation = ++vtLockGeneration;
     root.style.setProperty('--vt-old-shift', `${-Math.round(window.scrollY)}px`);
