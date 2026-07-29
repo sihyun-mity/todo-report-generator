@@ -1,38 +1,5 @@
 import type { NavTransitionType } from '@/types';
 
-// ─── [임시] WebKit(Safari/iOS) View Transition 비활성화 ──────────────────────
-//
-// iOS WKWebView 의 OOM(WebContent 종료) 신고가 계속되고 있고, VT 를 제거한 빌드에서 증상이
-// 완화되는 것이 확인되어 **임시 조치로 WebKit 계열에서만 전환을 끈다**. VT 는 전환 동안
-// OLD/NEW 페이지 전체의 비트맵 스냅샷(뷰포트 × devicePixelRatio × 4byte, 페이지 높이만큼)을
-// 합성 레이어로 들고 있어, 이미 이미지 디코딩으로 빡빡한 워킹셋에 스파이크를 더한다.
-//
-// 시스템 자체는 그대로 둔다 (게이트만 추가) — 원인 확정·수정 후 이 블록과 두 호출부
-// (`page-view-transition.tsx` 의 shim 분기, `popstate-view-transition.tsx` 의
-// `getStartViewTransition`) 만 되돌리면 복원된다.
-let webKitBrowserCache: boolean | null = null;
-
-/**
- * WebKit 엔진 브라우저인지. macOS Safari + iOS 의 모든 브라우저(WKWebView 포함)가 해당된다.
- * iOS 의 Chrome/Edge/Firefox 는 각각 `CriOS`/`EdgiOS`/`FxiOS` 토큰이라 Blink/Gecko 제외
- * 패턴에 걸리지 않고 WebKit 으로 남는다 — 실제로 엔진이 WebKit 이므로 의도한 분류다.
- */
-const isWebKitBrowser = (): boolean => {
-  if (typeof navigator === 'undefined') return false;
-  if (webKitBrowserCache !== null) return webKitBrowserCache;
-  const ua = navigator.userAgent;
-  const isBlink = /(Android|Chrome\/|Chromium\/|Edg\/|OPR\/|SamsungBrowser)/.test(ua);
-  const isGecko = /Firefox\//.test(ua);
-  webKitBrowserCache = !isBlink && !isGecko && /AppleWebKit/.test(ua);
-  return webKitBrowserCache;
-};
-
-/**
- * [임시] 이 환경에서 View Transition 을 비활성화해야 하는지. `true` 면 전환을 아예 시작하지
- * 않고 DOM 교체만 즉시 수행한다 (애니메이션만 사라지고 네비게이션 동작은 동일).
- */
-export const isViewTransitionDisabled = (): boolean => isWebKitBrowser();
-
 /**
  * 쿼리·해시를 제거하고 trailing slash 를 정리한 path 를 돌려준다.
  * depth 비교가 path segment 만 보도록 normalize 한다.
