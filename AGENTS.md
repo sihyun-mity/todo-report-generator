@@ -43,6 +43,7 @@ This file is the single source of truth for AI agent guidance in this repository
 ### Middleware는 `src/proxy.ts` (not `middleware.ts`)
 
 Next.js 기본 파일명이 아니다. 동작:
+
 - `/api/*`는 무조건 통과 — route handler가 자체 인증. (리다이렉트하면 JSON 대신 HTML이 반환되어 패스키 로그인 등에서 깨진다)
 - 게스트 쿠키가 있고 Supabase 세션 쿠키 흔적이 전혀 없으면 `supabase.auth.getUser()` 호출 자체를 건너뛰고 `/settings/*` 같은 `AUTH_ONLY_PATH_PREFIXES`만 `/login`으로 리다이렉트한다 (인증이 필요한 곳이므로 홈이 아니라 로그인 화면).
 - `supabase.auth.getUser()` 오류는 삼켜서 비로그인으로 간주 (stale 토큰 허용).
@@ -79,17 +80,17 @@ Next.js 기본 파일명이 아니다. 동작:
 
 `public.news.audience` 컬럼이 소식마다 노출 대상을 지정한다 (`src/enums/news-audience.enum.ts`).
 
-| 값 | 뜻 | 노출 |
-| --- | --- | --- |
-| `all` (기본값) | 모두 | 회원 + 비회원(게스트/비인증) |
-| `member` | 회원 전용 | 로그인 사용자만 |
-| `guest` | 비회원 전용 | 게스트/비인증만 |
+| 값             | 뜻          | 노출                         |
+| -------------- | ----------- | ---------------------------- |
+| `all` (기본값) | 모두        | 회원 + 비회원(게스트/비인증) |
+| `member`       | 회원 전용   | 로그인 사용자만              |
+| `guest`        | 비회원 전용 | 게스트/비인증만              |
 
 - **필터링 책임은 애플리케이션 레이어**(`src/lib/news.ts`)에 있다. `news` 의 RLS 는 "누구나 읽기"를 유지한다 — 소식 본문은 비밀이 아니라 관련성 문제이고, RLS 로 막으면 게스트 → 로그인 전환 시 게스트가 마지막으로 본 소식(비회원 전용일 수 있음)의 발행 시각을 회원 세션이 조회하지 못해 읽음 상태 이전이 깨진다. **새 조회 경로를 만들면 `newsAudiencesFor(isMember)` 필터를 반드시 함께 건다.**
 - `fetchLatestNews` / `fetchAllNews` / `fetchNewsById` 는 모두 `isMember` 를 받는다. 로그인 여부는 `getViewerUserId(supabase)` 로 구한다(게스트/stale token 에서 `auth.getUser()` 가 던질 수 있어 try/catch 내장).
 - 대상이 맞지 않는 소식은 `fetchNewsById` 가 `null` 을 돌려주므로 `/whats-new/[id]` 직접 접근도 `notFound()` 로 막힌다.
 - 읽음 상태는 기존대로 회원 = `user_news_reads`, 게스트 = localStorage 단일 키(`NEWS_GUEST_STORAGE_KEY`). 다이얼로그는 **조회자 대상 기준 최신 1건**만 검사한다.
-- **회원의 읽음 기록은 전부 `markNewsAsReadUpTo` 한 곳을 거친다** — 첫 접속 자동 처리(`NewsDialogMount`) · 다이얼로그 확인(`NewsDialog`) · 게스트→로그인 전환(`migrateGuestNewsLastSeen`, `/auth/callback`). 단건 마크는 *"다이얼로그가 최신 1건만 검사한다"* 는 구현 세부에 의존해, 대상 분류가 바뀌어 **더 오래된 소식이 최신 자리로 올라오면 이미 지나간 소식이 뒤늦게 뜬다**. 기준 시점 이전 구간 전체를 읽음 처리해 이 결합을 끊는다. 새 읽음 경로를 추가할 때도 단건 upsert 를 쓰지 말 것.
+- **회원의 읽음 기록은 전부 `markNewsAsReadUpTo` 한 곳을 거친다** — 첫 접속 자동 처리(`NewsDialogMount`) · 다이얼로그 확인(`NewsDialog`) · 게스트→로그인 전환(`migrateGuestNewsLastSeen`, `/auth/callback`). 단건 마크는 _"다이얼로그가 최신 1건만 검사한다"_ 는 구현 세부에 의존해, 대상 분류가 바뀌어 **더 오래된 소식이 최신 자리로 올라오면 이미 지나간 소식이 뒤늦게 뜬다**. 기준 시점 이전 구간 전체를 읽음 처리해 이 결합을 끊는다. 새 읽음 경로를 추가할 때도 단건 upsert 를 쓰지 말 것.
 - 게스트는 단일 키라 위와 같은 구간 기록이 불가능하다. 따라서 **이미 발행된 소식의 `audience` 를 나중에 바꾸면 게스트에게 지나간 소식이 다시 뜰 수 있다** (게스트 관점 최신 id 가 뒤로 밀리면 저장된 값과 불일치). 대상은 발행 시점에 확정하고, 부득이하게 바꿔야 하면 게스트 재노출을 감수한다.
 - 소식 추가는 Supabase Studio 수동 insert. `audience` 를 지정하지 않으면 `all` 이다.
 
@@ -122,11 +123,12 @@ Next.js 기본 파일명이 아니다. 동작:
 
 페이지 전환 애니메이션은 React 19 `<ViewTransition>` + Next.js 16 `experimental.viewTransition: true` 조합으로 처리한다.
 
-> **[임시] WebKit(Safari/iOS·WKWebView)에서는 전환이 비활성화돼 있다.** iOS OOM 완화용 임시 조치 — 아래 시스템은 그대로 두고 게이트만 걸었다. 단일 출처는 `isViewTransitionDisabled()` (`src/utils/view-transition.ts`), 호출부는 두 곳: ① `page-view-transition.tsx` 의 패치된 `startViewTransition` 이 진짜 전환을 만들지 않고 updateCallback(DOM 교체)만 실행, ② `popstate-view-transition.tsx` 의 `getStartViewTransition()` 이 `null` 을 반환해 popstate 인수 자체를 skip. 복원은 이 세 곳의 `[임시]` 블록만 되돌리면 된다. Blink(Android WebView/Chrome)에서는 기존대로 동작.
+> **메모리 주의 — OLD 스냅샷은 뷰포트 클램프로 캡처된다.** 과거 WebKit(iOS) OOM 완화를 위해 전환을 임시 비활성화했었으나, 근본 원인이던 "OLD 스냅샷 = 페이지 전체 높이 텍스처(폭×높이×dpr²×4byte, 긴 기록 목록에서 전환당 수십~100MB + GPU 최대 텍스처 초과 시 전환 abort)"를 `page-view-transition.tsx` 의 `clampShellForOldCapture` 가 해소하면서 게이트(`isViewTransitionDisabled`)는 제거됐다 — 전 엔진에서 전환이 동작한다. 캡처 직전 `#app-page-shell` 을 보던 뷰포트 슬라이스로 일시 클램프(`height=vh + overflow:hidden + scrollTop` 슬라이스, `position:relative + top` 위치 보정, `<html> min-height` 로 문서 높이 고정) → 캡처 직후(update 콜백 첫 줄, frozen 스냅샷이 화면을 덮는 중) 멱등 원복. 클램프 스냅샷은 스크롤이 이미 반영돼 `--vt-old-shift` 0px 이며, popstate pop 공식도 `wasLastOldCaptureClamped()` 로 유효 OLD 스크롤을 0 취급해야 한다 (이 연동을 깨면 뒤로가기 시 OLD 가 화면 밖으로 벗어난다). 뷰포트보다 짧은 페이지는 클램프를 스킵하고 기존 전체-높이 + translateY 보정 경로를 그대로 탄다.
 
 - Root layout(`src/app/layout.tsx`)에서 children을 **`<PageViewTransition>`** wrapper로 감싸 모든 라우트 이동에 자동 적용한다. 이 wrapper는 내부에서 React `<ViewTransition>` 을 호출하고 `enter`/`exit` 클래스 맵에 `NAV_TRANSITION_TYPES`(`nav-forward`, `nav-back`, …)를 그대로 연결한다. 방향 타입이 주입되지 않은 navigation 의 `default` 는 `'none'` — directional 클래스를 부여하지 않는 안전 폴백이다.
 - SSR·CSR 모두 동일하게 `<ViewTransition>` 로 감싼다 — hydration 게이트(과거의 `useIsClient`)를 두지 않는다. React `<ViewTransition>` 은 DOM 을 추가하지 않는 logical fiber 라 SSR/hydration 출력이 children 그대로로 일치하므로 mismatch 가 없다. 과거엔 hydration 전엔 fragment, 후엔 ViewTransition 으로 "승격"했는데, 이때 `#page-shell` 의 자식 wrapper 타입이 Fragment → ViewTransition 으로 바뀌며 React 가 children(=페이지 전체)을 통째로 unmount→remount 했다 — 모든 라우트 진입이 마운트 2회가 되어 새소식 dialog 가 두 번 뜨고 화면이 두 번 깜빡였다. wrapper 타입을 처음부터 고정해 이 remount 를 제거한다. `PageViewTransition` 을 우회해 React `<ViewTransition>` 을 직접 쓰지 말 것.
-- `PageViewTransition` 모듈은 import 시점에 `document.startViewTransition` 을 한 번 래핑(`patchStartViewTransition`)해 push/pop/popstate 모든 전환에 두 가지 공통 처리를 부여한다. (a) **스크롤 보정**: OLD 캡처 직전의 `window.scrollY` 를 `--vt-old-shift` 음수 px 로 노출 → `page-shell` 의 OLD 키프레임이 이 값으로 translateY 보정하므로 스크롤된 상태로 navigation 해도 OLD 스냅샷이 최상단으로 끌어올려지지 않는다. (b) **입력 락**: `<html>` 에 `.vt-in-flight` 클래스를 토글 → `view-transitions.css` 가 `pointer-events: none + user-select: none` 으로 입력을 차단해 네이티브 NavigationController 처럼 전환 도중 Link/popstate 등 추가 네비게이션이 끼어들지 못하게 한다 (없으면 React 가 새 transition 으로 직전 transition 을 skip 시켜 화면이 끊기거나, popstate 큐/페닝 상태가 꼬임). 둘 다 `transition.finished` 의 `.finally` 에서 자동 해제하되, `finished` 가 영영 settle 되지 않아 입력 락(`pointer-events:none`)이 전체 페이지에 영구히 걸리는 것을 막는 **안전 타임아웃(2s) 백스톱**(`VT_LOCK_SAFETY_TIMEOUT_MS`)을 함께 건다. 전환이 겹칠 때(직전 전환 skip + 새 전환 시작) 옛 전환의 cleanup 이 새 전환의 락을 덮어 풀지 않도록 **세대(generation) 가드**로 자기 세대일 때만 정리한다.
+- `PageViewTransition` 모듈은 import 시점에 `document.startViewTransition` 을 한 번 래핑(`patchStartViewTransition`)해 push/pop/popstate 모든 전환에 두 가지 공통 처리를 부여한다. (a) **OLD 캡처 뷰포트 클램프 + 스크롤 보정**: `clampShellForOldCapture()` (위 인용 참조) — 클램프 성공 시 `--vt-old-shift` 는 `0px`, 스킵(셸 없음/짧은 페이지) 시 `window.scrollY` 음수 px 를 노출해 `page-shell` 의 OLD 키프레임이 translateY 로 보정하므로 스크롤된 상태로 navigation 해도 OLD 스냅샷이 최상단으로 끌어올려지지 않는다. (b) **입력 락**: `<html>` 에 `.vt-in-flight` 클래스를 토글 → `view-transitions.css` 가 `pointer-events: none + user-select: none` 으로 입력을 차단해 네이티브 NavigationController 처럼 전환 도중 Link/popstate 등 추가 네비게이션이 끼어들지 못하게 한다 (없으면 React 가 새 transition 으로 직전 transition 을 skip 시켜 화면이 끊기거나, popstate 큐/페닝 상태가 꼬임). 둘 다 `transition.finished` 의 `.finally` 에서 자동 해제하되, `finished` 가 영영 settle 되지 않는 hung 전환을 회수하는 **안전 타임아웃(2s) 백스톱**(`VT_LOCK_SAFETY_TIMEOUT_MS` → `forceEnd`)을 함께 건다. 전환이 겹칠 때(직전 전환 skip + 새 전환 시작) 옛 전환의 cleanup 이 새 전환의 락을 덮어 풀지 않도록 **세대(generation) 가드**로 자기 세대일 때만 정리한다.
+  - `forceEnd` 의 회수 순서는 `skipTransition()` → **`forceFinishViewTransitionAnimations()`** → CSS 킬스위치(`.vt-overlay-killed`) 다. iOS WKWebView 에서는 `skipTransition()` 이 조용히 실패해 오버레이·스냅샷 레이어가 영구 잔존하고(반복 내비게이션 시 누적 → OOM), React 도 `finished` 를 기다리느라 후속 전환을 만들지 못한다. VT pseudo 애니메이션을 `finish()`(불가 시 `cancel()`)로 강제 완료시키면 전환이 **정상 종료 경로**로 회수돼 브라우저가 스스로 오버레이를 정리한다. 킬스위치는 그래도 페인트가 남는 최후 케이스 전용 백스톱이며 **반드시 `visibility: hidden`** 이어야 한다 — `display: none` 이 live 전환의 pseudo tree 에 닿으면 WebKit 이 페이지째 크래시한다(실측 확인). `original.apply` 가 throw 하면 백스톱조차 걸리지 않아 영구 락이 되므로 try/catch 로 즉시 cleanup 후 rethrow 한다.
 - 상위 → 하위로 진입하는 `<Link>`엔 `transitionTypes={['nav-forward']}` (좌→우 슬라이드), 복귀 링크엔 `transitionTypes={['nav-back']}` (우→좌 슬라이드)을 부여한다. 분류가 모호하면 prop을 생략해 default `page` 효과(fade + slide-up)로 둔다.
 - 전환 중에도 자기 자리에 고정돼야 하는 element(예: `AppTopBar`)엔 `style={{ viewTransitionName: '...' }}`을 부여하고 CSS에서 `::view-transition-group(name) { animation: none }`로 anchor한다.
 - 효과 정의는 `src/styles/view-transitions.css` 한 곳에 모은다. `prefers-reduced-motion: reduce`에서는 짧은 cross-fade만 유지하도록 매핑돼 있다.
