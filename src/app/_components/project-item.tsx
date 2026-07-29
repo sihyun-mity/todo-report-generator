@@ -181,12 +181,15 @@ export const ProjectItem = ({
           onChange={(e) => onUpdateName(e.target.value)}
           onBlur={(e) => onUpdateName(e.target.value.trim())}
           onKeyDown={handleNameKeyDown}
-          className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700/50 dark:bg-input/40 dark:text-zinc-100 dark:focus:border-blue-500/50"
+          // min-w-0 필수 — flex item 의 기본 `min-width: auto` 는 input 의 고유 폭(size=20 기준,
+          // Pretendard 16px 에서 약 332px)이 하한이 되어 모바일 폭에서 행이 통째로 넘친다.
+          // 넘친 만큼은 report-form 의 `flex-1 overflow-hidden` 컬럼이 잘라내 삭제 버튼이 사라진다.
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700/50 dark:bg-input/40 dark:text-zinc-100 dark:focus:border-blue-500/50"
         />
         <button
           onClick={onRemove}
           disabled={!canRemove}
-          className="cursor-pointer rounded-md p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-red-950/30"
+          className="shrink-0 cursor-pointer rounded-md p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-red-950/30"
           title={canRemove ? '프로젝트 삭제' : '최소 하나의 프로젝트가 필요합니다'}
         >
           <Trash2 size={18} />
@@ -236,7 +239,7 @@ export const ProjectItemPreview = ({ project }: Readonly<{ project: Project }>) 
       <span className="shrink-0 p-1.5 text-zinc-400">
         <GripVertical size={18} />
       </span>
-      <div className="flex-1 truncate rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base text-zinc-700 dark:border-zinc-700/50 dark:bg-input/40 dark:text-zinc-100">
+      <div className="min-w-0 flex-1 truncate rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-base text-zinc-700 dark:border-zinc-700/50 dark:bg-input/40 dark:text-zinc-100">
         {project.name || '프로젝트명'}
       </div>
     </div>
