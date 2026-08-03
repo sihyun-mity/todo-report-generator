@@ -8,6 +8,7 @@ import {
   MobileDetector,
   PageViewTransition,
   PopstateViewTransitionNotifier,
+  PressFeedback,
   themeInitScript,
   ThemeProvider,
   ToasterProvider,
@@ -83,6 +84,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
 
           {/* hover + fine 포인터 환경에서 인터랙션 요소를 iPadOS 스타일로 강조하는 커스텀 포인터 */}
           <CustomPointer />
+
+          {/* 터치/클릭한 요소를 살짝 안으로 눌러 넣는 모바일 시스템 앱 스타일 눌림 피드백 */}
+          <PressFeedback />
 
           {/* For Portal Component */}
           <div id="next-app-portal" />

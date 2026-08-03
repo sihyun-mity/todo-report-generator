@@ -9,6 +9,7 @@ export * from './next-image';
 export * from './news';
 export * from './passkey-register-banner';
 export * from './portal';
+export * from './press-feedback';
 export * from './push-subscribe-prompt';
 export * from './theme-prompt-dialog';
 export * from './theme-provider';

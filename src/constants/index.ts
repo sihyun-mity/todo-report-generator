@@ -4,6 +4,7 @@ export * from './guest.constants';
 export * from './media.constants';
 export * from './news.constants';
 export * from './pointer.constants';
+export * from './press-feedback.constants';
 export * from './push.constants';
 export * from './report.constants';
 export * from './theme.constants';
