@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import {
+  CUSTOM_POINTER_ACTIVE_CLASS,
   PRESS_FEEDBACK_EMPTY_SHADOW,
   PRESS_FEEDBACK_IGNORE_ATTRIBUTE_SELECTOR,
   PRESS_FEEDBACK_IGNORE_SELECTOR,
@@ -17,10 +18,22 @@ import {
   PRESS_FEEDBACK_STATE_ATTRIBUTE,
   PRESS_FEEDBACK_STATE_OFF,
   PRESS_FEEDBACK_STATE_ON,
+  PRESS_FEEDBACK_TINT_VARIABLE,
   PRESS_FEEDBACK_WATCHDOG_MS,
 } from '@/constants';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+/**
+ * 커서 하이라이트(`CustomPointer`)가 이 눌림을 이미 강조하고 있는지.
+ *
+ * 하이라이트는 마우스 커서 환경(`hover: hover` + `pointer: fine`)에서만 활성화되고 터치에서는
+ * 즉시 숨겨지므로, 활성 클래스만이 아니라 이번 입력이 마우스인지도 함께 본다 —
+ * 마우스와 터치를 겸하는 기기에서 손가락으로 누를 땐 색상 강조가 그대로 남아야 한다.
+ */
+function isCursorHighlighted(event: PointerEvent): boolean {
+  return event.pointerType === 'mouse' && document.documentElement.classList.contains(CUSTOM_POINTER_ACTIVE_CLASS);
+}
 
 /** 눌림 대상을 찾는다 — 중첩된 경우 가장 안쪽 요소가 잡힌다 */
 function findPressTarget(node: EventTarget | null): HTMLElement | null {
@@ -53,8 +66,9 @@ function resolvePressScale(target: HTMLElement, rect: DOMRect): number {
  * - 스크롤 · 스와이프 제스처 · pointercancel · 컨텍스트 메뉴 · 창 이탈: 즉시 해제
  * - 터치/클릭 완료: 해제 (톡 치고 뗀 경우엔 최소 노출 시간을 채운 뒤)
  *
- * 커서 하이라이트(`CustomPointer`)와 달리 포인터가 아니라 **요소 자체**를 변형하므로
- * 두 효과는 겹치지 않으며, 모바일 전용 연출이지만 데스크탑 마우스에서도 그대로 동작한다.
+ * 커서 하이라이트(`CustomPointer`)와 달리 포인터가 아니라 **요소 자체**를 변형한다.
+ * 모바일 전용 연출이지만 데스크탑 마우스에서도 동작하며, 다만 하이라이트가 이미 요소를
+ * 감싸 강조하고 있는 마우스 입력에서는 색상 강조를 빼고 축소만 남긴다(`isCursorHighlighted`).
  * 스타일 정의는 `src/styles/press-feedback.css` 한 곳에 모여 있다.
  * 리렌더 없이 DOM 속성만 토글한다 — 포인터 이벤트마다 setState 하지 않는다.
  */
@@ -89,6 +103,7 @@ export function PressFeedback() {
       element.removeAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE);
       element.style.removeProperty(PRESS_FEEDBACK_SCALE_VARIABLE);
       element.style.removeProperty(PRESS_FEEDBACK_SHADOW_VARIABLE);
+      element.style.removeProperty(PRESS_FEEDBACK_TINT_VARIABLE);
       // 리플로우를 강제해 전환이 꺼진 상태에서 되돌림을 확정한다.
       // 반드시 **메서드 호출**이어야 한다 — 결과를 쓰지 않는 프로퍼티 읽기
       // (`void getComputedStyle(el).boxShadow` 등)는 React Compiler 가 걷어내
@@ -206,6 +221,14 @@ export function PressFeedback() {
       // 계산값 읽기(captureOwnShadow)는 반드시 상태 속성을 붙이기 전에
       captureOwnShadow(target);
       target.style.setProperty(PRESS_FEEDBACK_SCALE_VARIABLE, `${resolvePressScale(target, rect)}`);
+      // 커서 하이라이트가 이미 요소를 감싸 강조하고 있으면 색상 강조는 얹지 않는다 — 두 강조가
+      // 겹치면 과하게 어두워진다. 축소는 그대로 남아 눌린 느낌은 유지된다.
+      // (해제 전환 중 다시 누른 경우를 위해, 아닐 땐 직전에 고정해 둔 값을 반드시 걷어낸다)
+      if (isCursorHighlighted(event)) {
+        target.style.setProperty(PRESS_FEEDBACK_TINT_VARIABLE, '0');
+      } else {
+        target.style.removeProperty(PRESS_FEEDBACK_TINT_VARIABLE);
+      }
       target.setAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE, PRESS_FEEDBACK_STATE_ON);
 
       // 클릭으로 대상이 사라지면(다이얼로그 닫기 버튼 등) pointerup 이 창까지 올라오지 않는다

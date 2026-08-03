@@ -21,6 +21,13 @@ export const PRESS_FEEDBACK_STATE_OFF = 'off';
 export const PRESS_FEEDBACK_SCALE_VARIABLE = '--press-scale';
 
 /**
+ * 색상 강조의 진행도(0 → 1) 커스텀 프로퍼티. 평소엔 `press-feedback.css` 가 상태 속성에 맞춰
+ * 0 ↔ 1 로 보간하지만, 커서 하이라이트가 이미 요소를 강조하고 있는 마우스 입력에서는
+ * PressFeedback 이 인라인으로 0 을 고정해 색상 강조만 빼고 축소는 그대로 남긴다.
+ */
+export const PRESS_FEEDBACK_TINT_VARIABLE = '--press-tint';
+
+/**
  * 눌리기 직전 요소가 가지고 있던 box-shadow 를 담아두는 커스텀 프로퍼티.
  * 색상 강조를 inset box-shadow 로 얹으면 요소 본래의 그림자(`shadow-lg` 등)가 통째로 덮이므로,
  * 원본 값을 여기 보관했다가 강조 그림자 뒤에 다시 이어 붙인다.
