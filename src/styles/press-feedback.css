@@ -9,43 +9,67 @@
  */
 
 /*
- * transition 선언과 그림자 합성은 'on'/'off' 양쪽 상태에 걸려 있어야 한다.
- * - 'on' 규칙에만 두면 속성을 떼는 순간 전환도 사라져 즉시 튕겨 돌아간다.
- * - box-shadow 는 그림자 **개수와 inset 여부가 같아야** 부드럽게 보간되므로,
- *   해제 상태에서도 같은 자리에 투명한 inset 그림자를 유지한다.
- * `--press-shadow` 는 PressFeedback 이 눌리기 직전 요소의 원래 그림자를 담아 넣는다
- * (없으면 투명) — 강조 그림자가 `shadow-lg` 같은 자체 그림자를 지우지 않게 한다.
+ * 강조 톤의 진행도(0 → 1). box-shadow 자체를 전환 대상으로 두면 **spread 가 애니메이션된다** —
+ * 알파는 처음부터 최종값이고 퍼짐 반경만 0 → 100vmax 로 자라므로, 반경이 요소 절반을 넘는
+ * 순간(작은 버튼이면 전환 시작 몇 ms) 이미 꽉 차서 톤이 튀어 들어온 것처럼 보이고,
+ * 같은 구간을 온전히 쓰는 축소와 시점이 어긋난다.
+ * 그래서 그림자는 항상 full-spread 로 고정하고 **알파만** 이 프로퍼티로 보간한다.
+ * `@property` 로 등록해야 보간된다 — 등록되지 않은 커스텀 프로퍼티는 값이 즉시 튄다.
+ */
+@property --press-tint {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/*
+ * 눌리기 직전 요소의 원래 box-shadow 보관함(PressFeedback 이 인라인으로 채운다).
+ * 커스텀 프로퍼티는 기본이 상속이라 등록해서 꺼둔다 — 누른 요소의 그림자가
+ * 자식들에게까지 흘러가면 안 된다. 값이 없으면 무효 → 사용처의 폴백이 적용된다.
+ */
+@property --press-shadow {
+  syntax: '*';
+  inherits: false;
+}
+
+/*
+ * 눌림/해제 공통. 이 규칙이 'off' 상태(해제 전환 구간)도 담당한다 —
+ * 'on' 규칙에만 두면 속성을 떼는 순간 전환 선언까지 사라져 즉시 튕겨 돌아간다.
+ *
+ * box-shadow 는 전환 대상이 아니라 `--press-tint` 를 따라 매 프레임 다시 계산될 뿐이라
+ * 톤이 균일하게 배어 나온다. 톤 색은 `--foreground` 고정값이 아니라 `currentColor` —
+ * 글자색은 대개 자기 배경과 대비되므로 밝은 버튼은 어두워지고 어두운 버튼은 밝아져,
+ * 라이트/다크와 반전 배색(강조 버튼) 모두에서 눌림 세기가 일정하다.
+ * `--press-shadow` 에는 PressFeedback 이 눌리기 직전 요소의 원래 그림자를 담아둔다(없으면 투명)
+ * — 강조 그림자가 `shadow-lg` 같은 자체 그림자를 지우지 않게 한다.
+ *
+ * scale 과 --press-tint 는 duration·easing 을 공유해 축소와 색상이 정확히 같이 움직인다.
+ * 해제(200ms)는 눌림(120ms)보다 느긋하게 — 네이티브처럼 반응은 즉각, 복귀는 부드럽게.
  * background-color/color 도 함께 잡아 hover 전환(transition-colors)이 눌림 중에 끊기지 않게 한다.
  */
 [data-pressed] {
   box-shadow:
-    inset 0 0 0 100vmax transparent,
+    inset 0 0 0 100vmax color-mix(in srgb, currentColor calc(var(--press-tint) * 10%), transparent),
     var(--press-shadow, 0 0 #0000);
   transition:
-    scale 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 140ms ease,
-    background-color 140ms ease,
-    color 140ms ease;
+    scale 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    --press-tint 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    background-color 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    color 200ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 
-/*
- * 톤은 `--foreground` 고정값이 아니라 `currentColor` 로 얹는다.
- * 요소의 글자색은 대개 자기 배경과 대비되므로, 밝은 버튼은 어두워지고 어두운 버튼은 밝아진다
- * — 라이트/다크 테마와 반전 배색(강조 버튼 등) 모두에서 눌림이 같은 세기로 보인다.
- */
 [data-pressed='on'] {
+  --press-tint: 1;
   scale: var(--press-scale, 0.97);
-  box-shadow:
-    inset 0 0 0 100vmax color-mix(in srgb, currentColor 10%, transparent),
-    var(--press-shadow, 0 0 #0000);
+  transition:
+    scale 120ms cubic-bezier(0.33, 1, 0.68, 1),
+    --press-tint 120ms cubic-bezier(0.33, 1, 0.68, 1),
+    background-color 120ms cubic-bezier(0.33, 1, 0.68, 1),
+    color 120ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 /* 움직임을 줄이도록 설정한 사용자에겐 축소 없이 색상 강조만 남긴다 */
 @media (prefers-reduced-motion: reduce) {
-  [data-pressed] {
-    transition: box-shadow 100ms ease;
-  }
-
   [data-pressed='on'] {
     scale: 1;
   }

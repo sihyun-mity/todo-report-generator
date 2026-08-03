@@ -67,21 +67,44 @@ export function PressFeedback() {
     /** 포인터가 대상 영역 안에 있는지 — 벗어나면 강조를 끄되 추적은 유지한다 */
     let inside = false;
 
+    /**
+     * 상태 속성과 커스텀 프로퍼티를 걷어내 요소를 원래대로 되돌린다.
+     *
+     * 되돌리는 순간 box-shadow 선언이 요소 자신의 것으로 바뀌는데, 그 요소가 `transition-all`
+     * 을 갖고 있으면 이 되돌림까지 자기 전환 대상으로 잡아 box-shadow 전환이 하나 더 생긴다.
+     * 양끝 값이 시각적으로 같아 눈에 띄진 않지만, 탭이 백그라운드로 가면 이 전환이 완료되지
+     * 못한 채 얼어붙고 계산값이 보간 중간값(전 스프레드 inset 이 낀 목록)으로 고정된다.
+     * 그 상태에서 다시 누르면 captureOwnShadow 가 그 값을 '원래 그림자'로 착각해 누적된다.
+     * 되돌림 동안만 전환을 꺼서 즉시 확정한다.
+     */
     const cleanUp = (element: HTMLElement) => {
+      element.style.setProperty('transition-property', 'none');
       element.removeAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE);
       element.style.removeProperty(PRESS_FEEDBACK_SCALE_VARIABLE);
       element.style.removeProperty(PRESS_FEEDBACK_SHADOW_VARIABLE);
+      // 리플로우를 강제해 전환이 꺼진 상태에서 되돌림을 확정한다.
+      // 반드시 **메서드 호출**이어야 한다 — 결과를 쓰지 않는 프로퍼티 읽기
+      // (`void getComputedStyle(el).boxShadow` 등)는 React Compiler 가 걷어내
+      // `getComputedStyle(el)` 만 남기고, 그것만으로는 재계산이 일어나지 않아 억제가 통째로 무력화된다.
+      element.getBoundingClientRect();
+      element.style.removeProperty('transition-property');
       // 우리가 넣은 커스텀 프로퍼티만 있던 요소에 빈 style 속성이 남지 않게
       if (element.getAttribute('style') === '') element.removeAttribute('style');
     };
 
     /**
      * 요소 본래의 box-shadow 를 보관해 강조 그림자 뒤에 이어 붙일 수 있게 한다.
-     * 이미 보관돼 있으면(해제 전환 중 다시 누른 경우) 다시 읽지 않는다 —
-     * 그 시점의 계산값에는 우리가 얹은 강조 그림자가 이미 섞여 있어 중첩된다.
+     * 계산값은 상태 속성이 붙어 있지 않을 때만 신뢰할 수 있다 — 붙어 있는 동안의 계산값에는
+     * 우리가 얹은 강조 그림자가 이미 섞여 있어, 그대로 읽으면 누를 때마다 중첩된다.
      */
     const captureOwnShadow = (element: HTMLElement) => {
+      // 해제 전환 중 다시 누른 경우 — 직전에 보관해 둔 값을 그대로 쓴다
       if (element.style.getPropertyValue(PRESS_FEEDBACK_SHADOW_VARIABLE)) return;
+      // 보관값 없이 상태 속성만 남아 있다면 계산값을 믿을 수 없으니 읽지 않는다
+      if (element.hasAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE)) {
+        element.style.setProperty(PRESS_FEEDBACK_SHADOW_VARIABLE, PRESS_FEEDBACK_EMPTY_SHADOW);
+        return;
+      }
       const own = window.getComputedStyle(element).boxShadow;
       element.style.setProperty(
         PRESS_FEEDBACK_SHADOW_VARIABLE,

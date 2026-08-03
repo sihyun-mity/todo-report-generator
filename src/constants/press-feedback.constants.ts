@@ -42,8 +42,11 @@ export const PRESS_FEEDBACK_MIN_SCALE = 0.94;
 /** 축소 배율 상한 — 큰 카드에서도 최소한의 눌림감은 남게 */
 export const PRESS_FEEDBACK_MAX_SCALE = 0.985;
 
-/** 해제 전환 길이(ms). `press-feedback.css` 의 transition duration 과 맞춘다 */
-export const PRESS_FEEDBACK_RELEASE_MS = 220;
+/**
+ * 해제 전환 길이(ms). `press-feedback.css` 의 해제 duration(200ms)보다 넉넉히 잡는다 —
+ * 전환이 끝나기 전에 속성을 떼면 남은 구간이 잘려 튕겨 돌아간다.
+ */
+export const PRESS_FEEDBACK_RELEASE_MS = 240;
 
 /**
  * 누르고 있는 동안 대상이 DOM 에 살아 있는지 확인하는 주기(ms).
