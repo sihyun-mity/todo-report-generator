@@ -7,7 +7,9 @@ import {
   PRESS_FEEDBACK_IGNORE_SELECTOR,
   PRESS_FEEDBACK_INSET,
   PRESS_FEEDBACK_MAX_SCALE,
+  PRESS_FEEDBACK_MIN_PRESS_MS,
   PRESS_FEEDBACK_MIN_SCALE,
+  PRESS_FEEDBACK_MOVE_TOLERANCE,
   PRESS_FEEDBACK_RELEASE_MS,
   PRESS_FEEDBACK_SCALE_VARIABLE,
   PRESS_FEEDBACK_SELECTOR,
@@ -48,8 +50,8 @@ function resolvePressScale(target: HTMLElement, rect: DOMRect): number {
  *
  * - 터치/클릭 시작: 대상 요소가 살짝 안으로 들어가고(scale) 색상 강조가 얹힌다
  * - 누른 채 대상 밖으로 벗어나면 강조 해제, 다시 들어오면 복귀 (네이티브와 동일한 동작)
- * - 스크롤 · pointercancel · 컨텍스트 메뉴 · 창 이탈: 즉시 해제
- * - 터치/클릭 완료: 해제
+ * - 스크롤 · 스와이프 제스처 · pointercancel · 컨텍스트 메뉴 · 창 이탈: 즉시 해제
+ * - 터치/클릭 완료: 해제 (톡 치고 뗀 경우엔 최소 노출 시간을 채운 뒤)
  *
  * 커서 하이라이트(`CustomPointer`)와 달리 포인터가 아니라 **요소 자체**를 변형하므로
  * 두 효과는 겹치지 않으며, 모바일 전용 연출이지만 데스크탑 마우스에서도 그대로 동작한다.
@@ -66,6 +68,11 @@ export function PressFeedback() {
     let pointerId: number | null = null;
     /** 포인터가 대상 영역 안에 있는지 — 벗어나면 강조를 끄되 추적은 유지한다 */
     let inside = false;
+    /** 누르기 시작한 좌표 — 여기서 일정 거리 이상 움직이면 탭이 아니라 제스처로 본다 */
+    let startX = 0;
+    let startY = 0;
+    /** 누르기 시작한 시각 — 최소 노출 시간을 채웠는지 판정한다 */
+    let pressedAt = 0;
 
     /**
      * 상태 속성과 커스텀 프로퍼티를 걷어내 요소를 원래대로 되돌린다.
@@ -112,7 +119,7 @@ export function PressFeedback() {
       );
     };
 
-    /** 해제 전환 대기열에서 빼낸다. finalize=true 면 속성까지 제거 */
+    /** 지연 해제·해제 전환 대기열에서 빼낸다. finalize=true 면 속성까지 제거 */
     const stopReleasing = (element: HTMLElement, finalize: boolean) => {
       const timer = releaseTimers.get(element);
       if (timer === undefined) return;
@@ -121,7 +128,23 @@ export function PressFeedback() {
       if (finalize) cleanUp(element);
     };
 
-    const release = () => {
+    /** 해제 전환 시작 → 전환이 끝나면 속성을 뗀다 */
+    const startReleaseTransition = (element: HTMLElement) => {
+      element.setAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE, PRESS_FEEDBACK_STATE_OFF);
+      releaseTimers.set(
+        element,
+        window.setTimeout(() => stopReleasing(element, true), PRESS_FEEDBACK_RELEASE_MS)
+      );
+    };
+
+    /**
+     * @param immediate 최소 노출 보장을 건너뛰고 곧바로 해제 전환에 들어간다.
+     *   탭이 성립하지 않은 취소 경로(스크롤 · 스와이프 · pointercancel · 창 이탈 등)에 쓴다 —
+     *   네이티브는 제스처로 판정되는 즉시 강조를 거둔다. 여기서 최소 노출을 채우겠다고 더
+     *   보여주면 "눌린 게 먹혔다"는 잘못된 신호가 된다. 최소 노출은 탭이 실제로 완료된
+     *   pointerup 에서만 의미가 있다.
+     */
+    const release = (immediate = false) => {
       window.clearInterval(watchdogTimer);
       watchdogTimer = 0;
       pointerId = null;
@@ -132,10 +155,21 @@ export function PressFeedback() {
       if (!element) return;
 
       stopReleasing(element, false);
-      element.setAttribute(PRESS_FEEDBACK_STATE_ATTRIBUTE, PRESS_FEEDBACK_STATE_OFF);
+
+      // 톡 치고 뗀 경우 — 눌리는 전환이 채 보이기도 전에 되돌아가지 않도록 남은 시간만큼 유지한다.
+      // 대기 중 같은 요소를 다시 누르면 stopReleasing 이 이 타이머를 걷어내고 'on' 이 그대로 이어진다.
+      const remaining = immediate ? 0 : PRESS_FEEDBACK_MIN_PRESS_MS - (performance.now() - pressedAt);
+      if (remaining <= 0) {
+        startReleaseTransition(element);
+        return;
+      }
+
       releaseTimers.set(
         element,
-        window.setTimeout(() => stopReleasing(element, true), PRESS_FEEDBACK_RELEASE_MS)
+        window.setTimeout(() => {
+          releaseTimers.delete(element);
+          startReleaseTransition(element);
+        }, remaining)
       );
     };
 
@@ -146,8 +180,9 @@ export function PressFeedback() {
     };
 
     const handlePointerDown = (event: PointerEvent) => {
-      // 멀티터치·연타 — 직전 대상을 먼저 해제하고 새 대상으로 넘어간다
-      release();
+      // 멀티터치·연타 — 직전 대상을 먼저 해제하고 새 대상으로 넘어간다.
+      // 여기까지 남아 있는 press 는 pointerup 을 못 받고 굳은 것이므로 최소 노출 없이 즉시 정리
+      release(true);
       // 마우스는 주 버튼만 (보조 버튼은 컨텍스트 메뉴 등)
       if (event.pointerType === 'mouse' && event.button !== 0) return;
 
@@ -165,6 +200,9 @@ export function PressFeedback() {
       pressed = target;
       pointerId = event.pointerId;
       inside = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      pressedAt = performance.now();
       // 계산값 읽기(captureOwnShadow)는 반드시 상태 속성을 붙이기 전에
       captureOwnShadow(target);
       target.style.setProperty(PRESS_FEEDBACK_SCALE_VARIABLE, `${resolvePressScale(target, rect)}`);
@@ -172,12 +210,20 @@ export function PressFeedback() {
 
       // 클릭으로 대상이 사라지면(다이얼로그 닫기 버튼 등) pointerup 이 창까지 올라오지 않는다
       watchdogTimer = window.setInterval(() => {
-        if (!pressed?.isConnected) release();
+        if (!pressed?.isConnected) release(true);
       }, PRESS_FEEDBACK_WATCHDOG_MS);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
       if (!pressed || event.pointerId !== pointerId) return;
+
+      // transform 으로 대상이 손가락을 따라 움직이는 제스처는 scroll 이벤트도 rect 이탈도
+      // 없으므로, 이동 거리로 탭이 아님을 판정해 눌림을 거둔다
+      if (Math.hypot(event.clientX - startX, event.clientY - startY) > PRESS_FEEDBACK_MOVE_TOLERANCE) {
+        release(true);
+        return;
+      }
+
       const rect = pressed.getBoundingClientRect();
       setInside(
         event.clientX >= rect.left &&
@@ -187,19 +233,26 @@ export function PressFeedback() {
       );
     };
 
+    /** 탭 완료 — 최소 노출을 채운 뒤 해제한다 */
     const handlePointerUp = (event: PointerEvent) => {
       if (pointerId !== null && event.pointerId !== pointerId) return;
       release();
     };
 
-    // 스크롤이 시작되면 탭이 아니라 스크롤 제스처이므로 네이티브처럼 강조를 거둔다
-    const handleRelease = () => release();
+    /** 브라우저가 제스처로 가져감(스크롤 시작 등) — 탭이 아니므로 즉시 해제 */
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (pointerId !== null && event.pointerId !== pointerId) return;
+      release(true);
+    };
+
+    // 스크롤이 시작되면 탭이 아니라 스크롤 제스처이므로 네이티브처럼 즉시 강조를 거둔다
+    const handleRelease = () => release(true);
 
     // capture: stopPropagation 하는 위젯 안에서도 눌림/해제를 놓치지 않는다
     window.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: true });
     window.addEventListener('pointermove', handlePointerMove, { capture: true, passive: true });
     window.addEventListener('pointerup', handlePointerUp, { capture: true, passive: true });
-    window.addEventListener('pointercancel', handlePointerUp, { capture: true, passive: true });
+    window.addEventListener('pointercancel', handlePointerCancel, { capture: true, passive: true });
     window.addEventListener('scroll', handleRelease, { capture: true, passive: true });
     window.addEventListener('contextmenu', handleRelease, true);
     window.addEventListener('dragstart', handleRelease, true);
@@ -210,7 +263,7 @@ export function PressFeedback() {
       window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('pointermove', handlePointerMove, true);
       window.removeEventListener('pointerup', handlePointerUp, true);
-      window.removeEventListener('pointercancel', handlePointerUp, true);
+      window.removeEventListener('pointercancel', handlePointerCancel, true);
       window.removeEventListener('scroll', handleRelease, true);
       window.removeEventListener('contextmenu', handleRelease, true);
       window.removeEventListener('dragstart', handleRelease, true);

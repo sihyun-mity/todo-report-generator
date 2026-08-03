@@ -49,6 +49,22 @@ export const PRESS_FEEDBACK_MAX_SCALE = 0.985;
 export const PRESS_FEEDBACK_RELEASE_MS = 240;
 
 /**
+ * 눌림을 최소한 이만큼은 보여준다(ms).
+ * 짧게 톡 치면 pointerdown → pointerup 이 수십 ms 안에 끝나 눌리는 전환이 시작되자마자
+ * 되돌아간다 — 실측으로 16ms 탭은 톤이 31%(scale 0.982), 32ms 탭은 53% 까지만 올랐다.
+ * 네이티브 하이라이트처럼 최소 노출을 보장해 빠른 탭에서도 같은 세기로 보이게 한다.
+ */
+export const PRESS_FEEDBACK_MIN_PRESS_MS = 90;
+
+/**
+ * 탭이 아니라 제스처로 판정하는 이동 거리(px). 안드로이드 touch slop(≈8dp)에 맞춘 값.
+ * 스크롤 제스처는 `scroll`·`pointercancel` 로 잡히지만, transform 으로 요소를 손가락에
+ * 붙여 움직이는 제스처(캐러셀·바텀시트 등)는 둘 다 내지 않고 대상이 함께 이동해
+ * rect 이탈로도 걸리지 않는다 — 이동 거리로 직접 끊는다.
+ */
+export const PRESS_FEEDBACK_MOVE_TOLERANCE = 10;
+
+/**
  * 누르고 있는 동안 대상이 DOM 에 살아 있는지 확인하는 주기(ms).
  * 클릭으로 대상이 사라지면(다이얼로그 닫기 버튼 등) pointerup 이 창까지 올라오지 않아
  * 눌림 상태가 남을 수 있어 별도로 회수한다.
