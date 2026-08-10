@@ -121,7 +121,7 @@ Next.js 기본 파일명이 아니다. 동작:
 
 ### View Transitions
 
-페이지 전환 애니메이션은 React 19 `<ViewTransition>` + Next.js 16 `experimental.viewTransition: true` 조합으로 처리한다.
+페이지 전환 애니메이션은 React 19 `<ViewTransition>` 으로 처리한다. Next.js 16.3 부터는 App Router 에서 별도 설정 없이 동작한다 (16.2 까지 필요했던 `experimental.viewTransition: true` 플래그는 config 스키마에서 제거됐다 — 다시 넣으면 타입 에러가 난다).
 
 > **메모리 주의 — OLD 스냅샷은 뷰포트 클램프로 캡처된다.** 과거 WebKit(iOS) OOM 완화를 위해 전환을 임시 비활성화했었으나, 근본 원인이던 "OLD 스냅샷 = 페이지 전체 높이 텍스처(폭×높이×dpr²×4byte, 긴 기록 목록에서 전환당 수십~100MB + GPU 최대 텍스처 초과 시 전환 abort)"를 `page-view-transition.tsx` 의 `clampShellForOldCapture` 가 해소하면서 게이트(`isViewTransitionDisabled`)는 제거됐다 — 전 엔진에서 전환이 동작한다. 캡처 직전 `#app-page-shell` 을 보던 뷰포트 슬라이스로 일시 클램프(`height=vh + overflow:hidden + scrollTop` 슬라이스, `position:relative + top` 위치 보정, `<html> min-height` 로 문서 높이 고정) → 캡처 직후(update 콜백 첫 줄, frozen 스냅샷이 화면을 덮는 중) 멱등 원복. 클램프 스냅샷은 스크롤이 이미 반영돼 `--vt-old-shift` 0px 이며, popstate pop 공식도 `wasLastOldCaptureClamped()` 로 유효 OLD 스크롤을 0 취급해야 한다 (이 연동을 깨면 뒤로가기 시 OLD 가 화면 밖으로 벗어난다). 뷰포트보다 짧은 페이지는 클램프를 스킵하고 기존 전체-높이 + translateY 보정 경로를 그대로 탄다.
 
