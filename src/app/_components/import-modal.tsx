@@ -129,6 +129,10 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
                   <p>
                     이 생성기로 만든 보고서를 그대로 붙여넣으면 분석됩니다. 직접 작성할 때는 아래 규칙을 지켜주세요.
                   </p>
+                  <p>
+                    메일·메신저에서 복사하다 줄바꿈이 사라졌거나, 불릿 없이 들여쓰기만 있는 텍스트도 최대한 자동으로
+                    복원합니다. 결과가 어긋나면 미리보기를 확인한 뒤 적용해주세요.
+                  </p>
                   <ul className="list-disc space-y-0.5 pl-4">
                     <li>
                       어딘가에 <span className="font-mono text-zinc-700 dark:text-zinc-300">N월 N일</span> 형식의 날짜
@@ -145,6 +149,10 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
                       작업은 <span className="font-mono text-zinc-700 dark:text-zinc-300">- 작업 내용 (50%)</span> —
                       진행률 <span className="font-mono text-zinc-700 dark:text-zinc-300">(NN%)</span>은 생략
                       가능(미입력 시 0%)
+                    </li>
+                    <li>
+                      불릿은 <span className="font-mono text-zinc-700 dark:text-zinc-300">* • ●</span>(프로젝트) /{' '}
+                      <span className="font-mono text-zinc-700 dark:text-zinc-300">- – ·</span>(작업) 모두 인식
                     </li>
                   </ul>
                   <pre className="overflow-x-auto rounded-md bg-white p-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
@@ -169,7 +177,9 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
                   <div className="flex items-center gap-2 font-bold text-blue-600 dark:text-blue-400">
                     <Check className="h-4 w-4" />
                     <span>
-                      {parsedData.month}월 {parsedData.day}일 보고서 분석 성공
+                      {parsedData.month && parsedData.day
+                        ? `${parsedData.month}월 ${parsedData.day}일 보고서 분석 성공`
+                        : '보고서 분석 성공 (날짜를 찾지 못해 직접 선택해야 합니다)'}
                     </span>
                   </div>
 
