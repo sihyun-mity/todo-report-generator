@@ -270,7 +270,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   // - hydration 로직(오늘 기록 복원 / 익일 carry-over) 진행 중: hasHydratedFromHistory=false → skeleton
   const isFormReady = isClient && isHistoryLoaded && hasHydratedFromHistory;
 
-  // 프로젝트/작업 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
+  // 프로젝트/작업/세부 항목 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
   // 토스트가 유지되는 동안(UNDO_TOAST_DURATION_MS) 사용자가 원래 위치로 되돌릴 수 있다.
   // setFocusRequest는 실행 취소 시 복구된 input으로 포커스를 보내기 위해 받는다.
   const makeRemoveHandlers = (
@@ -345,6 +345,56 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
                   kind: 'task',
                   projectId,
                   taskId: removed.id,
+                  nonce: (prev?.nonce ?? 0) + 1,
+                }));
+                toast.dismiss(t.id);
+              }}
+              className="shrink-0 cursor-pointer rounded-md bg-toast-border px-2 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
+            >
+              실행 취소
+            </button>
+          </span>
+        ),
+        { duration: UNDO_TOAST_DURATION_MS }
+      );
+    },
+    // 세부 항목은 최소 개수 제약이 없어(0개 허용) 작업과 달리 마지막 하나도 지울 수 있다.
+    // 그 외 흐름(스냅샷 → 삭제 → 토스트 → 원래 index로 복원 + 포커스)은 작업 삭제와 동일하다.
+    removeDetail: (projectId: string, taskId: string, detailId: string, options?: RemoveOptions) => {
+      const task = bucket.projects.find((p) => p.id === projectId)?.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      const index = task.details.findIndex((d) => d.id === detailId);
+      if (index === -1) return;
+      const removed = task.details[index];
+      bucket.removeDetail(projectId, taskId, detailId);
+      // Backspace 등 빈 항목 삭제 경로는 복원할 콘텐츠가 없으므로 토스트를 띄우지 않는다.
+      if (options?.silent) return;
+      const detailLabel = removed.content.trim() || '내용 없는 세부 항목';
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3 break-all">
+            <span className="break-all">세부 내용 &quot;{detailLabel}&quot;을(를) 삭제했습니다.</span>
+            <button
+              onClick={() => {
+                bucket.setProjects((prev) =>
+                  prev.map((p) => {
+                    if (p.id !== projectId) return p;
+                    return {
+                      ...p,
+                      tasks: p.tasks.map((tk) => {
+                        if (tk.id !== taskId) return tk;
+                        const nextDetails = [...tk.details];
+                        nextDetails.splice(Math.min(index, nextDetails.length), 0, removed);
+                        return { ...tk, details: nextDetails };
+                      }),
+                    };
+                  })
+                );
+                setFocusRequest((prev) => ({
+                  kind: 'detail',
+                  projectId,
+                  taskId,
+                  detailId: removed.id,
                   nonce: (prev?.nonce ?? 0) + 1,
                 }));
                 toast.dismiss(t.id);
@@ -520,6 +570,9 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
               onAddTask={today.addTask}
               onUpdateTask={today.updateTask}
               onRemoveTask={todayRemove.removeTask}
+              onAddDetail={today.addDetail}
+              onUpdateDetail={today.updateDetail}
+              onRemoveDetail={todayRemove.removeDetail}
               focusRequest={todayFocusRequest}
             />
             <ProjectList
@@ -532,6 +585,9 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
               onAddTask={tomorrow.addTask}
               onUpdateTask={tomorrow.updateTask}
               onRemoveTask={tomorrowRemove.removeTask}
+              onAddDetail={tomorrow.addDetail}
+              onUpdateDetail={tomorrow.updateDetail}
+              onRemoveDetail={tomorrowRemove.removeDetail}
               onImportIncomplete={handleImportIncomplete}
               focusRequest={tomorrowFocusRequest}
             />

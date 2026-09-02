@@ -31,6 +31,15 @@ export const ProjectPreview = ({ title, dotClassName, projects }: Readonly<Proje
                 {p.tasks.map((t) => (
                   <li key={t.id} className="text-zinc-500 dark:text-zinc-400">
                     - {t.content} ({t.progress}%)
+                    {t.details.length > 0 && (
+                      <ul className="pl-3">
+                        {t.details.map((d) => (
+                          <li key={d.id} className="text-zinc-400 dark:text-zinc-500">
+                            · {d.content}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>

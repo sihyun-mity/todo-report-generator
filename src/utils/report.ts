@@ -1,11 +1,17 @@
-import type { Project, Task, ReportTextData } from '@/types';
+import type { Project, Task, TaskDetail, ReportTextData } from '@/types';
 import { createId } from '@/utils';
 
-// 빈 태스크/프로젝트를 만드는 팩토리 함수 (여러 곳에서 중복되던 초기화 로직 통합)
+// 빈 세부 항목/태스크/프로젝트를 만드는 팩토리 함수 (여러 곳에서 중복되던 초기화 로직 통합)
+export const createEmptyDetail = (): TaskDetail => ({
+  id: createId(),
+  content: '',
+});
+
 export const createEmptyTask = (): Task => ({
   id: createId(),
   content: '',
   progress: 0,
+  details: [],
 });
 
 export const createEmptyProject = (): Project => ({
@@ -16,13 +22,26 @@ export const createEmptyProject = (): Project => ({
 
 // 프로젝트 배열을 깊은 복사할 때 사용 (localStorage에 저장하거나 히스토리를 복원할 때 참조 공유 방지)
 export const cloneProjects = (projects: ReadonlyArray<Project>): Array<Project> =>
-  projects.map((p) => ({ ...p, tasks: p.tasks.map((t) => ({ ...t })) }));
+  projects.map((p) => ({
+    ...p,
+    tasks: p.tasks.map((t) => ({ ...t, details: (t.details ?? []).map((d) => ({ ...d })) })),
+  }));
+
+// 세부 항목(소분류)이 도입되기 전에 저장된 기록에는 `details`가 없다.
+// localStorage / DB 등 외부에서 들어온 데이터는 이 함수를 거쳐 항상 배열을 갖도록 맞춘다.
+export const normalizeProjects = (projects: ReadonlyArray<Project>): Array<Project> =>
+  projects.map((p) => ({
+    ...p,
+    tasks: (p.tasks ?? []).map((t) => ({ ...t, details: t.details ?? [] })),
+  }));
+
+const hasTaskContent = (t: Task) => t.content.trim() !== '' || (t.details ?? []).some((d) => d.content.trim() !== '');
 
 // 프로젝트가 완전히 비어있는지 판별 (기본 초기값 상태인지 확인할 때 사용)
-export const isProjectEmpty = (p: Project) => p.name.trim() === '' && p.tasks.every((t) => t.content.trim() === '');
+export const isProjectEmpty = (p: Project) => p.name.trim() === '' && !p.tasks.some(hasTaskContent);
 
 // 프로젝트에 실제 내용이 하나라도 입력되었는지 판별
-export const hasProjectContent = (p: Project) => p.name.trim() !== '' || p.tasks.some((t) => t.content.trim() !== '');
+export const hasProjectContent = (p: Project) => p.name.trim() !== '' || p.tasks.some(hasTaskContent);
 
 // 입력 시도된 프로젝트가 유효한지 검증
 // (프로젝트명이 있으면 최소 한 개의 작업 내용이 필요; 이름 없이 작업 내용만 있는 경우는 무효)
@@ -52,7 +71,11 @@ export const mergeIncompleteTasks = (
           if (!existing) return true;
           return !existing.tasks.some((et) => et.content.trim() === t.content.trim());
         })
-        .map((t) => ({ ...t, id: createId() }));
+        .map((t) => ({
+          ...t,
+          id: createId(),
+          details: (t.details ?? []).map((d) => ({ ...d, id: createId() })),
+        }));
 
       if (tasks.length === 0) return null;
       return { ...p, id: createId(), tasks };
@@ -84,7 +107,10 @@ export const generateReportText = ({ month, day, todayProjects, tomorrowProjects
     projects
       .map((p) => {
         const header = `    * ${p.name || '프로젝트명'}`;
-        const tasks = p.tasks.map((t) => `        - ${t.content || '작업 내용'} (${t.progress}%)`);
+        const tasks = p.tasks.flatMap((t) => [
+          `        - ${t.content || '작업 내용'} (${t.progress}%)`,
+          ...(t.details ?? []).map((d) => `            · ${d.content || '세부 내용'}`),
+        ]);
         return [header, ...tasks].join('\n');
       })
       .join('\n');

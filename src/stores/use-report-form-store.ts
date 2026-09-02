@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Project, ReportFormStore, Task } from '@/types';
-import { createEmptyProject, createEmptyTask } from '@/utils';
+import type { Project, ReportFormStore, Task, TaskDetail } from '@/types';
+import { createEmptyDetail, createEmptyProject, createEmptyTask } from '@/utils';
 
 const getTodayDate = () => {
   const now = new Date();
@@ -61,6 +61,102 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
         return { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)) };
       }),
     })),
+
+  // 작업(중분류) 아래 세부 항목(소분류) 조작 — 프로젝트 → 작업 순으로 찾아 들어가 해당 작업의 details만 교체한다.
+  addDetail: (bucket, projectId, taskId, id) =>
+    set((state) => {
+      const newDetail: TaskDetail = id ? { ...createEmptyDetail(), id } : createEmptyDetail();
+      return {
+        [bucket]: state[bucket].map((p) => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, details: [...t.details, newDetail] } : t)),
+          };
+        }),
+      };
+    }),
+
+  // 세부 항목은 작업과 달리 최소 개수 제약이 없다 — 전부 지우면 작업만 남는다.
+  removeDetail: (bucket, projectId, taskId, detailId) =>
+    set((state) => ({
+      [bucket]: state[bucket].map((p) => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: p.tasks.map((t) =>
+            t.id === taskId ? { ...t, details: t.details.filter((d) => d.id !== detailId) } : t
+          ),
+        };
+      }),
+    })),
+
+  updateDetail: (bucket, projectId, taskId, detailId, content) =>
+    set((state) => ({
+      [bucket]: state[bucket].map((p) => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: p.tasks.map((t) => {
+            if (t.id !== taskId) return t;
+            return { ...t, details: t.details.map((d) => (d.id === detailId ? { ...d, content } : d)) };
+          }),
+        };
+      }),
+    })),
+
+  // 세부 항목 정렬 — 같은 작업 안에서만. 작업 id 는 보드 전체에서 유일하므로 프로젝트 탐색 없이 찾는다.
+  reorderDetails: (bucket, taskId, fromId, toId) =>
+    set((state) => {
+      if (fromId === toId) return state;
+      const list = state[bucket];
+      const targetTask = list.flatMap((p) => p.tasks).find((t) => t.id === taskId);
+      if (!targetTask) return state;
+      const fromIndex = targetTask.details.findIndex((d) => d.id === fromId);
+      const toIndex = targetTask.details.findIndex((d) => d.id === toId);
+      if (fromIndex === -1 || toIndex === -1) return state;
+      const nextDetails = [...targetTask.details];
+      const [moved] = nextDetails.splice(fromIndex, 1);
+      nextDetails.splice(toIndex, 0, moved);
+      return {
+        [bucket]: list.map((p) =>
+          p.tasks.some((t) => t.id === taskId)
+            ? { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, details: nextDetails } : t)) }
+            : p
+        ),
+      };
+    }),
+
+  // 세부 항목을 다른 작업으로 이동. 크로스 작업 드래그 중 onDragOver에서 매 hover마다 호출되므로,
+  // 버킷이 같으면 한 번의 set으로 하나의 배열을, 다르면 두 배열을 함께 갱신한다.
+  moveDetailToTask: (fromBucket, toBucket, fromTaskId, toTaskId, detailId, toIndex) =>
+    set((state) => {
+      if (fromTaskId === toTaskId) return state;
+      const fromTask = state[fromBucket].flatMap((p) => p.tasks).find((t) => t.id === fromTaskId);
+      const movedDetail = fromTask?.details.find((d) => d.id === detailId);
+      if (!movedDetail) return state;
+
+      // 대상 작업이 없는 배열은 map 결과가 전부 원본 참조 그대로라 리렌더를 유발하지 않는다.
+      const mapTask = (list: Array<Project>, taskId: string, update: (task: Task) => Task) =>
+        list.map((p) =>
+          p.tasks.some((t) => t.id === taskId)
+            ? { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? update(t) : t)) }
+            : p
+        );
+      const removeFrom = (list: Array<Project>) =>
+        mapTask(list, fromTaskId, (t) => ({ ...t, details: t.details.filter((d) => d.id !== detailId) }));
+      const insertInto = (list: Array<Project>) =>
+        mapTask(list, toTaskId, (t) => {
+          const nextDetails = [...t.details];
+          nextDetails.splice(Math.max(0, Math.min(toIndex, nextDetails.length)), 0, movedDetail);
+          return { ...t, details: nextDetails };
+        });
+
+      if (fromBucket === toBucket) {
+        return { [fromBucket]: insertInto(removeFrom(state[fromBucket])) };
+      }
+      return { [fromBucket]: removeFrom(state[fromBucket]), [toBucket]: insertInto(state[toBucket]) };
+    }),
 
   reorderProjects: (bucket, fromId, toId) =>
     set((state) => {

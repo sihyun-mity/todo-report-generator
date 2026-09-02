@@ -151,9 +151,16 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
                       가능(미입력 시 0%)
                     </li>
                     <li>
-                      불릿은 <span className="font-mono text-zinc-700 dark:text-zinc-300">* • ●</span>(프로젝트) /{' '}
-                      <span className="font-mono text-zinc-700 dark:text-zinc-300">- – ·</span>(작업) 모두 인식
+                      세부 내용은 <span className="font-mono text-zinc-700 dark:text-zinc-300">· 세부 내용</span> —
+                      진행률 없이 <strong className="font-semibold">작업보다 더 깊게 들여쓰기</strong>. 들여쓰기가
+                      작업과 같으면 세부 내용이 아니라 작업으로 인식됩니다.
                     </li>
+                    <li>
+                      불릿은 <span className="font-mono text-zinc-700 dark:text-zinc-300">* • ●</span>(프로젝트) /{' '}
+                      <span className="font-mono text-zinc-700 dark:text-zinc-300">- –</span>(작업) /{' '}
+                      <span className="font-mono text-zinc-700 dark:text-zinc-300">· ㆍ ∙</span>(세부 내용) 모두 인식
+                    </li>
+                    <li>불릿 없이 들여쓰기 깊이만으로 프로젝트 · 작업 · 세부 내용을 구분한 텍스트도 인식합니다.</li>
                   </ul>
                   <pre className="overflow-x-auto rounded-md bg-white p-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
                     {`2월 24일 일일 업무 보고 드립니다.
@@ -161,6 +168,7 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
 금일 업무 진행 현황
     * 프로젝트명
         - 작업 내용 (50%)
+            · 세부 내용
 
 익일 업무 진행 예정
     * 프로젝트명
