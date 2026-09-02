@@ -4,7 +4,7 @@ import { MAX_HISTORY_ITEMS, REPORT_HISTORY_STORAGE_KEY } from '@/constants';
 import { isGuestMode } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { Project, ReportHistoryItem, ReportHistoryStore } from '@/types';
-import { cloneProjects, generateReportText } from '@/utils';
+import { cloneProjects, generateReportText, normalizeProjects } from '@/utils';
 
 type ReportRow = {
   id: string;
@@ -60,8 +60,9 @@ const rowToItem = (row: ReportRow): ReportHistoryItem => ({
   month: row.content.month,
   day: row.content.day,
   content: row.content.text,
-  todayProjects: row.content.todayProjects,
-  tomorrowProjects: row.content.tomorrowProjects,
+  // 세부 항목 도입 이전에 저장된 기록에는 `details`가 없다 — 읽는 지점에서 형태를 맞춘다.
+  todayProjects: normalizeProjects(row.content.todayProjects ?? []),
+  tomorrowProjects: normalizeProjects(row.content.tomorrowProjects ?? []),
   timestamp: new Date(row.updated_at ?? row.created_at).getTime(),
 });
 
@@ -71,7 +72,12 @@ const loadLocalHistory = (): Array<ReportHistoryItem> => {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed as Array<ReportHistoryItem>;
+    // DB 기록과 마찬가지로 세부 항목 도입 이전 데이터의 형태를 맞춰준다.
+    return (parsed as Array<ReportHistoryItem>).map((item) => ({
+      ...item,
+      todayProjects: normalizeProjects(item.todayProjects ?? []),
+      tomorrowProjects: normalizeProjects(item.tomorrowProjects ?? []),
+    }));
   } catch {
     return [];
   }

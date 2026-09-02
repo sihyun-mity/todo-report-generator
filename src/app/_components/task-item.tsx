@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, ListPlus, Trash2 } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task } from '@/types';
-import { cn } from '@/utils';
+import { cn, createId } from '@/utils';
 import { useOnClickOutside } from '@/hooks';
+import { TaskDetailItem } from '.';
 
 export type TaskFocusField = 'content' | 'progress';
 
@@ -15,11 +16,20 @@ type TaskItemProps = {
   onUpdate: (updates: Partial<Task>) => void;
   onRemove: () => void;
   canRemove: boolean;
+  onAddDetail: (detailId: string) => void;
+  onUpdateDetail: (detailId: string, content: string) => void;
+  onRemoveDetail: (detailId: string) => void;
   onContentEnter?: () => void;
   onContentBackspaceEmpty?: () => void;
   onProgressEnter?: () => void;
   focusField?: TaskFocusField | null;
   focusNonce?: number;
+};
+
+// 세부 항목(소분류) 포커스 신호 — nonce가 바뀔 때마다 해당 항목으로 포커스를 옮긴다.
+type DetailFocus = {
+  detailId: string;
+  nonce: number;
 };
 
 const PRESETS: ReadonlyArray<number> = [20, 40, 60, 80, 100];
@@ -32,6 +42,9 @@ export const TaskItem = ({
   onUpdate,
   onRemove,
   canRemove,
+  onAddDetail,
+  onUpdateDetail,
+  onRemoveDetail,
   onContentEnter,
   onContentBackspaceEmpty,
   onProgressEnter,
@@ -42,6 +55,7 @@ export const TaskItem = ({
   const progressInputRef = useRef<HTMLInputElement>(null);
   const progressGroupRef = useRef<HTMLDivElement>(null);
   const [isPresetOpen, setIsPresetOpen] = useState(false);
+  const [detailFocus, setDetailFocus] = useState<DetailFocus | null>(null);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const style = {
@@ -89,114 +103,174 @@ export const TaskItem = ({
     onProgressEnter?.();
   };
 
+  const focusDetail = (detailId: string) => {
+    setDetailFocus((prev) => ({ detailId, nonce: (prev?.nonce ?? 0) + 1 }));
+  };
+
+  // 새 세부 항목의 ID를 먼저 생성해 focus 대상으로 기록한 뒤 추가한다 (작업 추가와 동일한 패턴).
+  const handleAddDetail = () => {
+    const newDetailId = createId();
+    focusDetail(newDetailId);
+    onAddDetail(newDetailId);
+  };
+
+  const handleDetailEnter = (index: number) => {
+    const nextDetail = task.details[index + 1];
+    if (nextDetail) focusDetail(nextDetail.id);
+    else handleAddDetail();
+  };
+
+  // 빈 세부 항목에서 Backspace: 삭제 + 이전 세부 항목(또는 작업 내용)으로 포커스 이동.
+  // 세부 항목은 최소 개수 제약이 없어 마지막 하나도 삭제할 수 있다.
+  const handleDetailBackspaceEmpty = (detailId: string, index: number) => {
+    if (index > 0) focusDetail(task.details[index - 1].id);
+    else contentRef.current?.focus();
+    onRemoveDetail(detailId);
+  };
+
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-1 sm:gap-1.5">
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label="작업 순서 변경"
-        title="드래그해서 순서 변경"
-        className="shrink-0 cursor-grab touch-none rounded-md p-1 text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-      >
-        <GripVertical size={14} />
-      </button>
-      <input
-        ref={contentRef}
-        type="text"
-        placeholder="작업 내용"
-        value={task.content}
-        enterKeyHint="next"
-        onChange={(e) => onUpdate({ content: e.target.value })}
-        onBlur={(e) => onUpdate({ content: e.target.value.trim() })}
-        onKeyDown={handleContentKeyDown}
-        className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
-      />
-      <div ref={progressGroupRef} className="relative shrink-0">
-        <input
-          ref={progressInputRef}
-          // type=number는 iOS 숫자 키패드에 Return 키가 없어 가상 키보드에서 Enter 동작이 막힌다.
-          // type=text + inputMode=numeric으로 숫자 키패드를 띄우면서 Return 키도 노출시킨다.
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          enterKeyHint="next"
-          value={task.progress}
-          onFocus={() => setIsPresetOpen(true)}
-          onBlur={(e) => {
-            // 그룹 바깥(예: 탭으로 다른 컨트롤로 이동)으로 포커스가 빠지면 팝업도 닫는다.
-            if (!progressGroupRef.current?.contains(e.relatedTarget as Node | null)) {
-              setIsPresetOpen(false);
-            }
-          }}
-          onChange={(e) => {
-            // 빈 값/NaN은 0으로, 나머지는 0~100 범위로 클램프
-            const parsed = parseInt(e.target.value, 10);
-            const next = Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed));
-            onUpdate({ progress: next });
-          }}
-          onKeyDown={handleProgressKeyDown}
-          aria-haspopup="menu"
-          title="포커스하면 진행률 빠른 선택이 표시돼요"
-          className="w-14 rounded-md border border-zinc-200 bg-transparent py-1.5 pr-5 pl-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-20 sm:pr-6 sm:pl-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-zinc-400 sm:text-sm dark:text-zinc-500"
+    <div ref={setNodeRef} style={style}>
+      <div className="flex items-center gap-1 sm:gap-1.5">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="작업 순서 변경"
+          title="드래그해서 순서 변경"
+          className="shrink-0 cursor-grab touch-none rounded-md p-1 text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
         >
-          %
-        </span>
-        {isPresetOpen && (
-          <div
-            role="menu"
-            className="absolute top-full right-0 z-20 mt-1 flex gap-1 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+          <GripVertical size={14} />
+        </button>
+        <input
+          ref={contentRef}
+          type="text"
+          placeholder="작업 내용"
+          value={task.content}
+          enterKeyHint="next"
+          onChange={(e) => onUpdate({ content: e.target.value })}
+          onBlur={(e) => onUpdate({ content: e.target.value.trim() })}
+          onKeyDown={handleContentKeyDown}
+          className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-transparent px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:px-3 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
+        />
+        <div ref={progressGroupRef} className="relative shrink-0">
+          <input
+            ref={progressInputRef}
+            // type=number는 iOS 숫자 키패드에 Return 키가 없어 가상 키보드에서 Enter 동작이 막힌다.
+            // type=text + inputMode=numeric으로 숫자 키패드를 띄우면서 Return 키도 노출시킨다.
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            enterKeyHint="next"
+            value={task.progress}
+            onFocus={() => setIsPresetOpen(true)}
+            onBlur={(e) => {
+              // 그룹 바깥(예: 탭으로 다른 컨트롤로 이동)으로 포커스가 빠지면 팝업도 닫는다.
+              if (!progressGroupRef.current?.contains(e.relatedTarget as Node | null)) {
+                setIsPresetOpen(false);
+              }
+            }}
+            onChange={(e) => {
+              // 빈 값/NaN은 0으로, 나머지는 0~100 범위로 클램프
+              const parsed = parseInt(e.target.value, 10);
+              const next = Number.isNaN(parsed) ? 0 : Math.min(100, Math.max(0, parsed));
+              onUpdate({ progress: next });
+            }}
+            onKeyDown={handleProgressKeyDown}
+            aria-haspopup="menu"
+            title="포커스하면 진행률 빠른 선택이 표시돼요"
+            className="w-14 rounded-md border border-zinc-200 bg-transparent py-1.5 pr-5 pl-1 text-right text-sm outline-none focus:ring-2 focus:ring-blue-500 sm:w-20 sm:pr-6 sm:pl-2 dark:border-zinc-700/50 dark:bg-input/30 dark:text-zinc-200 dark:focus:border-blue-500/50"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-zinc-400 sm:text-sm dark:text-zinc-500"
           >
-            {PRESETS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                // 빠른 선택은 마우스 전용 보조 UI다. tab 순서에 끼면 진행률 input에서 Tab을 눌렀을 때
-                // 포커스가 다음 컨트롤이 아닌 preset 버튼으로 이동해 팝업이 안 닫히는 것처럼 보인다.
-                tabIndex={-1}
-                // input.onBlur가 선행되지 않도록 mousedown에서 default를 막아 input이 포커스를 잃지 않게 한다
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handlePickPreset(value)}
-                className={cn(
-                  'cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                  task.progress === value
-                    ? 'bg-blue-500 text-white'
-                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        )}
+            %
+          </span>
+          {isPresetOpen && (
+            <div
+              role="menu"
+              className="absolute top-full right-0 z-20 mt-1 flex gap-1 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              {PRESETS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  // 빠른 선택은 마우스 전용 보조 UI다. tab 순서에 끼면 진행률 input에서 Tab을 눌렀을 때
+                  // 포커스가 다음 컨트롤이 아닌 preset 버튼으로 이동해 팝업이 안 닫히는 것처럼 보인다.
+                  tabIndex={-1}
+                  // input.onBlur가 선행되지 않도록 mousedown에서 default를 막아 input이 포커스를 잃지 않게 한다
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handlePickPreset(value)}
+                  className={cn(
+                    'cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                    task.progress === value
+                      ? 'bg-blue-500 text-white'
+                      : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                  )}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleAddDetail}
+          className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-950/30"
+          title="세부 항목 추가"
+        >
+          <ListPlus size={16} />
+        </button>
+        <button
+          onClick={onRemove}
+          className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-red-950/30"
+          disabled={!canRemove}
+          title="작업 삭제"
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
-      <button
-        onClick={onRemove}
-        className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-red-950/30"
-        disabled={!canRemove}
-        title="작업 삭제"
-      >
-        <Trash2 size={16} />
-      </button>
+      {task.details.length > 0 && (
+        // 세부 항목은 작업 내용 input 시작선에 맞춰 한 단계 더 들여쓴다 (grip 버튼 폭 + gap).
+        <div className="mt-1.5 ml-6 space-y-1.5 sm:ml-8">
+          {task.details.map((detail, index) => (
+            <TaskDetailItem
+              key={detail.id}
+              detail={detail}
+              onUpdate={(content) => onUpdateDetail(detail.id, content)}
+              onRemove={() => onRemoveDetail(detail.id)}
+              onEnter={() => handleDetailEnter(index)}
+              onBackspaceEmpty={() => handleDetailBackspaceEmpty(detail.id, index)}
+              isFocused={detailFocus?.detailId === detail.id}
+              focusNonce={detailFocus?.detailId === detail.id ? detailFocus.nonce : 0}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
 // DragOverlay에서 그릴 정적 미리보기 — 진행률 input/preset 팝업 등 인터랙션 없는 단순 형태.
 export const TaskItemPreview = ({ task }: Readonly<{ task: Task }>) => (
-  <div className="pointer-events-none flex items-center gap-1 rounded-md bg-white shadow-lg sm:gap-1.5 dark:bg-zinc-900">
-    <span className="shrink-0 p-1 text-zinc-300 dark:text-zinc-600">
-      <GripVertical size={14} />
-    </span>
-    <div className="min-w-0 flex-1 truncate rounded-md border border-zinc-200 px-2 py-1.5 text-sm text-zinc-700 sm:px-3 dark:border-zinc-700/50 dark:text-zinc-200">
-      {task.content || '작업 내용'}
+  <div className="pointer-events-none rounded-md bg-white shadow-lg dark:bg-zinc-900">
+    <div className="flex items-center gap-1 sm:gap-1.5">
+      <span className="shrink-0 p-1 text-zinc-300 dark:text-zinc-600">
+        <GripVertical size={14} />
+      </span>
+      <div className="min-w-0 flex-1 truncate rounded-md border border-zinc-200 px-2 py-1.5 text-sm text-zinc-700 sm:px-3 dark:border-zinc-700/50 dark:text-zinc-200">
+        {task.content || '작업 내용'}
+      </div>
+      <div className="w-14 shrink-0 rounded-md border border-zinc-200 py-1.5 pr-2 pl-1 text-right text-sm text-zinc-500 sm:w-20 dark:border-zinc-700/50 dark:text-zinc-400">
+        {task.progress}%
+      </div>
     </div>
-    <div className="w-14 shrink-0 rounded-md border border-zinc-200 py-1.5 pr-2 pl-1 text-right text-sm text-zinc-500 sm:w-20 dark:border-zinc-700/50 dark:text-zinc-400">
-      {task.progress}%
-    </div>
+    {/* 작업을 드래그하면 세부 항목도 함께 따라간다 — 몇 개가 딸려 오는지 미리보기에 표시한다. */}
+    {task.details.length > 0 && (
+      <div className="mt-1 ml-6 truncate text-xs text-zinc-400 sm:ml-8 dark:text-zinc-500">
+        · 세부 항목 {task.details.length}개
+      </div>
+    )}
   </div>
 );

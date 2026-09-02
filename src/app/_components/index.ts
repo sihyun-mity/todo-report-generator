@@ -15,4 +15,5 @@ export * from './report-history';
 export * from './report-preview';
 export * from './report-preview-dialog';
 export * from './report-preview-skeleton';
+export * from './task-detail-item';
 export * from './task-item';

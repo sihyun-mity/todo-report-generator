@@ -15,6 +15,9 @@ type ProjectItemProps = {
   onAddTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (taskId: string, options?: RemoveOptions) => void;
+  onAddDetail: (taskId: string, detailId: string) => void;
+  onUpdateDetail: (taskId: string, detailId: string, content: string) => void;
+  onRemoveDetail: (taskId: string, detailId: string) => void;
   onBackspaceEmpty?: () => void;
   canRemove: boolean;
   autoFocus?: boolean;
@@ -41,6 +44,9 @@ export const ProjectItem = ({
   onAddTask,
   onUpdateTask,
   onRemoveTask,
+  onAddDetail,
+  onUpdateDetail,
+  onRemoveDetail,
   onBackspaceEmpty,
   canRemove,
   autoFocus,
@@ -212,6 +218,9 @@ export const ProjectItem = ({
                 onUpdate={(updates) => onUpdateTask(task.id, updates)}
                 onRemove={() => onRemoveTask(task.id)}
                 canRemove={project.tasks.length > 1}
+                onAddDetail={(detailId) => onAddDetail(task.id, detailId)}
+                onUpdateDetail={(detailId, content) => onUpdateDetail(task.id, detailId, content)}
+                onRemoveDetail={(detailId) => onRemoveDetail(task.id, detailId)}
                 onContentEnter={() => handleTaskContentEnter(task.id, index)}
                 onContentBackspaceEmpty={() => handleTaskContentBackspaceEmpty(task.id, index)}
                 onProgressEnter={() => handleTaskProgressEnter(index)}
@@ -247,6 +256,7 @@ export const ProjectItemPreview = ({ project }: Readonly<{ project: Project }>) 
       {project.tasks.slice(0, 3).map((task) => (
         <div key={task.id} className="truncate">
           - {task.content || '작업 내용'} ({task.progress}%)
+          {task.details.length > 0 && ` · 세부 ${task.details.length}`}
         </div>
       ))}
       {project.tasks.length > 3 && <div className="truncate">…외 {project.tasks.length - 3}개</div>}

@@ -102,6 +102,16 @@ Next.js 기본 파일명이 아니다. 동작:
 - 동적 title은 `generateMetadata` 내부에서 동일 utility를 호출 (`src/app/(app)/whats-new/[id]/page.tsx` 참고).
 - 새 page를 추가하면서 `Metadata` 객체를 직접 만들지 말고, 항상 이 utility를 거친다.
 
+### 보고서 데이터 구조 (3단계 계층)
+
+`Project`(대분류) → `Task`(중분류) → `TaskDetail`(소분류) 3단계다 (`src/types/report.type.ts`).
+
+- 텍스트 출력 형식은 들여쓰기 4칸 단위 — 프로젝트 `    * `, 작업 `        - `(진행률 표기 포함), 세부 항목 `            · `(진행률 없음).
+- 프로젝트당 작업은 최소 1개를 유지하지만, **세부 항목은 최소 개수 제약이 없다** (0개 가능).
+- 세부 항목은 드래그 정렬 대상이 아니다. 작업을 드래그하면 `details`가 통째로 따라간다.
+- 파서(`src/utils/parser.ts`)는 가운뎃점 계열 불릿(`·ㆍ‧∙`)을 **직전 작업보다 깊게 들여쓰였을 때만** 세부 항목으로 본다. 들여쓰기가 같거나 얕으면 기존처럼 작업으로 파싱해 "가운뎃점 = 작업"으로 쓰던 문서의 하위호환을 지킨다. 그래서 `restoreLineBreaks`의 들여쓰기 보존 규칙(공백 2칸 이상 → 줄바꿈 + 들여쓰기 유지)이 진행률 뒤 분리 규칙보다 **먼저** 돌아야 한다 — 순서가 뒤집히면 불릿 앞 공백이 소비돼 계층 판정이 무너진다.
+- `details`는 세부 항목 도입 이전에 저장된 기록에 없다. localStorage / DB 에서 읽어 들이는 지점(`use-report-history-store.ts`)에서 `normalizeProjects`로 형태를 맞춘다. `content`가 JSONB 라 DB 마이그레이션은 필요 없다.
+
 ### 보고서 기록 (Report History)
 
 `src/stores/use-report-history-store.ts`는 모드별로 다른 적재 전략을 쓴다.

@@ -29,6 +29,9 @@ type ProjectListProps = {
   onAddTask: (projectId: string, taskId: string) => void;
   onUpdateTask: (projectId: string, taskId: string, updates: Partial<Task>) => void;
   onRemoveTask: (projectId: string, taskId: string, options?: RemoveOptions) => void;
+  onAddDetail: (projectId: string, taskId: string, detailId: string) => void;
+  onUpdateDetail: (projectId: string, taskId: string, detailId: string, content: string) => void;
+  onRemoveDetail: (projectId: string, taskId: string, detailId: string) => void;
   onImportIncomplete?: () => void;
   focusRequest?: ProjectListFocusRequest | null;
 };
@@ -54,6 +57,9 @@ export const ProjectList = ({
   onAddTask,
   onUpdateTask,
   onRemoveTask,
+  onAddDetail,
+  onUpdateDetail,
+  onRemoveDetail,
   onImportIncomplete,
   focusRequest,
 }: Readonly<ProjectListProps>) => {
@@ -171,6 +177,9 @@ export const ProjectList = ({
                 onAddTask={(taskId) => onAddTask(project.id, taskId)}
                 onUpdateTask={(taskId, updates) => onUpdateTask(project.id, taskId, updates)}
                 onRemoveTask={(taskId, options) => onRemoveTask(project.id, taskId, options)}
+                onAddDetail={(taskId, detailId) => onAddDetail(project.id, taskId, detailId)}
+                onUpdateDetail={(taskId, detailId, content) => onUpdateDetail(project.id, taskId, detailId, content)}
+                onRemoveDetail={(taskId, detailId) => onRemoveDetail(project.id, taskId, detailId)}
                 onBackspaceEmpty={() => handleProjectBackspaceEmpty(project.id)}
                 autoFocus={project.id === lastAddedProjectId}
                 externalFocusField={projectFocus?.projectId === project.id ? projectFocus.field : null}

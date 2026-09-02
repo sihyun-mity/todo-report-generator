@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Project, ReportFormStore, Task } from '@/types';
-import { createEmptyProject, createEmptyTask } from '@/utils';
+import type { Project, ReportFormStore, Task, TaskDetail } from '@/types';
+import { createEmptyDetail, createEmptyProject, createEmptyTask } from '@/utils';
 
 const getTodayDate = () => {
   const now = new Date();
@@ -59,6 +59,49 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
       [bucket]: state[bucket].map((p) => {
         if (p.id !== projectId) return p;
         return { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)) };
+      }),
+    })),
+
+  // 작업(중분류) 아래 세부 항목(소분류) 조작 — 프로젝트 → 작업 순으로 찾아 들어가 해당 작업의 details만 교체한다.
+  addDetail: (bucket, projectId, taskId, id) =>
+    set((state) => {
+      const newDetail: TaskDetail = id ? { ...createEmptyDetail(), id } : createEmptyDetail();
+      return {
+        [bucket]: state[bucket].map((p) => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, details: [...t.details, newDetail] } : t)),
+          };
+        }),
+      };
+    }),
+
+  // 세부 항목은 작업과 달리 최소 개수 제약이 없다 — 전부 지우면 작업만 남는다.
+  removeDetail: (bucket, projectId, taskId, detailId) =>
+    set((state) => ({
+      [bucket]: state[bucket].map((p) => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: p.tasks.map((t) =>
+            t.id === taskId ? { ...t, details: t.details.filter((d) => d.id !== detailId) } : t
+          ),
+        };
+      }),
+    })),
+
+  updateDetail: (bucket, projectId, taskId, detailId, content) =>
+    set((state) => ({
+      [bucket]: state[bucket].map((p) => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: p.tasks.map((t) => {
+            if (t.id !== taskId) return t;
+            return { ...t, details: t.details.map((d) => (d.id === detailId ? { ...d, content } : d)) };
+          }),
+        };
       }),
     })),
 
