@@ -20,9 +20,9 @@ import {
   type Over,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import type { Project, ProjectsBucket, Task } from '@/types';
+import type { Project, ProjectsBucket, Task, TaskDetail } from '@/types';
 import { useReportFormStore } from '@/stores';
-import { ProjectItemPreview, TaskItemPreview } from '.';
+import { ProjectItemPreview, TaskDetailItemPreview, TaskItemPreview } from '.';
 
 const BUCKETS: ReadonlyArray<ProjectsBucket> = ['today', 'tomorrow'];
 
@@ -100,23 +100,96 @@ const findTaskDropTarget = (
   return { bucket: target.bucket, projectId: target.project.id, index };
 };
 
-// 프로젝트 드래그와 작업 드래그가 하나의 DndContext를 공유하므로, 드래그 종류에 맞는 droppable만
+type DetailLocation = { bucket: ProjectsBucket; taskId: string };
+
+// 세부 항목 id가 어느 버킷의 어느 작업에 속하는지 판별.
+const findDetailLocation = (
+  detailId: string,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): DetailLocation | null => {
+  for (const bucket of BUCKETS) {
+    const list = bucket === 'today' ? today : tomorrow;
+    for (const p of list) {
+      for (const t of p.tasks) {
+        if (t.details.some((d) => d.id === detailId)) return { bucket, taskId: t.id };
+      }
+    }
+  }
+  return null;
+};
+
+// 세부 항목 드래그 중 over id → 대상 작업. over가 세부 항목이면 그 항목의 작업, 작업이면 그 작업.
+const findTaskTarget = (
+  overId: string,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): { bucket: ProjectsBucket; task: Task } | null => {
+  for (const bucket of BUCKETS) {
+    const list = bucket === 'today' ? today : tomorrow;
+    for (const p of list) {
+      const asTask = p.tasks.find((t) => t.id === overId);
+      if (asTask) return { bucket, task: asTask };
+      const owner = p.tasks.find((t) => t.details.some((d) => d.id === overId));
+      if (owner) return { bucket, task: owner };
+    }
+  }
+  return null;
+};
+
+type DetailDropTarget = { bucket: ProjectsBucket; taskId: string; index: number };
+
+// 세부 항목 드래그가 현재 가리키는 삽입 위치(대상 작업 + details 내 index).
+const findDetailDropTarget = (
+  active: Active,
+  over: Over,
+  today: ReadonlyArray<Project>,
+  tomorrow: ReadonlyArray<Project>
+): DetailDropTarget | null => {
+  const overId = String(over.id);
+  const target = findTaskTarget(overId, today, tomorrow);
+  if (!target) return null;
+
+  const overDetails = target.task.details;
+  let index: number;
+  if (overId === target.task.id) {
+    // 작업 행(세부 항목이 없는 작업 포함) 위 — 맨 끝에 삽입.
+    index = overDetails.length;
+  } else {
+    const overIndex = overDetails.findIndex((d) => d.id === overId);
+    const translated = active.rect.current.translated;
+    // 드래그 중인 항목의 중심이 over 항목의 중간보다 아래면 그 아래에 끼워 넣는다.
+    const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2;
+    index = overIndex >= 0 ? overIndex + (isBelowOverItem ? 1 : 0) : overDetails.length;
+  }
+  return { bucket: target.bucket, taskId: target.task.id, index };
+};
+
+// 프로젝트·작업·세부 항목 드래그가 하나의 DndContext를 공유하므로, 드래그 종류에 맞는 droppable만
 // 후보로 남겨 서로 간섭하지 않게 한다.
-// - 프로젝트 드래그: 버킷 + 프로젝트 droppable만 (작업 제외).
-// - 작업 드래그: 모든 작업(자기 자신 포함) + 프로젝트(빈 프로젝트 포함) droppable만 (버킷 제외).
+// - 프로젝트 드래그: 버킷 + 프로젝트 droppable만.
+// - 작업 드래그: 모든 작업(자기 자신 포함) + 프로젝트(빈 프로젝트 포함) droppable만.
 //   자기 자신을 후보에 포함해야, 원래 자리로 돌아왔을 때 over===active가 되어 "그대로 놓으면 변경 없음"이 된다.
+//   세부 항목은 제외한다 — 작업 droppable이 자기 세부 항목 영역까지 덮으므로 부모 작업이 대상으로 잡힌다.
+// - 세부 항목 드래그: 모든 세부 항목(자기 자신 포함) + 작업(세부 항목이 없는 작업 포함) droppable만.
 // 추가로, 포인터가 어떤 droppable 위에도 없으면(리스트 바깥) 대상 없음(over=null)으로 둔다 →
 // 그대로 놓으면 handleDragEnd가 원래 상태로 초기화한다(Esc 취소와 동일 결과).
 const collisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
   const { today, tomorrow } = useReportFormStore.getState();
-  const projectIds = new Set([...today, ...tomorrow].map((p) => p.id));
+  const allProjects = [...today, ...tomorrow];
+  const allTasks = allProjects.flatMap((p) => p.tasks);
+  const projectIds = new Set(allProjects.map((p) => p.id));
+  const taskIds = new Set(allTasks.map((t) => t.id));
   const isProjectDrag = projectIds.has(activeId);
+  const isTaskDrag = taskIds.has(activeId);
 
   const containers = args.droppableContainers.filter((c) => {
     const id = String(c.id);
     if (isProjectDrag) return id === 'today' || id === 'tomorrow' || projectIds.has(id);
-    return id !== 'today' && id !== 'tomorrow';
+    if (isTaskDrag) return projectIds.has(id) || taskIds.has(id);
+    // 세부 항목 드래그 — 세부 항목 자신은 위 두 집합 어디에도 없으므로 여집합으로 걸러낸다.
+    return taskIds.has(id) || (!projectIds.has(id) && id !== 'today' && id !== 'tomorrow');
   });
   const filteredArgs = { ...args, droppableContainers: containers };
 
@@ -128,14 +201,14 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 // 금일/익일 두 ProjectList를 감싸는 단일 DndContext.
-// 프로젝트 정렬·버킷 간 이동과 작업 정렬·프로젝트 간 이동을 모두 여기서 처리한다.
+// 프로젝트 정렬·버킷 간 이동, 작업 정렬·프로젝트 간 이동, 세부 항목 정렬·작업 간 이동을 모두 여기서 처리한다.
 // 같은 컨테이너(버킷/프로젝트) 내 정렬은 SortableContext가 자동 처리하고, 컨테이너 경계를 넘는
 // 이동만 onDragOver에서 직접 옮긴다. store를 직접 읽고/쓰므로 별도 prop 전달 없이 자기완결적으로 동작한다.
 export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) => {
   // DndContext가 자동 생성하는 id는 SSR/CSR에서 달라져 hydration 경고가 난다 — useId로 고정.
   const dndContextId = useId();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeType, setActiveType] = useState<'project' | 'task' | null>(null);
+  const [activeType, setActiveType] = useState<'project' | 'task' | 'detail' | null>(null);
   // 드래그 취소 시 onDragOver로 옮겨둔 상태를 되돌리기 위한 스냅샷.
   const snapshotRef = useRef<{ today: Array<Project>; tomorrow: Array<Project> } | null>(null);
 
@@ -153,8 +226,10 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const state = useReportFormStore.getState();
     snapshotRef.current = { today: state.today, tomorrow: state.tomorrow };
     const id = String(event.active.id);
-    const isProject = [...state.today, ...state.tomorrow].some((p) => p.id === id);
-    setActiveType(isProject ? 'project' : 'task');
+    const allProjects = [...state.today, ...state.tomorrow];
+    const isProject = allProjects.some((p) => p.id === id);
+    const isTask = allProjects.some((p) => p.tasks.some((t) => t.id === id));
+    setActiveType(isProject ? 'project' : isTask ? 'task' : 'detail');
     setActiveId(id);
   };
 
@@ -170,6 +245,23 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const state = useReportFormStore.getState();
 
     // 드래그 종류는 React state(activeType) 대신 실제 id로 판별 — dragStart 직후의 리렌더 타이밍에 의존하지 않는다.
+    // 세부 항목 → 작업 → 프로젝트 순으로 좁은 범위부터 확인한다.
+    const activeDetailLoc = findDetailLocation(activeId, state.today, state.tomorrow);
+    if (activeDetailLoc) {
+      // 세부 항목 드래그: 작업 경계를 넘는 이동만 처리 (같은 작업 내 정렬은 SortableContext + onDragEnd).
+      const target = findDetailDropTarget(active, over, state.today, state.tomorrow);
+      if (!target || target.taskId === activeDetailLoc.taskId) return;
+      state.moveDetailToTask(
+        activeDetailLoc.bucket,
+        target.bucket,
+        activeDetailLoc.taskId,
+        target.taskId,
+        activeId,
+        target.index
+      );
+      return;
+    }
+
     const activeTaskLoc = findTaskLocation(activeId, state.today, state.tomorrow);
     if (activeTaskLoc) {
       // 작업 드래그: 프로젝트 경계를 넘는 이동만 처리 (같은 프로젝트 내 정렬은 SortableContext + onDragEnd).
@@ -221,6 +313,31 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const overId = String(over.id);
     if (activeId === overId) return;
     const state = useReportFormStore.getState();
+
+    const activeDetailLoc = findDetailLocation(activeId, state.today, state.tomorrow);
+    if (activeDetailLoc) {
+      const target = findDetailDropTarget(active, over, state.today, state.tomorrow);
+      if (!target) return;
+      // 작업 간 이동은 onDragOver에서 이미 끝났다(activeDetailLoc이 곧 대상 작업).
+      // 여기서는 같은 작업 내 최종 위치만 확정한다.
+      if (target.taskId === activeDetailLoc.taskId) {
+        if (overId !== target.taskId) {
+          state.reorderDetails(activeDetailLoc.bucket, activeDetailLoc.taskId, activeId, overId);
+        }
+        return;
+      }
+      // onDragOver를 거치지 않고 드롭된 경우(예: 단일 프레임 드롭)에 대한 방어.
+      state.moveDetailToTask(
+        activeDetailLoc.bucket,
+        target.bucket,
+        activeDetailLoc.taskId,
+        target.taskId,
+        activeId,
+        target.index
+      );
+      return;
+    }
+
     const activeLoc = findTaskLocation(activeId, state.today, state.tomorrow);
 
     if (activeLoc) {
@@ -278,6 +395,16 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
       }
     }
   }
+  let activeDetail: TaskDetail | null = null;
+  if (activeType === 'detail' && activeId) {
+    for (const t of allProjects.flatMap((p) => p.tasks)) {
+      const found = t.details.find((d) => d.id === activeId);
+      if (found) {
+        activeDetail = found;
+        break;
+      }
+    }
+  }
 
   return (
     <DndContext
@@ -299,6 +426,8 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
           <ProjectItemPreview project={activeProject} />
         ) : activeTask ? (
           <TaskItemPreview task={activeTask} />
+        ) : activeDetail ? (
+          <TaskDetailItemPreview detail={activeDetail} />
         ) : null}
       </DragOverlay>
     </DndContext>

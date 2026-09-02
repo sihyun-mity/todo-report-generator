@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { GripVertical, ListPlus, Trash2 } from 'lucide-react';
-import { useSortable } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task } from '@/types';
 import { cn, createId } from '@/utils';
 import { useOnClickOutside } from '@/hooks';
-import { TaskDetailItem } from '.';
+import { TaskDetailItem, type RemoveOptions } from '.';
 
-export type TaskFocusField = 'content' | 'progress';
+export type TaskFocusField = 'content' | 'progress' | 'detail';
 
 type TaskItemProps = {
   task: Task;
@@ -18,11 +18,13 @@ type TaskItemProps = {
   canRemove: boolean;
   onAddDetail: (detailId: string) => void;
   onUpdateDetail: (detailId: string, content: string) => void;
-  onRemoveDetail: (detailId: string) => void;
+  onRemoveDetail: (detailId: string, options?: RemoveOptions) => void;
   onContentEnter?: () => void;
   onContentBackspaceEmpty?: () => void;
   onProgressEnter?: () => void;
   focusField?: TaskFocusField | null;
+  // focusField가 'detail'일 때 포커스할 세부 항목 id.
+  focusDetailId?: string;
   focusNonce?: number;
 };
 
@@ -49,6 +51,7 @@ export const TaskItem = ({
   onContentBackspaceEmpty,
   onProgressEnter,
   focusField,
+  focusDetailId,
   focusNonce,
 }: Readonly<TaskItemProps>) => {
   const contentRef = useRef<HTMLInputElement>(null);
@@ -107,8 +110,24 @@ export const TaskItem = ({
     setDetailFocus((prev) => ({ detailId, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
+  // 외부(실행 취소 토스트 등)에서 특정 세부 항목으로 보내는 포커스 신호를 내부 detailFocus로 합친다.
+  // effect 안에서 setState하지 않고(react-hooks/set-state-in-effect), anchor state + 렌더 중 비교로
+  // "prop nonce가 바뀐 렌더"에서 1회만 보정한다. 내부 신호(추가·Enter·Backspace)와 nonce 카운터가
+  // 달라 단순 비교로는 최신 신호를 가릴 수 없으므로, 외부 신호를 내부 카운터로 흡수해 하나로 만든다.
+  const [externalNonceAnchor, setExternalNonceAnchor] = useState(focusNonce);
+  if (focusNonce !== externalNonceAnchor) {
+    setExternalNonceAnchor(focusNonce);
+    if (focusField === 'detail' && focusDetailId) focusDetail(focusDetailId);
+  }
+
+  // 작업 내용이 비어 있으면 세부 항목을 붙일 상위 항목이 없는 셈이라, 보고서 텍스트에
+  // `- 작업 내용 (0%)` 플레이스홀더 아래 세부 항목만 매달린 깨진 양식이 만들어진다.
+  // 추가 버튼과 Enter 로 이어 만드는 경로 양쪽 모두를 이 값으로 막는다.
+  const canAddDetail = task.content.trim() !== '';
+
   // 새 세부 항목의 ID를 먼저 생성해 focus 대상으로 기록한 뒤 추가한다 (작업 추가와 동일한 패턴).
   const handleAddDetail = () => {
+    if (!canAddDetail) return;
     const newDetailId = createId();
     focusDetail(newDetailId);
     onAddDetail(newDetailId);
@@ -125,8 +144,13 @@ export const TaskItem = ({
   const handleDetailBackspaceEmpty = (detailId: string, index: number) => {
     if (index > 0) focusDetail(task.details[index - 1].id);
     else contentRef.current?.focus();
-    onRemoveDetail(detailId);
+    // 빈 세부 항목이라 복원해도 의미가 없으므로 silent로 토스트를 띄우지 않는다.
+    onRemoveDetail(detailId, { silent: true });
   };
+
+  // SortableContext items는 참조가 안정적이어야 한다 — 매 렌더 새 배열이면 dnd-kit이 매 프레임
+  // "항목 변경"으로 오인해(itemsHaveChanged) 변위되는 세부 항목의 transition을 꺼 애니메이션 없이 점프한다.
+  const detailIds = useMemo(() => task.details.map((d) => d.id), [task.details]);
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -217,8 +241,9 @@ export const TaskItem = ({
         <button
           type="button"
           onClick={handleAddDetail}
-          className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-950/30"
-          title="세부 항목 추가"
+          disabled={!canAddDetail}
+          className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-blue-50 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-blue-950/30"
+          title={canAddDetail ? '세부 항목 추가' : '작업 내용을 먼저 입력해주세요'}
         >
           <ListPlus size={16} />
         </button>
@@ -233,19 +258,23 @@ export const TaskItem = ({
       </div>
       {task.details.length > 0 && (
         // 세부 항목은 작업 내용 input 시작선에 맞춰 한 단계 더 들여쓴다 (grip 버튼 폭 + gap).
-        <div className="mt-1.5 ml-6 space-y-1.5 sm:ml-8">
-          {task.details.map((detail, index) => (
-            <TaskDetailItem
-              key={detail.id}
-              detail={detail}
-              onUpdate={(content) => onUpdateDetail(detail.id, content)}
-              onRemove={() => onRemoveDetail(detail.id)}
-              onEnter={() => handleDetailEnter(index)}
-              onBackspaceEmpty={() => handleDetailBackspaceEmpty(detail.id, index)}
-              isFocused={detailFocus?.detailId === detail.id}
-              focusNonce={detailFocus?.detailId === detail.id ? detailFocus.nonce : 0}
-            />
-          ))}
+        <div className="mt-2 ml-6 space-y-2 sm:ml-8">
+          {/* 세부 항목 정렬·작업 간 이동은 상위 ProjectBoard의 단일 DndContext가 처리한다.
+              여기서는 SortableContext 등록만 담당한다. */}
+          <SortableContext items={detailIds} strategy={verticalListSortingStrategy}>
+            {task.details.map((detail, index) => (
+              <TaskDetailItem
+                key={detail.id}
+                detail={detail}
+                onUpdate={(content) => onUpdateDetail(detail.id, content)}
+                onRemove={() => onRemoveDetail(detail.id)}
+                onEnter={() => handleDetailEnter(index)}
+                onBackspaceEmpty={() => handleDetailBackspaceEmpty(detail.id, index)}
+                isFocused={detailFocus?.detailId === detail.id}
+                focusNonce={detailFocus?.detailId === detail.id ? detailFocus.nonce : 0}
+              />
+            ))}
+          </SortableContext>
         </div>
       )}
     </div>

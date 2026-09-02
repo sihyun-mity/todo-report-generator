@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
+import { GripVertical, Trash2 } from 'lucide-react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { TaskDetail } from '@/types';
 
 type TaskDetailItemProps = {
@@ -31,6 +33,15 @@ export const TaskDetailItem = ({
 }: Readonly<TaskDetailItemProps>) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: detail.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    // 드래그 중인 행은 다른 행 위에 떠 있는 효과
+    zIndex: isDragging ? 10 : undefined,
+  };
+
   useEffect(() => {
     if (isFocused) inputRef.current?.focus();
   }, [isFocused, focusNonce]);
@@ -52,10 +63,17 @@ export const TaskDetailItem = ({
   };
 
   return (
-    <div className="flex items-center gap-1 sm:gap-1.5">
-      <span aria-hidden className="shrink-0 px-1 text-xs text-zinc-300 dark:text-zinc-600">
-        ·
-      </span>
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1 sm:gap-1.5">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="세부 항목 순서 변경"
+        title="드래그해서 순서 변경"
+        className="shrink-0 cursor-grab touch-none rounded-md p-0.5 text-zinc-300 transition-colors hover:bg-zinc-100 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+      >
+        <GripVertical size={12} />
+      </button>
       <input
         ref={inputRef}
         type="text"
@@ -73,8 +91,20 @@ export const TaskDetailItem = ({
         title="세부 항목 삭제"
         className="shrink-0 cursor-pointer rounded-md p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
       >
-        <X size={14} />
+        <Trash2 size={14} />
       </button>
     </div>
   );
 };
+
+// DragOverlay에서 그릴 정적 미리보기 — 인터랙션 없는 단순 형태.
+export const TaskDetailItemPreview = ({ detail }: Readonly<{ detail: TaskDetail }>) => (
+  <div className="pointer-events-none flex items-center gap-1 rounded-md bg-white shadow-lg sm:gap-1.5 dark:bg-zinc-900">
+    <span className="shrink-0 p-0.5 text-zinc-300 dark:text-zinc-600">
+      <GripVertical size={12} />
+    </span>
+    <div className="min-w-0 flex-1 truncate rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 sm:px-2.5 sm:text-sm dark:border-zinc-700/50 dark:text-zinc-300">
+      {detail.content || '세부 내용'}
+    </div>
+  </div>
+);

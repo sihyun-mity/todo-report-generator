@@ -13,7 +13,8 @@ type Accent = 'today' | 'tomorrow';
 // 외부에서 ProjectList로 보내는 포커스 신호. nonce가 변할 때마다 트리거된다.
 export type ProjectListFocusRequest =
   | { kind: 'project'; projectId: string; nonce: number }
-  | { kind: 'task'; projectId: string; taskId: string; nonce: number };
+  | { kind: 'task'; projectId: string; taskId: string; nonce: number }
+  | { kind: 'detail'; projectId: string; taskId: string; detailId: string; nonce: number };
 
 // silent: true 면 실행 취소 토스트를 띄우지 않고 조용히 삭제만 한다.
 // 빈 항목 위에서 Backspace로 삭제하는 경로처럼 복원할 콘텐츠가 없는 경우에 사용.
@@ -31,7 +32,7 @@ type ProjectListProps = {
   onRemoveTask: (projectId: string, taskId: string, options?: RemoveOptions) => void;
   onAddDetail: (projectId: string, taskId: string, detailId: string) => void;
   onUpdateDetail: (projectId: string, taskId: string, detailId: string, content: string) => void;
-  onRemoveDetail: (projectId: string, taskId: string, detailId: string) => void;
+  onRemoveDetail: (projectId: string, taskId: string, detailId: string, options?: RemoveOptions) => void;
   onImportIncomplete?: () => void;
   focusRequest?: ProjectListFocusRequest | null;
 };
@@ -69,24 +70,35 @@ export const ProjectList = ({
   // Backspace 삭제 후 이전 항목 포커스, 또는 외부 focusRequest를 sync 받는 통합 상태.
   const [projectFocus, setProjectFocus] = useState<{
     projectId: string;
-    field: 'name' | 'last-task' | 'task';
+    field: 'name' | 'last-task' | 'task' | 'detail';
     taskId?: string;
+    detailId?: string;
     nonce: number;
   } | null>(null);
 
   // 외부 focusRequest의 nonce가 바뀔 때마다 내부 projectFocus로 동기화한다.
   useEffect(() => {
     if (!focusRequest) return;
-    setProjectFocus(
-      focusRequest.kind === 'project'
-        ? { projectId: focusRequest.projectId, field: 'name', nonce: focusRequest.nonce }
-        : {
-            projectId: focusRequest.projectId,
-            field: 'task',
-            taskId: focusRequest.taskId,
-            nonce: focusRequest.nonce,
-          }
-    );
+    if (focusRequest.kind === 'project') {
+      setProjectFocus({ projectId: focusRequest.projectId, field: 'name', nonce: focusRequest.nonce });
+      return;
+    }
+    if (focusRequest.kind === 'task') {
+      setProjectFocus({
+        projectId: focusRequest.projectId,
+        field: 'task',
+        taskId: focusRequest.taskId,
+        nonce: focusRequest.nonce,
+      });
+      return;
+    }
+    setProjectFocus({
+      projectId: focusRequest.projectId,
+      field: 'detail',
+      taskId: focusRequest.taskId,
+      detailId: focusRequest.detailId,
+      nonce: focusRequest.nonce,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.nonce]);
 
@@ -179,11 +191,12 @@ export const ProjectList = ({
                 onRemoveTask={(taskId, options) => onRemoveTask(project.id, taskId, options)}
                 onAddDetail={(taskId, detailId) => onAddDetail(project.id, taskId, detailId)}
                 onUpdateDetail={(taskId, detailId, content) => onUpdateDetail(project.id, taskId, detailId, content)}
-                onRemoveDetail={(taskId, detailId) => onRemoveDetail(project.id, taskId, detailId)}
+                onRemoveDetail={(taskId, detailId, options) => onRemoveDetail(project.id, taskId, detailId, options)}
                 onBackspaceEmpty={() => handleProjectBackspaceEmpty(project.id)}
                 autoFocus={project.id === lastAddedProjectId}
                 externalFocusField={projectFocus?.projectId === project.id ? projectFocus.field : null}
                 externalFocusTaskId={projectFocus?.projectId === project.id ? projectFocus.taskId : undefined}
+                externalFocusDetailId={projectFocus?.projectId === project.id ? projectFocus.detailId : undefined}
                 externalFocusNonce={projectFocus?.projectId === project.id ? projectFocus.nonce : 0}
               />
             ))

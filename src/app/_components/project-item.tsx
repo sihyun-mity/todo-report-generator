@@ -17,20 +17,23 @@ type ProjectItemProps = {
   onRemoveTask: (taskId: string, options?: RemoveOptions) => void;
   onAddDetail: (taskId: string, detailId: string) => void;
   onUpdateDetail: (taskId: string, detailId: string, content: string) => void;
-  onRemoveDetail: (taskId: string, detailId: string) => void;
+  onRemoveDetail: (taskId: string, detailId: string, options?: RemoveOptions) => void;
   onBackspaceEmpty?: () => void;
   canRemove: boolean;
   autoFocus?: boolean;
   // 외부(ProjectList)에서 명시적으로 트리거하는 포커스 신호. nonce가 바뀔 때만 동작한다.
-  // 'task' 사용 시 externalFocusTaskId로 대상 작업을 지정한다.
-  externalFocusField?: 'name' | 'last-task' | 'task' | null;
+  // 'task' 사용 시 externalFocusTaskId로, 'detail' 사용 시 여기에 externalFocusDetailId까지 지정한다.
+  externalFocusField?: 'name' | 'last-task' | 'task' | 'detail' | null;
   externalFocusTaskId?: string;
+  externalFocusDetailId?: string;
   externalFocusNonce?: number;
 };
 
 type TaskFocus = {
   taskId: string;
   field: TaskFocusField;
+  // field가 'detail'일 때만 채워진다.
+  detailId?: string;
   nonce: number;
 };
 
@@ -52,6 +55,7 @@ export const ProjectItem = ({
   autoFocus,
   externalFocusField,
   externalFocusTaskId,
+  externalFocusDetailId,
   externalFocusNonce,
 }: Readonly<ProjectItemProps>) => {
   const [taskFocus, setTaskFocus] = useState<TaskFocus | null>(null);
@@ -70,11 +74,11 @@ export const ProjectItem = ({
     }
   }, [autoFocus]);
 
-  const focusTask = (taskId: string, field: TaskFocusField) => {
-    setTaskFocus((prev) => ({ taskId, field, nonce: (prev?.nonce ?? 0) + 1 }));
+  const focusTask = (taskId: string, field: TaskFocusField, detailId?: string) => {
+    setTaskFocus((prev) => ({ taskId, field, detailId, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
-  // 외부에서 보내는 포커스 신호 처리 — 프로젝트명, 마지막 작업, 또는 특정 작업으로 포커스 이동.
+  // 외부에서 보내는 포커스 신호 처리 — 프로젝트명, 마지막 작업, 특정 작업, 또는 특정 세부 항목으로 이동.
   // nonce가 바뀔 때마다 실행되어 같은 대상도 반복 포커스 가능하다.
   useEffect(() => {
     if (!externalFocusField || !externalFocusNonce) return;
@@ -86,10 +90,14 @@ export const ProjectItem = ({
       focusTask(externalFocusTaskId, 'content');
       return;
     }
+    if (externalFocusField === 'detail' && externalFocusTaskId && externalFocusDetailId) {
+      focusTask(externalFocusTaskId, 'detail', externalFocusDetailId);
+      return;
+    }
     const lastTask = project.tasks[project.tasks.length - 1];
     if (lastTask) focusTask(lastTask.id, 'content');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalFocusField, externalFocusTaskId, externalFocusNonce]);
+  }, [externalFocusField, externalFocusTaskId, externalFocusDetailId, externalFocusNonce]);
 
   // 새 태스크의 ID를 먼저 생성하여 focus 대상으로 기록한 뒤 추가한다.
   const handleAddTask = () => {
@@ -220,11 +228,12 @@ export const ProjectItem = ({
                 canRemove={project.tasks.length > 1}
                 onAddDetail={(detailId) => onAddDetail(task.id, detailId)}
                 onUpdateDetail={(detailId, content) => onUpdateDetail(task.id, detailId, content)}
-                onRemoveDetail={(detailId) => onRemoveDetail(task.id, detailId)}
+                onRemoveDetail={(detailId, options) => onRemoveDetail(task.id, detailId, options)}
                 onContentEnter={() => handleTaskContentEnter(task.id, index)}
                 onContentBackspaceEmpty={() => handleTaskContentBackspaceEmpty(task.id, index)}
                 onProgressEnter={() => handleTaskProgressEnter(index)}
                 focusField={taskFocus?.taskId === task.id ? taskFocus.field : null}
+                focusDetailId={taskFocus?.taskId === task.id ? taskFocus.detailId : undefined}
                 focusNonce={taskFocus?.taskId === task.id ? taskFocus.nonce : 0}
               />
             ))

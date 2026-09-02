@@ -66,6 +66,18 @@ export type ReportFormStore = {
   addDetail: (bucket: ProjectsBucket, projectId: string, taskId: string, id?: string) => void;
   removeDetail: (bucket: ProjectsBucket, projectId: string, taskId: string, detailId: string) => void;
   updateDetail: (bucket: ProjectsBucket, projectId: string, taskId: string, detailId: string, content: string) => void;
+  // 세부 항목 정렬/이동은 작업 id 만으로 대상을 특정한다 — 작업 id 는 보드 전체에서 유일하므로
+  // 프로젝트 id 를 함께 넘길 필요가 없다. bucket 은 set 할 배열을 고르기 위해 받는다.
+  reorderDetails: (bucket: ProjectsBucket, taskId: string, fromId: string, toId: string) => void;
+  // 세부 항목을 다른 작업(프로젝트·버킷도 넘나들 수 있음)으로 이동. toIndex는 대상 작업에서 삽입될 위치.
+  moveDetailToTask: (
+    fromBucket: ProjectsBucket,
+    toBucket: ProjectsBucket,
+    fromTaskId: string,
+    toTaskId: string,
+    detailId: string,
+    toIndex: number
+  ) => void;
   reorderProjects: (bucket: ProjectsBucket, fromId: string, toId: string) => void;
   // 프로젝트를 다른 버킷(금일↔익일)으로 이동. toIndex는 대상 버킷에서 삽입될 위치.
   moveProjectToBucket: (
