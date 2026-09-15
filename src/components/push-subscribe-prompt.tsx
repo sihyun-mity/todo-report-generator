@@ -7,8 +7,9 @@ import { useScrollLock } from 'usehooks-ts';
 import { DIALOG_PRIORITY_PUSH_SUBSCRIBE, DIALOG_PUSH_SUBSCRIBE, PUSH_PROMPT_DISMISSED_KEY } from '@/constants';
 import { isGuestMode } from '@/lib/guest';
 import { getExistingSubscription, isPushSupported, subscribeToPush } from '@/lib/push/push-client';
+import Link from 'next/link';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
-import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '.';
+import { Portal, useDismissOnBack } from '.';
 
 // 로그인 직후 홈에서 한 번 뜨는 작성 알림 구독 권유 다이얼로그.
 // 노출 조건: 로그인 계정 + 푸시 지원 + 권한 거부 안 함 + 이 기기 미구독 + "나중에"로 닫은 적 없음.
@@ -21,15 +22,12 @@ export function PushSubscribePrompt() {
   // 큐에서 자신이 활성일 때만 실제로 열린다 (다른 자동 다이얼로그와 동시 노출 방지).
   const isActive = useIsActiveDialog(DIALOG_PUSH_SUBSCRIBE);
 
-  // 페이지 진입 View Transition 이 진행 중이면 전환이 끝난 뒤에 열리도록 한 박자 미룬다.
-  const deferredOpen = useDeferOpenDuringViewTransition(isActive);
-
   const { lock, unlock } = useScrollLock({ autoLock: false });
   useEffect(() => {
-    if (deferredOpen) lock();
+    if (isActive) lock();
     else unlock();
     return () => unlock();
-  }, [deferredOpen, lock, unlock]);
+  }, [isActive, lock, unlock]);
 
   useEffect(() => {
     if (isGuestMode()) return;
@@ -64,16 +62,16 @@ export function PushSubscribePrompt() {
     release(DIALOG_PUSH_SUBSCRIBE);
   }, [release]);
 
-  useDismissOnBack(deferredOpen, dismiss);
+  useDismissOnBack(isActive, dismiss);
 
   useEffect(() => {
-    if (!deferredOpen) return;
+    if (!isActive) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') dismiss();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deferredOpen, dismiss]);
+  }, [isActive, dismiss]);
 
   const handleEnable = async () => {
     if (subscribing) return;
@@ -101,7 +99,7 @@ export function PushSubscribePrompt() {
     }
   };
 
-  if (!deferredOpen) return null;
+  if (!isActive) return null;
 
   return (
     <Portal>

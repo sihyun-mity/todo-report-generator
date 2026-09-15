@@ -4,7 +4,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { CloudUpload, X } from 'lucide-react';
 import { isGuestMode } from '@/lib/guest';
 import { GUEST_LOGIN_BANNER_DISMISS_KEY } from '@/constants';
-import { Link } from '.';
+import Link from 'next/link';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키·localStorage를 읽어 동기화 — hydration mismatch 방지
 const subscribeNoop = () => () => {};

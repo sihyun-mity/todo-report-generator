@@ -13,7 +13,7 @@ import {
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import type { Theme } from '@/types';
 import { cn } from '@/utils';
-import { Portal, useDeferOpenDuringViewTransition, useDismissOnBack, useTheme } from '.';
+import { Portal, useDismissOnBack, useTheme } from '.';
 
 // 화면 모드 선택지 — ThemeToggle 과 같은 라이트 → 다크 → 자동 순서를 유지한다.
 const THEME_OPTIONS = [
@@ -58,15 +58,12 @@ export function ThemePromptDialog() {
   // 큐에서 자신이 활성일 때만 실제로 열린다 (새소식 등 다른 자동 다이얼로그와 동시 노출 방지).
   const isActive = useIsActiveDialog(DIALOG_THEME_PROMPT);
 
-  // 페이지 진입 View Transition 이 진행 중이면 전환이 끝난 뒤에 열리도록 한 박자 미룬다.
-  const deferredOpen = useDeferOpenDuringViewTransition(isActive);
-
   const { lock, unlock } = useScrollLock({ autoLock: false });
   useEffect(() => {
-    if (deferredOpen) lock();
+    if (isActive) lock();
     else unlock();
     return () => unlock();
-  }, [deferredOpen, lock, unlock]);
+  }, [isActive, lock, unlock]);
 
   useEffect(() => {
     if (!shouldAskThemeMode()) return;
@@ -93,16 +90,16 @@ export function ThemePromptDialog() {
     release(DIALOG_THEME_PROMPT);
   }, [setPreviewTheme, release]);
 
-  useDismissOnBack(deferredOpen, cancelAndClose);
+  useDismissOnBack(isActive, cancelAndClose);
 
   useEffect(() => {
-    if (!deferredOpen) return;
+    if (!isActive) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') cancelAndClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deferredOpen, cancelAndClose]);
+  }, [isActive, cancelAndClose]);
 
   // 선택은 화면에만 반영한다 — 저장은 "시작하기" 를 눌렀을 때만.
   const handleSelect = (theme: Theme) => {
@@ -110,7 +107,7 @@ export function ThemePromptDialog() {
     setPreviewTheme(theme);
   };
 
-  if (!deferredOpen) return null;
+  if (!isActive) return null;
 
   return (
     <Portal>
@@ -119,12 +116,6 @@ export function ThemePromptDialog() {
         aria-modal="true"
         aria-labelledby="theme-prompt-title"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6"
-        // root snapshot 에서 분리된 별도 view-transition group 으로 만든다.
-        // 첫 진입 직후엔 데이터가 채워지며 View Transition 이 연달아 돌고, 그동안 화면은
-        // `::view-transition` 스냅샷으로 덮인다. 이 다이얼로그는 스냅샷이 찍힌 뒤에 DOM 에
-        // 붙기 때문에(Portal 이 dynamic ssr:false) root 스냅샷에 포함되지 못해 떴다 사라졌다
-        // 하는 깜빡임이 생겼다. 별도 group 으로 분리하면 전환 중에도 자기 자리에 그대로 그려진다.
-        style={{ viewTransitionName: 'auto-dialog' }}
         onClick={cancelAndClose}
       >
         <div

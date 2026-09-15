@@ -12,11 +12,6 @@
  *   가 카운트만큼 `history.back()` 으로 한 칸씩 자동 흡수한다 → 다이얼로그를 여러 개 연속으로 X 로
  *   닫아도 사용자는 back 한 번으로 실제 이전 화면에 도달한다 (모든 흡수는 동일 popstate chain 안에서 일어남).
  *
- *   흡수는 **사용자가 이동한 방향**으로 한다 (`lastPopstateDirection`). 뒤로가기로 stale sentinel
- *   위에 올라섰으면 `history.back()`, 앞으로가기로 올라섰으면 `history.forward()`. 항상 back 으로만
- *   흡수하면 forward 스택에 남은 sentinel 이 앞으로가기를 한 칸 삼켜, "모달 X 닫기 → 다른 페이지
- *   이동 → 뒤로가기 → 앞으로가기" 에서 앞으로가기가 제자리에 머무는 문제가 생긴다.
- *
  *   cleanup 에서 곧장 `history.back()` 을 부르지 않는 이유: 같은 click 안에서 setOpen(false) 와
  *   router.push/replace 가 함께 호출되면(예: NewsDialog 의 "이전 소식 모두 보기" 링크) cleanup 은
  *   urgent commit 직후 sync 로 실행되는데, 이 시점엔 아직 router 의 history 반영 전이다. 여기서
@@ -25,27 +20,15 @@
  *   않고 카운터만 +1 하며, 실제 정리는 다음 popstate(back) 시점으로 미룬다. router 가 동작한
  *   경우엔 entry 가 router 에 의해 덮여 sentinel 이 사라지므로 cleanup 은 카운트를 올리지 않으며,
  *   라우트 변경 시 `clearBackStackOnRouteChange` 가 카운터를 0 으로 리셋한다.
- *
- * popstate View Transition 엔진(`popstate-view-transition.tsx`)과의 공존
- * - sentinel pushState 는 URL 을 바꾸지 않는다(`url` 미지정). popstate 엔진은
- *   `destPath === lastCommittedPath` 일 때 전환을 인수하지 않으므로, 다이얼로그 back-close 는
- *   페이지 전환 애니메이션을 트리거하지 않는다.
- * - popstate 엔진의 리스너는 모듈 로드 시점에, `BackButtonHandler` 의 리스너는 useEffect 에서
- *   등록된다(엔진이 먼저 실행). 실제 라우트 이동이면 엔진이 `stopImmediatePropagation` 으로
- *   가로채므로 두 경로가 섞이지 않고, sentinel back 이면 엔진이 그냥 흘려보내 `BackButtonHandler`
- *   가 처리한다.
  */
 
-/** history.state 에 박는 sentinel 마크 키. popstate 엔진의 `__vtHistoryIdx` 와 공존한다. */
+/** history.state 에 박는 sentinel 마크 키. */
 const SENTINEL_KEY = '__trgBackStack';
 
 type BackHandler = {
   readonly id: number;
   readonly onClose: () => void;
 };
-
-/** 직전 popstate 의 history 이동 방향. stale sentinel 흡수 방향 결정에 쓴다. */
-type PopstateDirection = 'back' | 'forward';
 
 let stack: Array<BackHandler> = [];
 let nextId = 1;
@@ -68,23 +51,15 @@ let suppressNextPop = 0;
  */
 let staleSentinelCount = 0;
 
-/**
- * 직전 popstate 의 이동 방향. popstate view transition 엔진이 history idx 비교로 판정해
- * `notePopstateDirection` 으로 알려준다 (엔진의 리스너가 모듈 로드 시점 등록이라 항상 먼저 실행).
- * 판정 불가(앱 외부에서 만든 entry 등)면 back 으로 둔다 — 뒤로가기가 압도적으로 흔한 경로다.
- */
-let lastPopstateDirection: PopstateDirection = 'back';
-
 const isClient = (): boolean => typeof window !== 'undefined';
 
-/** history 를 `lastPopstateDirection` 방향으로 한 칸 이동시켜 stale sentinel entry 를 흡수한다. */
+/** history 를 뒤로 한 칸 이동시켜 stale sentinel entry 를 흡수한다. */
 function absorbOneEntry(): void {
   if (!isClient()) return;
   try {
-    if (lastPopstateDirection === 'forward') window.history.forward();
-    else window.history.back();
+    window.history.back();
   } catch {
-    /* 더 이상 그 방향으로 이동할 entry 가 없으면 흡수 종료 */
+    /* 더 이상 이동할 entry 가 없으면 흡수 종료 */
   }
 }
 
@@ -162,20 +137,6 @@ export function suppressNextPopstate(count = 1): void {
 }
 
 /**
- * popstate view transition 엔진이 매 popstate 마다 판정한 이동 방향을 알려준다.
- * `handlePopstate` 의 stale sentinel 흡수가 사용자가 이동한 방향으로 일어나게 하는 유일한 입력.
- *
- * 엔진이 `stopImmediatePropagation()` 으로 인수한 popstate 는 VT 안에서 합성 이벤트로
- * 재발생(redispatch)해 `handlePopstate` 에 도달하는데, 그 사이 이 값은 갱신되지 않으므로
- * 원래 이벤트의 방향이 그대로 유지된다.
- *
- * @param direction 판정 불가면 `null` — 이 경우 back 으로 폴백한다.
- */
-export function notePopstateDirection(direction: PopstateDirection | null): void {
-  lastPopstateDirection = direction ?? 'back';
-}
-
-/**
  * popstate 리스너 진입점.
  * 0) `suppressNextPop` 이 있으면(router wrapper 가 sentinel 을 pop 하려고 호출한 직후)
  *    카운트를 -1 하고 그대로 흘려보낸다. stack/stale 흡수가 발화하지 않게 막는다.
@@ -198,7 +159,7 @@ export function handlePopstate(event: PopStateEvent): boolean {
     top.onClose();
     return true;
   }
-  if (staleSentinelCount > 0 && lastPopstateDirection === 'back') {
+  if (staleSentinelCount > 0) {
     // history 에 남아 있던 stale sentinel 한 칸을 흡수. 카운트가 더 있으면 이 `history.back()`
     // 으로 발생하는 다음 popstate 에서 이 분기로 재진입해 추가 흡수한다.
     staleSentinelCount -= 1;

@@ -5,7 +5,7 @@ import { Check, Copy, Maximize2, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
-import { Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '@/components';
+import { Portal, useDismissOnBack } from '@/components';
 
 type ReportPreviewDialogProps = {
   isOpen: boolean;
@@ -27,34 +27,31 @@ export function ReportPreviewDialog({
   isCopyDisabled,
   onCopy,
 }: Readonly<ReportPreviewDialogProps>) {
-  // Portal 로 root group 에 마운트되는 다이얼로그라, 페이지 전환(page-shell 슬라이드) 도중에는
-  // page-shell snapshot 이 위로 스택돼 비친다. 전환이 끝난 뒤에 열리도록 통과시킨다.
-  const deferredOpen = useDeferOpenDuringViewTransition(isOpen);
   const { lock, unlock } = useScrollLock({ autoLock: false });
 
   const charCount = text.length;
   const hasDate = reportDate.month.trim() !== '' && reportDate.day.trim() !== '';
 
   useEffect(() => {
-    if (!deferredOpen) return;
+    if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [deferredOpen, onClose]);
+  }, [isOpen, onClose]);
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 다이얼로그가 닫히도록 BackStack 에 등록한다.
-  useDismissOnBack(deferredOpen, onClose);
+  useDismissOnBack(isOpen, onClose);
 
   // 다이얼로그가 열려 있는 동안 배경 스크롤을 잠근다.
   useEffect(() => {
-    if (deferredOpen) lock();
+    if (isOpen) lock();
     else unlock();
     return () => unlock();
-  }, [deferredOpen, lock, unlock]);
+  }, [isOpen, lock, unlock]);
 
-  if (!deferredOpen) return null;
+  if (!isOpen) return null;
 
   return (
     <Portal>

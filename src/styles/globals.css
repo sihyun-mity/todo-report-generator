@@ -8,7 +8,6 @@
 @import './press-feedback.css';
 @import './utility.css';
 @import './variables.css';
-@import './view-transitions.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

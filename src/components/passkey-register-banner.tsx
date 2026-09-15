@@ -6,7 +6,7 @@ import { KeyRound, X } from 'lucide-react';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
 import { isGuestMode } from '@/lib/guest';
 import { PASSKEY_BANNER_DISMISS_KEY } from '@/constants';
-import { Link } from '.';
+import Link from 'next/link';
 
 // 홈 상단에 한 번 뜨는 패스키 등록 유도 배너.
 // 노출 조건: 로그인 계정 + 패스키 0개 + WebAuthn 지원 + 사용자가 "나중에" 눌러 닫은 적 없음.

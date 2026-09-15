@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { fetchAllNews, getViewerUserId } from '@/lib/news';
 import { createClient } from '@/lib/supabase/server';
-import { Link, NewsAudienceBadge } from '@/components';
+import Link from 'next/link';
+import { NewsAudienceBadge } from '@/components';
 import { staticMetadata } from '@/utils';
 
 export const metadata: Metadata = staticMetadata({

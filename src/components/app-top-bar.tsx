@@ -7,7 +7,8 @@ import { createClient } from '@/lib/supabase/client';
 import { clearGuestLocalData, isGuestMode } from '@/lib/guest';
 import { useOnClickOutside, useRouter } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
-import { Link, ThemeToggle } from '.';
+import Link from 'next/link';
+import { ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
 const subscribeNoop = () => () => {};

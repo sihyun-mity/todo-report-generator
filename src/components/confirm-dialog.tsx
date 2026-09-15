@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { AlertTriangle, HelpCircle } from 'lucide-react';
-import { Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '.';
+import { Portal, useDismissOnBack } from '.';
 import { cn } from '@/utils';
 
 type Props = {
@@ -26,24 +26,19 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: Readonly<Props>) {
-  // Portal 로 root group 에 마운트되는 다이얼로그라, 페이지 전환(page-shell 슬라이드)이
-  // 진행 중이면 page-shell snapshot 이 이 다이얼로그 위로 스택돼 비친다. 전환이 끝난 뒤에
-  // 열리도록 통과시킨다. 전환이 없으면 즉시 열린다.
-  const deferredOpen = useDeferOpenDuringViewTransition(isOpen);
-
   useEffect(() => {
-    if (!deferredOpen) return;
+    if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [deferredOpen, onCancel]);
+  }, [isOpen, onCancel]);
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 다이얼로그가 닫히도록 BackStack 에 등록한다.
-  useDismissOnBack(deferredOpen, onCancel);
+  useDismissOnBack(isOpen, onCancel);
 
-  if (!deferredOpen) return null;
+  if (!isOpen) return null;
 
   const Icon = variant === 'danger' ? AlertTriangle : HelpCircle;
 

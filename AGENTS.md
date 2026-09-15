@@ -130,22 +130,6 @@ Next.js 기본 파일명이 아니다. 동작:
 - **prop 변화로 state 리셋**: 월이 바뀔 때 `localPage`를 1로 되돌리는 등은 `pageMonthAnchor` 같은 anchor state + 렌더 중 비교로 처리 (effect 사용 X).
 - **로딩 중 레이아웃 유지**: `isLoaded` / `loadingMonths`로 카드 스켈레톤을 렌더해 컴포넌트가 비어 보이지 않도록 한다. 캘린더 월 라벨은 서버 날짜로 첫 렌더부터 확정되므로 `isReady`는 `true`로 고정하고, 기록 도트는 데이터 도착 시 채워진다. 카드 스켈레톤(`HistoryCardSkeleton`)은 실제 카드의 `p-3 + mb-1 + 22px 상단 행 + text-[11px] 2줄 + mt-2 + text-[10px] timestamp` 구조를 그대로 따라가 레이아웃 점프를 막는다.
 
-### View Transitions
-
-페이지 전환 애니메이션은 React 19 `<ViewTransition>` 으로 처리한다. Next.js 16.3 부터는 App Router 에서 별도 설정 없이 동작한다 (16.2 까지 필요했던 `experimental.viewTransition: true` 플래그는 config 스키마에서 제거됐다 — 다시 넣으면 타입 에러가 난다).
-
-> **메모리 주의 — OLD 스냅샷은 뷰포트 클램프로 캡처된다.** 과거 WebKit(iOS) OOM 완화를 위해 전환을 임시 비활성화했었으나, 근본 원인이던 "OLD 스냅샷 = 페이지 전체 높이 텍스처(폭×높이×dpr²×4byte, 긴 기록 목록에서 전환당 수십~100MB + GPU 최대 텍스처 초과 시 전환 abort)"를 `page-view-transition.tsx` 의 `clampShellForOldCapture` 가 해소하면서 게이트(`isViewTransitionDisabled`)는 제거됐다 — 전 엔진에서 전환이 동작한다. 캡처 직전 `#app-page-shell` 을 보던 뷰포트 슬라이스로 일시 클램프(`height=vh + overflow:hidden + scrollTop` 슬라이스, `position:relative + top` 위치 보정, `<html> min-height` 로 문서 높이 고정) → 캡처 직후(update 콜백 첫 줄, frozen 스냅샷이 화면을 덮는 중) 멱등 원복. 클램프 스냅샷은 스크롤이 이미 반영돼 `--vt-old-shift` 0px 이며, popstate pop 공식도 `wasLastOldCaptureClamped()` 로 유효 OLD 스크롤을 0 취급해야 한다 (이 연동을 깨면 뒤로가기 시 OLD 가 화면 밖으로 벗어난다). 뷰포트보다 짧은 페이지는 클램프를 스킵하고 기존 전체-높이 + translateY 보정 경로를 그대로 탄다.
-
-- Root layout(`src/app/layout.tsx`)에서 children을 **`<PageViewTransition>`** wrapper로 감싸 모든 라우트 이동에 자동 적용한다. 이 wrapper는 내부에서 React `<ViewTransition>` 을 호출하고 `enter`/`exit` 클래스 맵에 `NAV_TRANSITION_TYPES`(`nav-forward`, `nav-back`, …)를 그대로 연결한다. 방향 타입이 주입되지 않은 navigation 의 `default` 는 `'none'` — directional 클래스를 부여하지 않는 안전 폴백이다.
-- SSR·CSR 모두 동일하게 `<ViewTransition>` 로 감싼다 — hydration 게이트(과거의 `useIsClient`)를 두지 않는다. React `<ViewTransition>` 은 DOM 을 추가하지 않는 logical fiber 라 SSR/hydration 출력이 children 그대로로 일치하므로 mismatch 가 없다. 과거엔 hydration 전엔 fragment, 후엔 ViewTransition 으로 "승격"했는데, 이때 `#page-shell` 의 자식 wrapper 타입이 Fragment → ViewTransition 으로 바뀌며 React 가 children(=페이지 전체)을 통째로 unmount→remount 했다 — 모든 라우트 진입이 마운트 2회가 되어 새소식 dialog 가 두 번 뜨고 화면이 두 번 깜빡였다. wrapper 타입을 처음부터 고정해 이 remount 를 제거한다. `PageViewTransition` 을 우회해 React `<ViewTransition>` 을 직접 쓰지 말 것.
-- `PageViewTransition` 모듈은 import 시점에 `document.startViewTransition` 을 한 번 래핑(`patchStartViewTransition`)해 push/pop/popstate 모든 전환에 두 가지 공통 처리를 부여한다. (a) **OLD 캡처 뷰포트 클램프 + 스크롤 보정**: `clampShellForOldCapture()` (위 인용 참조) — 클램프 성공 시 `--vt-old-shift` 는 `0px`, 스킵(셸 없음/짧은 페이지) 시 `window.scrollY` 음수 px 를 노출해 `page-shell` 의 OLD 키프레임이 translateY 로 보정하므로 스크롤된 상태로 navigation 해도 OLD 스냅샷이 최상단으로 끌어올려지지 않는다. (b) **입력 락**: `<html>` 에 `.vt-in-flight` 클래스를 토글 → `view-transitions.css` 가 `pointer-events: none + user-select: none` 으로 입력을 차단해 네이티브 NavigationController 처럼 전환 도중 Link/popstate 등 추가 네비게이션이 끼어들지 못하게 한다 (없으면 React 가 새 transition 으로 직전 transition 을 skip 시켜 화면이 끊기거나, popstate 큐/페닝 상태가 꼬임). 둘 다 `transition.finished` 의 `.finally` 에서 자동 해제하되, `finished` 가 영영 settle 되지 않는 hung 전환을 회수하는 **안전 타임아웃(2s) 백스톱**(`VT_LOCK_SAFETY_TIMEOUT_MS` → `forceEnd`)을 함께 건다. 전환이 겹칠 때(직전 전환 skip + 새 전환 시작) 옛 전환의 cleanup 이 새 전환의 락을 덮어 풀지 않도록 **세대(generation) 가드**로 자기 세대일 때만 정리한다.
-  - `forceEnd` 의 회수 순서는 `skipTransition()` → **`forceFinishViewTransitionAnimations()`** → CSS 킬스위치(`.vt-overlay-killed`) 다. iOS WKWebView 에서는 `skipTransition()` 이 조용히 실패해 오버레이·스냅샷 레이어가 영구 잔존하고(반복 내비게이션 시 누적 → OOM), React 도 `finished` 를 기다리느라 후속 전환을 만들지 못한다. VT pseudo 애니메이션을 `finish()`(불가 시 `cancel()`)로 강제 완료시키면 전환이 **정상 종료 경로**로 회수돼 브라우저가 스스로 오버레이를 정리한다. 킬스위치는 그래도 페인트가 남는 최후 케이스 전용 백스톱이며 **반드시 `visibility: hidden`** 이어야 한다 — `display: none` 이 live 전환의 pseudo tree 에 닿으면 WebKit 이 페이지째 크래시한다(실측 확인). `original.apply` 가 throw 하면 백스톱조차 걸리지 않아 영구 락이 되므로 try/catch 로 즉시 cleanup 후 rethrow 한다.
-- 상위 → 하위로 진입하는 `<Link>`엔 `transitionTypes={['nav-forward']}` (좌→우 슬라이드), 복귀 링크엔 `transitionTypes={['nav-back']}` (우→좌 슬라이드)을 부여한다. 분류가 모호하면 prop을 생략해 default `page` 효과(fade + slide-up)로 둔다.
-- 전환 중에도 자기 자리에 고정돼야 하는 element(예: `AppTopBar`)엔 `style={{ viewTransitionName: '...' }}`을 부여하고 CSS에서 `::view-transition-group(name) { animation: none }`로 anchor한다.
-- 효과 정의는 `src/styles/view-transitions.css` 한 곳에 모은다. `prefers-reduced-motion: reduce`에서는 짧은 cross-fade만 유지하도록 매핑돼 있다.
-- React canary export(`ViewTransition`) 타입은 `src/types/react.d.ts`의 `import {} from 'react/canary'`로 활성화.
-- 브라우저 back/forward(popstate) 는 root layout 의 `<PopstateViewTransitionNotifier />` 가 라우트 commit 시점을 보고하고, `popstate-view-transition.tsx` 가 자체 엔진으로 처리한다 (Next 의 urgent RESTORE 는 React `<ViewTransition>` 을 우회하므로). 진행 중 전환 도중 도착한 popstate 는 `stopImmediatePropagation()` 으로 Next 의 RESTORE 를 막고 큐(최신 1개 coalesce)에 적재 → 현재 leg 의 `transition.finished` cleanup 에서 drain 해 다음 leg 의 takeover 를 이어 시작한다. 연속 back 시 각 leg 의 애니메이션이 네이티브처럼 차례대로 재생되며, 3 연속 이상은 중간 1개를 collapse 하되 첫·마지막 leg 은 항상 재생. dialog/modal 은 URL 라우트가 아닌 sentinel 기반(`back-stack`)이라 `getBackStackSize() > 0` 검사로 자동 스킵된다 — 별도 modal route matcher 불필요.
-
 ### 디렉터리 구조
 
 ```
@@ -160,7 +144,7 @@ src/
 │   ├── layout.tsx
 │   └── robots.ts
 ├── actions/                     # `*.actions.ts` — `'use server'` Server Action (react-query queryFn 이 호출)
-├── components/                  # 공용 UI 컴포넌트 (back-stack, news, view-transition 등 하위 디렉터리 + 배럴)
+├── components/                  # 공용 UI 컴포넌트 (back-stack, news 등 하위 디렉터리 + 배럴)
 ├── constants/                   # `*.constants.ts` 파일로 상수 모음
 ├── core/                        # fetch 등 인프라 레이어
 ├── enums/                       # `*.enum.ts` (as const 객체 + `src/types` 의 파생 union 타입 조합)
@@ -168,8 +152,8 @@ src/
 ├── lib/                         # supabase / webauthn / guest / news — 외부 의존 얇은 래퍼
 ├── providers/                   # 전역 Provider — query-provider(react-query) + query-keys 팩토리
 ├── stores/                      # Zustand `use-*-store.ts`
-├── styles/                      # globals.css · view-transitions.css 등 글로벌 스타일
-├── types/                       # `*.type.ts` + 전역 `.d.ts` (environments / query / react)
+├── styles/                      # globals.css 등 글로벌 스타일
+├── types/                       # `*.type.ts` + 전역 `.d.ts` (environments / query)
 ├── utils/                       # 범용 헬퍼
 └── proxy.ts                     # 미들웨어 (파일명 주의: middleware.ts 아님)
 ```

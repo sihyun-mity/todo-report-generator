@@ -16,4 +16,3 @@ export * from './theme-provider';
 export * from './theme-toggle';
 export * from './toaster-provider';
 export * from './skeleton';
-export * from './view-transition';

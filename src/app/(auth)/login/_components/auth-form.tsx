@@ -3,7 +3,7 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ClipboardList, Github, KeyRound, Mail, X } from 'lucide-react';
-import { Link } from '@/components';
+import Link from 'next/link';
 import { useRouter } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, enableGuestMode } from '@/lib/guest';
@@ -84,8 +84,7 @@ function SignupForm() {
     enableGuestMode();
     resetSessionStores();
     toast.success('로그인 없이 계속합니다. 기록은 이 브라우저에만 저장돼요.');
-    // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
-    router.push('/', { transitionTypes: ['nav-forward'] });
+    router.push('/');
     router.refresh();
   };
 
@@ -250,8 +249,7 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
         }
         resetSessionStores();
         toast.success('패스키로 로그인되었습니다.');
-        // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
-        router.push('/', { transitionTypes: ['nav-forward'] });
+        router.push('/');
         router.refresh();
       } catch {
         // 사용자 취소/autofill 비활성 — 조용히 무시
@@ -281,8 +279,7 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
       }
       resetSessionStores();
       toast.success('패스키로 로그인되었습니다.');
-      // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
-      router.push('/', { transitionTypes: ['nav-forward'] });
+      router.push('/');
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message;
@@ -312,8 +309,7 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
       }
       resetSessionStores();
       toast.success('로그인되었습니다.');
-      // 로그인 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
-      router.push('/', { transitionTypes: ['nav-forward'] });
+      router.push('/');
       router.refresh();
     } finally {
       setIsSubmitting(false);
@@ -329,8 +325,7 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
     enableGuestMode();
     resetSessionStores();
     toast.success('로그인 없이 계속합니다. 기록은 이 브라우저에만 저장돼요.');
-    // 인증 페이지 → 홈은 prefix 관계상 nav-back 으로 추론되지만, 앱 진입은 forward 가 자연스럽다.
-    router.push('/', { transitionTypes: ['nav-forward'] });
+    router.push('/');
     router.refresh();
   };
 

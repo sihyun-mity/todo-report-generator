@@ -3,7 +3,8 @@
 import { useCallback, useEffect } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
-import { Link, Portal, useDeferOpenDuringViewTransition, useDismissOnBack } from '..';
+import Link from 'next/link';
+import { Portal, useDismissOnBack } from '..';
 import { NewsAudienceBadge, NewsMarkdown } from '.';
 import { markNewsAsReadUpTo } from '@/lib/news';
 import { createClient } from '@/lib/supabase/client';
@@ -26,17 +27,13 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
   // 자동 노출 큐에서 자신이 활성일 때만 연다 (작성 알림 구독 권유 등과 동시 노출 방지).
   const isActive = useIsActiveDialog(DIALOG_NEWS);
 
-  // 자동으로 열리는 다이얼로그라, 페이지 진입 View Transition 이 진행 중이면 dim 이 전환
-  // 스냅샷 위로 깜빡인다. 전환이 끝난 뒤에 실제로 열리도록 한 번 통과시킨다.
-  const deferredOpen = useDeferOpenDuringViewTransition(isActive);
-
   // 다이얼로그가 열려 있는 동안 배경 스크롤 잠금 — import-modal 과 동일한 패턴
   const { lock, unlock } = useScrollLock({ autoLock: false });
   useEffect(() => {
-    if (deferredOpen) lock();
+    if (isActive) lock();
     else unlock();
     return () => unlock();
-  }, [deferredOpen, lock, unlock]);
+  }, [isActive, lock, unlock]);
 
   // 로그인된 상태에서는 게스트 전용 키가 dangling 으로 남는 케이스(OAuth/이메일 가입 콜백 경로)가 있다.
   // 그 키는 user_news_reads 로 이미 마이그레이션된 뒤이므로 안전하게 정리한다.
@@ -99,18 +96,18 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
   }, [latestNews, userId, release]);
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 새소식 다이얼로그가 닫히도록 BackStack 에 등록한다.
-  useDismissOnBack(deferredOpen, () => void markReadAndClose());
+  useDismissOnBack(isActive, () => void markReadAndClose());
 
   useEffect(() => {
-    if (!deferredOpen) return;
+    if (!isActive) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') void markReadAndClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deferredOpen, markReadAndClose]);
+  }, [isActive, markReadAndClose]);
 
-  if (!deferredOpen || !latestNews) return null;
+  if (!isActive || !latestNews) return null;
 
   const formattedDate = new Date(latestNews.published_at).toLocaleDateString('ko-KR', {
     year: 'numeric',

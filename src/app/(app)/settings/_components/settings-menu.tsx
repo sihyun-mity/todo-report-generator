@@ -2,7 +2,7 @@
 
 import { ReactNode } from 'react';
 import { Bell, ChevronRight, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
-import { Link } from '@/components';
+import Link from 'next/link';
 import { useAccountInfo } from '.';
 
 export function SettingsMenu() {

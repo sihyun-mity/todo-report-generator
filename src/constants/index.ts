@@ -8,5 +8,4 @@ export * from './press-feedback.constants';
 export * from './push.constants';
 export * from './report.constants';
 export * from './theme.constants';
-export * from './view-transition.constants';
 export * from './webauthn.constants';
