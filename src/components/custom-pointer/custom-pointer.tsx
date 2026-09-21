@@ -7,6 +7,11 @@ import {
   CUSTOM_POINTER_CLICK_RECHECK_MS,
   CUSTOM_POINTER_DOT_SIZE,
   CUSTOM_POINTER_ELEMENT_ID,
+  CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR,
+  CUSTOM_POINTER_FRAME_EDGE_MAX,
+  CUSTOM_POINTER_FRAME_EDGE_MIN,
+  CUSTOM_POINTER_FRAME_EDGE_SCALE,
+  CUSTOM_POINTER_FRAME_IDLE_MS,
   CUSTOM_POINTER_PARALLAX_MAX,
   CUSTOM_POINTER_SCROLL_IDLE_MS,
   CUSTOM_POINTER_SNAP_PADDING,
@@ -77,6 +82,11 @@ export function CustomPointer() {
     let touchSuppressUntil = 0;
     let scrolling = false;
     let scrollIdleTimer = 0;
+    // 이벤트가 끊긴 뒤 프레임(iframe 등) 진입을 확인하는 타이머와, 그 판정에 쓰는 직전 이동 폭
+    let frameIdleTimer = 0;
+    let lastMoveDistance = 0;
+    // 커서가 프레임 안에 있다고 보는 상태 — 그동안은 네이티브 커서를 되살린다
+    let overFrame = false;
 
     const shape: PointerShape = {
       x: -1000,
@@ -89,6 +99,17 @@ export function CustomPointer() {
     };
 
     const retarget = (node: EventTarget | null) => {
+      const element = node instanceof Element ? node : null;
+
+      // 외부 콘텐츠 프레임(iframe 등) 위로 올라가면 포인터를 숨긴다 — 프레임 안쪽은 별도 문서라
+      // 커서가 들어간 뒤로 부모 문서에 pointermove 가 오지 않아, 그대로 두면 하이라이트가 진입 직전
+      // 좌표에 멈춘 채 실제 커서와 어긋난 자리에 남는다. 프레임 안에서는 그 문서의 네이티브 커서가
+      // 대신 보이고, 빠져나오는 순간의 pointermove 가 현재 좌표에서 다시 띄운다.
+      if (element?.closest(CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR)) {
+        hideForFrame();
+        return;
+      }
+
       // 스크롤 중에는 항상 기본 도트 모양을 유지한다 — 인터랙션 영역이 커서를
       // 지나갈 때마다 하이라이트가 변하지 않게, 재판정은 스크롤이 멎은 뒤에만 한다
       if (scrolling) {
@@ -96,8 +117,6 @@ export function CustomPointer() {
         snapTarget = null;
         return;
       }
-
-      const element = node instanceof Element ? node : null;
 
       const caret = element?.closest<HTMLElement>(CUSTOM_POINTER_TEXT_SELECTOR) ?? null;
       if (caret && !caret.matches(':disabled, [aria-disabled="true"]')) {
@@ -216,6 +235,9 @@ export function CustomPointer() {
         rafId = window.requestAnimationFrame(tick);
       } else {
         rafId = 0;
+        // 움직임이 멎은 시점마다 프레임 진입을 확인한다 — 커서가 가만히 있는 자리에 프레임이
+        // 올라오는 경우(다이얼로그가 열리는 등)까지 포함해 마지막 좌표를 다시 판정한다
+        watchFrameEntry();
       }
     };
 
@@ -242,6 +264,72 @@ export function CustomPointer() {
       pointer.style.opacity = '0';
     };
 
+    /**
+     * 프레임(iframe 등) 위로 커서가 넘어가 하이라이트를 숨기는 경로.
+     * 숨기는 동안 네이티브 커서를 되살린다 — 프레임 안에서는 그 문서가 자기 커서를 그리므로 보이는
+     * 결과는 같고, 판정이 빗나가 부모 영역에서 숨은 경우에도 커서가 통째로 사라지지 않는다.
+     */
+    const hideForFrame = () => {
+      if (!overFrame) {
+        overFrame = true;
+        document.documentElement.classList.remove(CUSTOM_POINTER_ACTIVE_CLASS);
+      }
+      hide();
+    };
+
+    /** 부모 문서에 포인터 이벤트가 다시 도착 — 프레임 밖이므로 커스텀 포인터를 되돌린다 */
+    const leaveFrame = () => {
+      if (!overFrame) return;
+      overFrame = false;
+      document.documentElement.classList.add(CUSTOM_POINTER_ACTIVE_CLASS);
+    };
+
+    /**
+     * 마지막으로 알고 있는 좌표가 프레임 안(또는 경계 바로 바깥)인지.
+     *
+     * `elementFromPoint` 로 실제로 그 자리에 있는 요소를 먼저 본다 — 프레임 위에 얹힌 버튼·시트를
+     * 프레임으로 오인하지 않는다. 그 다음, 프레임 바깥이지만 경계에 바짝 붙은 좌표(=커서가 넘어가기
+     * 직전에 받은 마지막 샘플)를 진입으로 본다.
+     */
+    const hasEnteredFrame = (): boolean => {
+      const element = document.elementFromPoint(mouseX, mouseY);
+      if (element?.closest(CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR)) return true;
+
+      const margin = clamp(
+        lastMoveDistance * CUSTOM_POINTER_FRAME_EDGE_SCALE,
+        CUSTOM_POINTER_FRAME_EDGE_MIN,
+        CUSTOM_POINTER_FRAME_EDGE_MAX
+      );
+      for (const frame of document.querySelectorAll(CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR)) {
+        const rect = frame.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        // rect 안쪽은 위에서 이미 판정했다(다른 요소가 덮고 있다는 뜻) — 여기선 경계 바깥만 본다
+        if (mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom) continue;
+        if (
+          mouseX >= rect.left - margin &&
+          mouseX <= rect.right + margin &&
+          mouseY >= rect.top - margin &&
+          mouseY <= rect.bottom + margin
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    /**
+     * 프레임 진입 감시. 교차 출처 프레임은 별도 프로세스라 커서가 들어가는 순간 부모 문서로 오는
+     * 이벤트가 경계 이벤트까지 통째로 끊기는 브라우저가 있어(실측: Chromium), 경계 이벤트만으로는
+     * 하이라이트가 진입 직전 좌표에 멈춘 채 남는다. 이벤트가 끊긴 뒤 마지막 좌표를 확인해 숨긴다.
+     */
+    const watchFrameEntry = () => {
+      window.clearTimeout(frameIdleTimer);
+      frameIdleTimer = window.setTimeout(() => {
+        frameIdleTimer = 0;
+        if (visible && hasEnteredFrame()) hideForFrame();
+      }, CUSTOM_POINTER_FRAME_IDLE_MS);
+    };
+
     const isTouchLike = (event: PointerEvent) =>
       event.pointerType !== 'mouse' || performance.now() < touchSuppressUntil;
 
@@ -250,6 +338,9 @@ export function CustomPointer() {
         hideForTouch();
         return;
       }
+      leaveFrame();
+      // 이 이동 폭이 곧 "다음 샘플이 건너뛸 거리" 이므로 프레임 경계 판정의 여유로 쓴다
+      lastMoveDistance = visible ? Math.hypot(event.clientX - mouseX, event.clientY - mouseY) : 0;
       mouseX = event.clientX;
       mouseY = event.clientY;
       if (!visible) {
@@ -262,6 +353,18 @@ export function CustomPointer() {
       }
       retarget(event.target);
       schedule();
+      watchFrameEntry();
+    };
+
+    /**
+     * 프레임 진입만 따로 잡는 경계 감지. pointermove 는 커서가 움직여야 오지만, 커서가 멈춰 있는
+     * 자리에 프레임이 올라오는 경우(다이얼로그가 열리는 등)에도 경계 이벤트는 발생한다 —
+     * 그때도 하이라이트가 프레임 위에 남지 않게 여기서 숨긴다.
+     */
+    const handlePointerOver = (event: PointerEvent) => {
+      if (isTouchLike(event)) return;
+      const element = event.target instanceof Element ? event.target : null;
+      if (element?.closest(CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR)) hideForFrame();
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -320,8 +423,10 @@ export function CustomPointer() {
     const enable = () => {
       if (active) return;
       active = true;
+      overFrame = false;
       document.documentElement.classList.add(CUSTOM_POINTER_ACTIVE_CLASS);
       window.addEventListener('pointermove', handlePointerMove, { passive: true });
+      window.addEventListener('pointerover', handlePointerOver, { capture: true, passive: true });
       // capture: stopPropagation 하는 위젯 안에서도 눌림/이탈 상태를 놓치지 않는다
       window.addEventListener('pointerdown', handlePointerDown, true);
       window.addEventListener('pointerup', handlePointerUp, true);
@@ -341,6 +446,7 @@ export function CustomPointer() {
       if (!active) return;
       active = false;
       window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerover', handlePointerOver, true);
       window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('pointercancel', handlePointerUp, true);
@@ -355,11 +461,15 @@ export function CustomPointer() {
       window.cancelAnimationFrame(rafId);
       rafId = 0;
       window.clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = 0;
+      window.clearTimeout(frameIdleTimer);
+      frameIdleTimer = 0;
       scrolling = false;
       visible = false;
       pressed = false;
       // 터치 도중 비활성화되면 touchend 를 못 받으므로, 억제 상태가 Infinity 로 굳지 않게 리셋
       touchSuppressUntil = 0;
+      overFrame = false;
       shape.opacity = 0;
       pointer.style.opacity = '0';
       document.documentElement.classList.remove(CUSTOM_POINTER_ACTIVE_CLASS);

@@ -73,3 +73,28 @@ export const CUSTOM_POINTER_TEXT_SELECTOR = [
   '[contenteditable="true"]',
   '[contenteditable="plaintext-only"]',
 ].join(', ');
+
+/**
+ * 포인터를 숨길 외부 콘텐츠 프레임 — 안쪽이 별도 문서(browsing context)라
+ * 커서가 들어가는 순간부터 부모 문서에 pointermove 가 더 이상 오지 않는다.
+ * (프레임 안에서는 그 문서의 네이티브 커서가 대신 그려진다.)
+ */
+export const CUSTOM_POINTER_EXTERNAL_FRAME_SELECTOR = ['iframe', 'frame', 'embed', 'object'].join(', ');
+
+/**
+ * 마지막 포인터 이벤트 후 이 시간 동안 아무 이벤트도 오지 않으면 프레임 진입을 의심하고 확인한다(ms).
+ * 교차 출처 프레임은 별도 프로세스라 커서가 들어가도 부모 문서에 경계 이벤트조차 오지 않는
+ * 브라우저가 있다(실측: Chromium). 그 경우 "이벤트가 끊긴 것" 자체가 유일한 단서다.
+ */
+export const CUSTOM_POINTER_FRAME_IDLE_MS = 180;
+
+/**
+ * 프레임 경계 판정에 더하는 여유(px)의 하한·상한.
+ * 마지막 pointermove 샘플은 실제 경계보다 조금 바깥에서 끊기는데, 그 간격은 커서가 경계를 넘을 때의
+ * 한 샘플 이동 폭이다. 직전 이동 폭에 가속 여지를 얹어(FRAME_EDGE_SCALE) 이 범위로 자른다 —
+ * 천천히 움직이다 멈춘 커서에는 여유가 거의 붙지 않아, 프레임 옆에 멈춰 있을 뿐인 커서를
+ * 잘못 숨기지 않는다.
+ */
+export const CUSTOM_POINTER_FRAME_EDGE_SCALE = 2;
+export const CUSTOM_POINTER_FRAME_EDGE_MIN = 16;
+export const CUSTOM_POINTER_FRAME_EDGE_MAX = 96;
