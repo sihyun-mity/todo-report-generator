@@ -1,3 +1,7 @@
 @theme {
-  --font-pretendard: 'var(--font-pretendard)';
+  /* pretendard 패키지의 dynamic subset CSS(layout.tsx 에서 import)가 선언하는 family */
+  --font-pretendard:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue',
+    'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Segoe UI Symbol', sans-serif;
 }

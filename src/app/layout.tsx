@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Suspense } from 'react';
+import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import '@/styles/globals.css';
 import {
   BackButtonHandler,
@@ -12,8 +13,7 @@ import {
   ToasterProvider,
 } from '@/components';
 import { QueryProvider } from '@/providers';
-import { cn, staticMetadata } from '@/utils';
-import localFont from 'next/font/local';
+import { staticMetadata } from '@/utils';
 
 export const metadata: Metadata = staticMetadata({
   description: '오늘의 진행률과 할 일을 입력하면 깔끔한 일일 업무 보고서를 손쉽게 만들 수 있어요.',
@@ -29,14 +29,6 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-content',
 };
 
-const pretendard = localFont({
-  src: '../../public/fonts/PretendardVariable.woff2',
-  display: 'swap',
-  weight: '45 920',
-  variable: '--font-pretendard',
-  preload: false,
-});
-
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="ko" suppressHydrationWarning>
@@ -44,12 +36,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         {/* 첫 페인트 전 다크모드 클래스를 동기 적용해 라이트 → 다크 깜빡임 방지 */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body
-        className={cn(
-          pretendard.variable,
-          'touch-pan-y bg-background font-pretendard break-keep text-foreground antialiased select-none'
-        )}
-      >
+      <body className="touch-pan-y bg-background font-pretendard break-keep text-foreground antialiased select-none">
         <QueryProvider>
           <Suspense>
             <ThemeProvider>
