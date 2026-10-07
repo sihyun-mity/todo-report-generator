@@ -124,11 +124,13 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const canImportLocal = isHistoryLoaded && allReportDates.length === 0 && hasLocalBackup;
 
   // 최초 접속 1회 안내 dialog: 위 조건 + 해당 유저 대상 안내를 본 적이 없을 때
-  useEffect(() => {
-    if (!isClient || !canImportLocal || !userId) return;
-    if (localStorage.getItem(importPromptSeenKey(userId))) return;
-    setIsImportDialogOpen(true);
-  }, [isClient, canImportLocal, userId]);
+  // 조건이 성립한 시점에 유저별로 한 번만 검사한다 — effect 대신 anchor state + 렌더 중 비교.
+  // isClient 가드 덕분에 localStorage 접근은 hydration 이후 클라이언트 렌더에서만 일어난다.
+  const [importPromptCheckedUserId, setImportPromptCheckedUserId] = useState<string | null>(null);
+  if (isClient && canImportLocal && userId && importPromptCheckedUserId !== userId) {
+    setImportPromptCheckedUserId(userId);
+    if (!localStorage.getItem(importPromptSeenKey(userId))) setIsImportDialogOpen(true);
+  }
 
   const markImportPromptSeen = () => {
     if (!userId) return;
@@ -229,11 +231,9 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     () => serializeReport(reportDate, today.projects, tomorrow.projects),
     [reportDate, today.projects, tomorrow.projects]
   );
-  useEffect(() => {
-    if (!hasHydratedFromHistory) return;
-    if (dirtyBaseline !== null) return;
+  if (hasHydratedFromHistory && dirtyBaseline === null) {
     setDirtyBaseline(currentReportKey);
-  }, [hasHydratedFromHistory, dirtyBaseline, currentReportKey]);
+  }
 
   const isReportDirty = dirtyBaseline !== null && dirtyBaseline !== currentReportKey;
 

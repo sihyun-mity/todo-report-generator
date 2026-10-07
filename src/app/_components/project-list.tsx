@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarDays, Plus, Sun } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -77,30 +77,29 @@ export const ProjectList = ({
   } | null>(null);
 
   // 외부 focusRequest의 nonce가 바뀔 때마다 내부 projectFocus로 동기화한다.
-  useEffect(() => {
-    if (!focusRequest) return;
+  // effect 대신 anchor state + 렌더 중 비교로 처리한다 (마운트 시점에 이미 들어와 있는 요청도 처리되도록 초기값은 undefined).
+  const [syncedFocusNonce, setSyncedFocusNonce] = useState<number | undefined>(undefined);
+  if (focusRequest && focusRequest.nonce !== syncedFocusNonce) {
+    setSyncedFocusNonce(focusRequest.nonce);
     if (focusRequest.kind === 'project') {
       setProjectFocus({ projectId: focusRequest.projectId, field: 'name', nonce: focusRequest.nonce });
-      return;
-    }
-    if (focusRequest.kind === 'task') {
+    } else if (focusRequest.kind === 'task') {
       setProjectFocus({
         projectId: focusRequest.projectId,
         field: 'task',
         taskId: focusRequest.taskId,
         nonce: focusRequest.nonce,
       });
-      return;
+    } else {
+      setProjectFocus({
+        projectId: focusRequest.projectId,
+        field: 'detail',
+        taskId: focusRequest.taskId,
+        detailId: focusRequest.detailId,
+        nonce: focusRequest.nonce,
+      });
     }
-    setProjectFocus({
-      projectId: focusRequest.projectId,
-      field: 'detail',
-      taskId: focusRequest.taskId,
-      detailId: focusRequest.detailId,
-      nonce: focusRequest.nonce,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusRequest?.nonce]);
+  }
 
   // 새로 추가된 프로젝트의 ID를 상위에서 받기 전에 미리 생성해두고,
   // 같은 ID를 전달해 ProjectItem에서 autoFocus가 트리거되도록 한다

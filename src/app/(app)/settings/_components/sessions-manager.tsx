@@ -30,7 +30,7 @@ export function SessionsManager() {
   const [revokingOthers, setRevokingOthers] = useState(false);
 
   const fetchList = useCallback(async () => {
-    setLoading(true);
+    // loading 초기값이 true 라 첫 조회는 따로 켤 필요가 없고, 재조회 중에는 기존 목록을 그대로 보여준다.
     try {
       const res = await fetch('/api/sessions', { cache: 'no-store' });
       if (!res.ok) {

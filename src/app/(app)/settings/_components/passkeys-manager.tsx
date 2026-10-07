@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
-import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
+import { useWebAuthnSupported } from '@/hooks';
+import { registerPasskey } from '@/lib/webauthn/client';
 import { confirm } from '@/stores';
 import { SettingsSubHeader } from '.';
 
@@ -39,15 +40,11 @@ export function PasskeysManager() {
   const [registering, setRegistering] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  // SSR 단계에서는 null(확인 전), mount 직후 true/false로 확정 → hydration mismatch + 경고 깜빡임 둘 다 회피
-  const [supported, setSupported] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    setSupported(isWebAuthnSupported());
-  }, []);
+  // SSR 단계에서는 null(확인 전), hydration 후 true/false로 확정 → hydration mismatch + 경고 깜빡임 둘 다 회피
+  const supported = useWebAuthnSupported();
 
   const fetchList = useCallback(async () => {
-    setLoading(true);
+    // loading 초기값이 true 라 첫 조회는 따로 켤 필요가 없고, 재조회 중에는 기존 목록을 그대로 보여준다.
     try {
       const res = await fetch('/api/passkeys', { cache: 'no-store' });
       if (!res.ok) {

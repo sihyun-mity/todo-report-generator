@@ -79,25 +79,34 @@ export const ProjectItem = ({
   };
 
   // 외부에서 보내는 포커스 신호 처리 — 프로젝트명, 마지막 작업, 특정 작업, 또는 특정 세부 항목으로 이동.
-  // nonce가 바뀔 때마다 실행되어 같은 대상도 반복 포커스 가능하다.
+  // 신호(대상 + nonce)가 바뀔 때마다 처리되어 같은 대상도 반복 포커스 가능하다.
+  // 작업/세부 항목 포커스는 state 갱신이라 anchor state + 렌더 중 비교로 처리한다
+  // (마운트 시점에 이미 들어와 있는 신호도 처리되도록 anchor 초기값은 null).
+  const externalFocusKey =
+    externalFocusField && externalFocusNonce
+      ? `${externalFocusField}|${externalFocusTaskId ?? ''}|${externalFocusDetailId ?? ''}|${externalFocusNonce}`
+      : null;
+  const [syncedExternalFocusKey, setSyncedExternalFocusKey] = useState<string | null>(null);
+  if (externalFocusKey !== syncedExternalFocusKey) {
+    setSyncedExternalFocusKey(externalFocusKey);
+    if (externalFocusKey && externalFocusField !== 'name') {
+      if (externalFocusField === 'task' && externalFocusTaskId) {
+        focusTask(externalFocusTaskId, 'content');
+      } else if (externalFocusField === 'detail' && externalFocusTaskId && externalFocusDetailId) {
+        focusTask(externalFocusTaskId, 'detail', externalFocusDetailId);
+      } else {
+        const lastTask = project.tasks[project.tasks.length - 1];
+        if (lastTask) focusTask(lastTask.id, 'content');
+      }
+    }
+  }
+
+  // 프로젝트명 포커스는 DOM 조작이라 effect에서 처리한다.
   useEffect(() => {
-    if (!externalFocusField || !externalFocusNonce) return;
-    if (externalFocusField === 'name') {
+    if (externalFocusField === 'name' && externalFocusNonce) {
       nameInputRef.current?.focus();
-      return;
     }
-    if (externalFocusField === 'task' && externalFocusTaskId) {
-      focusTask(externalFocusTaskId, 'content');
-      return;
-    }
-    if (externalFocusField === 'detail' && externalFocusTaskId && externalFocusDetailId) {
-      focusTask(externalFocusTaskId, 'detail', externalFocusDetailId);
-      return;
-    }
-    const lastTask = project.tasks[project.tasks.length - 1];
-    if (lastTask) focusTask(lastTask.id, 'content');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalFocusField, externalFocusTaskId, externalFocusDetailId, externalFocusNonce]);
+  }, [externalFocusField, externalFocusNonce]);
 
   // 새 태스크의 ID를 먼저 생성하여 focus 대상으로 기록한 뒤 추가한다.
   const handleAddTask = () => {

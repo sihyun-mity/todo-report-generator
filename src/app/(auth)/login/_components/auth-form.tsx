@@ -4,7 +4,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ClipboardList, Github, KeyRound, Mail, X } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from '@/hooks';
+import { useRouter, useWebAuthnSupported } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
 import { disableGuestMode, enableGuestMode } from '@/lib/guest';
 import { migrateGuestNewsLastSeen, stashGuestNewsLastSeenInCookie } from '@/lib/news';
@@ -202,16 +202,12 @@ function LoginForm({ initialError }: Readonly<LoginFormProps>) {
   const [emailExpanded, setEmailExpanded] = useState(false);
   // SSR에서는 지원 여부를 알 수 없어 null로 시작 — 버튼은 항상 렌더링하고 mount 후 boolean으로 확정.
   // 이렇게 하면 버튼이 "안 보였다가 갑자기 나타나는" 깜빡임이 사라진다.
-  const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
+  const passkeySupported = useWebAuthnSupported();
   const [passkeyInFlight, setPasskeyInFlight] = useState(false);
   const autofillStarted = useRef(false);
   // OAuth 등에서 ?error=... 로 redirect 돼 들어왔을 때 1회만 토스트 표시.
   // strict mode 의 effect 더블 호출과 page 재마운트(예: SWR refetch)에 대비해 ref 로 가드한다.
   const errorHandled = useRef(false);
-
-  useEffect(() => {
-    setPasskeySupported(isWebAuthnSupported());
-  }, []);
 
   useEffect(() => {
     if (!initialError) return;

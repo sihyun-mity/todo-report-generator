@@ -52,7 +52,6 @@ export function useGrabSlide() {
   }, []);
 
   const onSlide = useCallback(
-    // eslint-disable-next-line react-hooks/preserve-manual-memoization
     (e: MouseEvent) => {
       if (!slider.current) return;
 
