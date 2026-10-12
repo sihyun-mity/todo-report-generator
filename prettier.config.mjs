@@ -11,7 +11,7 @@ const config = {
   endOfLine: 'lf',
   semi: true,
   plugins: ['prettier-plugin-tailwindcss'],
-  tailwindStylesheet: './src/styles/globals.css',
+  tailwindStylesheet: './styles/globals.css',
   tailwindFunctions: ['cn', 'clsx', 'tw', 'twMerge'],
 };
 

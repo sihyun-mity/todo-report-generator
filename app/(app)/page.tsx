@@ -1,0 +1,36 @@
+import type { Metadata } from 'next';
+import { connection } from 'next/server';
+import { Suspense } from 'react';
+import { CommitConstellation, ReportForm, ReportFormSkeleton } from '@/app/_components';
+import { GuestLoginBanner, PushSubscribePrompt } from '@/components';
+import { kstDateKey, staticMetadata } from '@/utils';
+
+export const metadata: Metadata = staticMetadata({
+  title: '보고서 작성',
+  description: '오늘 한 일과 진행률을 입력해 일일 업무 보고서를 작성해 보세요.',
+});
+
+export default function Home() {
+  return (
+    <main className="container mx-auto">
+      {/* 배경 커밋 그래프 성좌 — 작성 화면(홈)에서만 노출 */}
+      <CommitConstellation />
+      {/* "지금 작성하는 기록은…" 문구가 작성 맥락을 전제하므로 작성 화면에서만 노출한다 */}
+      <GuestLoginBanner />
+      <Suspense fallback={<ReportFormSkeleton />}>
+        <TodayReportForm />
+      </Suspense>
+      <PushSubscribePrompt />
+    </main>
+  );
+}
+
+// 요청 시점 KST 날짜를 계산해 클라이언트로 내려준다.
+// 캘린더 초기 뷰가 첫 페인트(SSR)부터 실제 현재 월을 그리게 해, placeholder→보정 시 발생하던
+// 그리드 레이아웃 점프를 없앤다. (서버 HTML 과 클라 첫 렌더가 같은 값을 쓰므로 hydration 안전)
+// 빌드 시점 날짜가 정적 셸에 굳지 않도록 connection() 으로 요청 시점까지 미룬다 — 폼은 "오늘"(보고 날짜·
+// 캘린더 today 등)에 의존하므로 프리렌더 대상이 아니다.
+async function TodayReportForm() {
+  await connection();
+  return <ReportForm serverDateKey={kstDateKey()} />;
+}

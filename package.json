@@ -22,7 +22,6 @@
     "@simplewebauthn/server": "^13.3.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
-    "@tailwindcss/cli": "^4.1.18",
     "@tanstack/react-query": "^5.101.0",
     "@types/web-push": "^3.6.4",
     "clsx": "^2.1.1",
@@ -46,7 +45,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.4",
+    "@tailwindcss/turbopack": "^4.3.3",
     "@types/node": "^22",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -55,11 +54,10 @@
     "eslint-config-next": "^16.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.2",
-    "postcss": "^8.5.14",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "sass": "^1.99.0",
-    "tailwindcss": "^4.2.4",
+    "tailwindcss": "^4.3.3",
     "tsc-files": "^1.1.4",
     "typescript": "^5.9.3"
   }

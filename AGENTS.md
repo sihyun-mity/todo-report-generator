@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -36,12 +36,12 @@ This file is the single source of truth for AI agent guidance in this repository
 코드 전반에 걸쳐 "로그인/게스트/비인증" 세 가지 상태를 분리해 처리한다 — 이 분기를 빼먹으면 버그가 생긴다.
 
 1. **로그인 사용자** — Supabase 세션 쿠키 기반. 데이터는 Supabase DB(RLS 적용).
-2. **게스트** — `guest-mode` 쿠키(`GUEST_MODE_COOKIE` @ `src/constants/guest.constants.ts`)만 존재. 보고서 기록은 `localStorage`(`REPORT_HISTORY_STORAGE_KEY` 키)에 저장. Supabase 호출을 건너뛰어 stale refresh token 오류를 회피한다.
+2. **게스트** — `guest-mode` 쿠키(`GUEST_MODE_COOKIE` @ `constants/guest.constants.ts`)만 존재. 보고서 기록은 `localStorage`(`REPORT_HISTORY_STORAGE_KEY` 키)에 저장. Supabase 호출을 건너뛰어 stale refresh token 오류를 회피한다.
 3. **비인증** — 위 둘 다 없음. **게스트가 기본값** — 미들웨어가 게스트 쿠키를 심어 게스트로 승격시키고 그대로 통과시킨다 (`/login` 리다이렉트 없음). 첫 방문자는 로그인 페이지를 거치지 않고 바로 보고서 작성 폼을 본다. 로그인은 선택사항으로, 게스트에게는 상단바 로그인 버튼·`GuestLoginBanner`(작성 화면(홈)에서만 노출, dismiss 가능)·사용자 메뉴로만 추천한다. 로그인 페이지는 첫 화면이 아니므로 카드에 홈으로 돌아가는 닫기(X) 버튼이 있다.
 
 `isGuestMode()` 체크는 `useEffect`, 클라이언트 컴포넌트, 데이터 훅 곳곳에 있다. 새 데이터 경로를 만들 때 이 분기를 따라가야 한다.
 
-### Middleware는 `src/proxy.ts` (not `middleware.ts`)
+### Middleware는 `proxy.ts` (not `middleware.ts`)
 
 Next.js 기본 파일명이 아니다. 동작:
 
@@ -53,23 +53,23 @@ Next.js 기본 파일명이 아니다. 동작:
 
 ### Route groups
 
-- `src/app/(app)/` — 로그인/게스트가 접근 가능한 보호 영역. 공용 `AppTopBar` + 새소식 dialog가 여기 layout에서 마운트된다. 이 그룹 전용 서버 컴포넌트는 `src/app/(app)/_components/`에 둔다(예: `news-dialog-mount.tsx`).
-- `src/app/(auth)/` — `/login`, `/signup`. 로그인된 사용자가 접근하면 `/`로 리다이렉트.
-- `src/app/auth/callback/route.ts` — Supabase OAuth(예: GitHub) code exchange + 게스트 쿠키 정리. `proxy.ts`의 `PUBLIC_PATH_PREFIXES`에 `/auth`가 포함돼 비로그인 상태에서도 통과한다.
-- `src/app/api/` — Passkey 관련 라우트는 `api/auth/passkey/{register,login}/{options,verify}` 구조, passkey CRUD는 `api/passkeys/`. 로그인 기기(세션) 관리는 `api/sessions/`.
+- `app/(app)/` — 로그인/게스트가 접근 가능한 보호 영역. 공용 `AppTopBar` + 새소식 dialog가 여기 layout에서 마운트된다. 이 그룹 전용 서버 컴포넌트는 `app/(app)/_components/`에 둔다(예: `news-dialog-mount.tsx`).
+- `app/(auth)/` — `/login`, `/signup`. 로그인된 사용자가 접근하면 `/`로 리다이렉트.
+- `app/auth/callback/route.ts` — Supabase OAuth(예: GitHub) code exchange + 게스트 쿠키 정리. `proxy.ts`의 `PUBLIC_PATH_PREFIXES`에 `/auth`가 포함돼 비로그인 상태에서도 통과한다.
+- `app/api/` — Passkey 관련 라우트는 `api/auth/passkey/{register,login}/{options,verify}` 구조, passkey CRUD는 `api/passkeys/`. 로그인 기기(세션) 관리는 `api/sessions/`.
 
 ### Supabase 클라이언트 세 종류
 
-- `src/lib/supabase/client.ts` — 브라우저 (anon key)
-- `src/lib/supabase/server.ts` — RSC / route handler (cookie 기반 세션)
-- `src/lib/supabase/admin.ts` — `SUPABASE_SERVICE_ROLE_KEY`. `'server-only'`. RLS 우회 필요시에만.
+- `lib/supabase/client.ts` — 브라우저 (anon key)
+- `lib/supabase/server.ts` — RSC / route handler (cookie 기반 세션)
+- `lib/supabase/admin.ts` — `SUPABASE_SERVICE_ROLE_KEY`. `'server-only'`. RLS 우회 필요시에만.
 
 ### WebAuthn (passkey)
 
-- 서버: `src/lib/webauthn/` — `@simplewebauthn/server`. 챌린지는 iron-session으로 서명된 쿠키에 저장(`challenge-cookie.ts`).
+- 서버: `lib/webauthn/` — `@simplewebauthn/server`. 챌린지는 iron-session으로 서명된 쿠키에 저장(`challenge-cookie.ts`).
 - 클라이언트: `@simplewebauthn/browser`.
-- 환경변수 필수: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`, `WEBAUTHN_CHALLENGE_SECRET` (64자 hex). 모든 env 선언은 `src/types/environments.d.ts`에 있다.
-- 셋업 문서: `src/docs/passkey-setup.md`, `src/docs/supabase-setup.md`.
+- 환경변수 필수: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN`, `WEBAUTHN_CHALLENGE_SECRET` (64자 hex). 모든 env 선언은 `types/environments.d.ts`에 있다.
+- 셋업 문서: `docs/passkey-setup.md`, `docs/supabase-setup.md`.
 
 ### DB 마이그레이션
 
@@ -79,7 +79,7 @@ Next.js 기본 파일명이 아니다. 동작:
 
 ### 새소식 (News) 대상 체계
 
-`public.news.audience` 컬럼이 소식마다 노출 대상을 지정한다 (`src/enums/news-audience.enum.ts`).
+`public.news.audience` 컬럼이 소식마다 노출 대상을 지정한다 (`enums/news-audience.enum.ts`).
 
 | 값             | 뜻          | 노출                         |
 | -------------- | ----------- | ---------------------------- |
@@ -87,7 +87,7 @@ Next.js 기본 파일명이 아니다. 동작:
 | `member`       | 회원 전용   | 로그인 사용자만              |
 | `guest`        | 비회원 전용 | 게스트/비인증만              |
 
-- **필터링 책임은 애플리케이션 레이어**(`src/lib/news.ts`)에 있다. `news` 의 RLS 는 "누구나 읽기"를 유지한다 — 소식 본문은 비밀이 아니라 관련성 문제이고, RLS 로 막으면 게스트 → 로그인 전환 시 게스트가 마지막으로 본 소식(비회원 전용일 수 있음)의 발행 시각을 회원 세션이 조회하지 못해 읽음 상태 이전이 깨진다. **새 조회 경로를 만들면 `newsAudiencesFor(isMember)` 필터를 반드시 함께 건다.**
+- **필터링 책임은 애플리케이션 레이어**(`lib/news.ts`)에 있다. `news` 의 RLS 는 "누구나 읽기"를 유지한다 — 소식 본문은 비밀이 아니라 관련성 문제이고, RLS 로 막으면 게스트 → 로그인 전환 시 게스트가 마지막으로 본 소식(비회원 전용일 수 있음)의 발행 시각을 회원 세션이 조회하지 못해 읽음 상태 이전이 깨진다. **새 조회 경로를 만들면 `newsAudiencesFor(isMember)` 필터를 반드시 함께 건다.**
 - `fetchLatestNews` / `fetchAllNews` / `fetchNewsById` 는 모두 `isMember` 를 받는다. 로그인 여부는 `getViewerUserId(supabase)` 로 구한다(게스트/stale token 에서 `auth.getUser()` 가 던질 수 있어 try/catch 내장).
 - 대상이 맞지 않는 소식은 `fetchNewsById` 가 `null` 을 돌려주므로 `/whats-new/[id]` 직접 접근도 `notFound()` 로 막힌다.
 - 읽음 상태는 기존대로 회원 = `user_news_reads`, 게스트 = localStorage 단일 키(`NEWS_GUEST_STORAGE_KEY`). 다이얼로그는 **조회자 대상 기준 최신 1건**만 검사한다.
@@ -97,25 +97,25 @@ Next.js 기본 파일명이 아니다. 동작:
 
 ### 페이지 metadata
 
-모든 `page.tsx`는 `staticMetadata({ title, description })`로 metadata를 정의한다 (`src/utils/meta.ts`).
+모든 `page.tsx`는 `staticMetadata({ title, description })`로 metadata를 정의한다 (`utils/meta.ts`).
 
 - title이 있으면 자동으로 ` | 일일 업무 보고 생성기` suffix가 붙고, 없으면 서비스명 단독.
-- 동적 title은 `generateMetadata` 내부에서 동일 utility를 호출 (`src/app/(app)/whats-new/[id]/page.tsx` 참고).
+- 동적 title은 `generateMetadata` 내부에서 동일 utility를 호출 (`app/(app)/whats-new/[id]/page.tsx` 참고).
 - 새 page를 추가하면서 `Metadata` 객체를 직접 만들지 말고, 항상 이 utility를 거친다.
 
 ### 보고서 데이터 구조 (3단계 계층)
 
-`Project`(대분류) → `Task`(중분류) → `TaskDetail`(소분류) 3단계다 (`src/types/report.type.ts`).
+`Project`(대분류) → `Task`(중분류) → `TaskDetail`(소분류) 3단계다 (`types/report.type.ts`).
 
 - 텍스트 출력 형식은 들여쓰기 4칸 단위 — 프로젝트 `    * `, 작업 `        - `(진행률 표기 포함), 세부 항목 `            · `(진행률 없음).
 - 프로젝트당 작업은 최소 1개를 유지하지만, **세부 항목은 최소 개수 제약이 없다** (0개 가능).
 - 세부 항목은 드래그 정렬 대상이 아니다. 작업을 드래그하면 `details`가 통째로 따라간다.
-- 파서(`src/utils/parser.ts`)는 가운뎃점 계열 불릿(`·ㆍ‧∙`)을 **직전 작업보다 깊게 들여쓰였을 때만** 세부 항목으로 본다. 들여쓰기가 같거나 얕으면 기존처럼 작업으로 파싱해 "가운뎃점 = 작업"으로 쓰던 문서의 하위호환을 지킨다. 그래서 `restoreLineBreaks`의 들여쓰기 보존 규칙(공백 2칸 이상 → 줄바꿈 + 들여쓰기 유지)이 진행률 뒤 분리 규칙보다 **먼저** 돌아야 한다 — 순서가 뒤집히면 불릿 앞 공백이 소비돼 계층 판정이 무너진다.
+- 파서(`utils/parser.ts`)는 가운뎃점 계열 불릿(`·ㆍ‧∙`)을 **직전 작업보다 깊게 들여쓰였을 때만** 세부 항목으로 본다. 들여쓰기가 같거나 얕으면 기존처럼 작업으로 파싱해 "가운뎃점 = 작업"으로 쓰던 문서의 하위호환을 지킨다. 그래서 `restoreLineBreaks`의 들여쓰기 보존 규칙(공백 2칸 이상 → 줄바꿈 + 들여쓰기 유지)이 진행률 뒤 분리 규칙보다 **먼저** 돌아야 한다 — 순서가 뒤집히면 불릿 앞 공백이 소비돼 계층 판정이 무너진다.
 - `details`는 세부 항목 도입 이전에 저장된 기록에 없다. localStorage / DB 에서 읽어 들이는 지점(`use-report-history-store.ts`)에서 `normalizeProjects`로 형태를 맞춘다. `content`가 JSONB 라 DB 마이그레이션은 필요 없다.
 
 ### 보고서 기록 (Report History)
 
-`src/stores/use-report-history-store.ts`는 모드별로 다른 적재 전략을 쓴다.
+`stores/use-report-history-store.ts`는 모드별로 다른 적재 전략을 쓴다.
 
 - **로그인 사용자**: 월 단위 페이지네이션. `initialize()`에서 ① `report_date` 목록만 lightweight으로 fetch(`allReportDates`), ② 가장 최근 월의 본문을 함께 fetch한 뒤에야 `isLoaded: true`로 set한다. 다른 월은 `loadMonth(year, month)`로 lazy 적재 후 `loadedMonths`에 기록. 동시 호출은 모듈 레벨 `monthFetchPromises` Map으로 합쳐진다. 클라이언트 정렬은 하지 않고 Supabase `.order('report_date', desc)` 결과를 그대로 신뢰한다.
 - **게스트**: localStorage에서 한 번에 로드. `MAX_HISTORY_ITEMS` 제한이 있고 `sortGuestByReportDateDesc`로 클라이언트 정렬한다.
@@ -125,15 +125,52 @@ Next.js 기본 파일명이 아니다. 동작:
 
 `report-history.tsx` / `report-calendar.tsx`는 SSR 시점에서 `new Date()`로 인한 hydration mismatch를 회피해야 한다.
 
-- **서버 날짜를 prop으로 주입** (`serverDateKey`): "오늘"은 클라이언트 `new Date()`가 아니라 `page.tsx`(서버 컴포넌트)가 `kstDateKey()`로 계산한 KST 날짜 키('YYYY-MM-DD')를 `page → ReportForm → ReportHistory → ReportCalendar`로 내려 쓴다. SSR HTML과 클라 첫 렌더가 같은 값을 쓰므로 캘린더 초기 뷰 월과 today 강조가 **첫 페인트부터 실제 현재 월/날짜로 결정적**이다 (과거의 `viewYear=2026, viewMonth=1` 하드코딩 placeholder 점프 제거). `useServerNow`(react-query, 서버시간)는 마운트 후 today 강조를 자기보정하는 보조 수단으로만 쓰고, 미도착(`now===undefined`) 구간엔 `serverDateKey`로 폴백한다.
+- **서버 날짜를 prop으로 주입** (`serverDateKey`): "오늘"은 클라이언트 `new Date()`가 아니라 홈 `page.tsx`의 `TodayReportForm`(서버 컴포넌트, `connection()` 이후)이 `kstDateKey()`로 계산한 KST 날짜 키('YYYY-MM-DD')를 `page → ReportForm → ReportHistory → ReportCalendar`로 내려 쓴다. SSR HTML과 클라 첫 렌더가 같은 값을 쓰므로 캘린더 초기 뷰 월과 today 강조가 **첫 페인트부터 실제 현재 월/날짜로 결정적**이다 (과거의 `viewYear=2026, viewMonth=1` 하드코딩 placeholder 점프 제거). `useServerNow`(react-query, 서버시간)는 마운트 후 today 강조를 자기보정하는 보조 수단으로만 쓰고, 미도착(`now===undefined`) 구간엔 `serverDateKey`로 폴백한다.
 - **`syncStage` 상태머신** (`'today' → 'records'`): 초기엔 `serverDateKey`의 월(today)로 시작하고, 기록 데이터가 도착하면 렌더 본문 if문에서 **1회성**으로 최신 기록월(오늘 월로 클램프)로 점프한다. SSR 시점엔 store가 비어 `recordMonths`가 0건이라 보정이 돌지 않아 서버 HTML과 일치한다. 기준 "오늘"이 항상 `serverDateKey`라 결정적이므로 별도 `isClient` 가드가 필요 없다. **effect 안에서 setState하지 않는다** — React 19 `react-hooks/set-state-in-effect` 룰을 따라 렌더 본문에서 if문으로 보정한다.
 - **prop 변화로 state 리셋**: 월이 바뀔 때 `localPage`를 1로 되돌리는 등은 `pageMonthAnchor` 같은 anchor state + 렌더 중 비교로 처리 (effect 사용 X).
 - **로딩 중 레이아웃 유지**: `isLoaded` / `loadingMonths`로 카드 스켈레톤을 렌더해 컴포넌트가 비어 보이지 않도록 한다. 캘린더 월 라벨은 서버 날짜로 첫 렌더부터 확정되므로 `isReady`는 `true`로 고정하고, 기록 도트는 데이터 도착 시 채워진다. 카드 스켈레톤(`HistoryCardSkeleton`)은 실제 카드의 `p-3 + mb-1 + 22px 상단 행 + text-[11px] 2줄 + mt-2 + text-[10px] timestamp` 구조를 그대로 따라가 레이아웃 점프를 막는다.
 
+### Cache Components (`cacheComponents` + `partialPrefetching`)
+
+`next.config.ts`에서 켜져 있다. 라우트는 **정적 셸 + 요청 시점 스트리밍**(PPR)으로 나뉜다. `next build` 결과에서 `○`는 완전 정적, `◐`는 부분 프리렌더다.
+
+- **route segment config 금지**: `dynamic` / `revalidate` / `fetchCache` / `dynamicParams` / `runtime = 'edge'`는 쓰지 않는다. 캐시가 필요하면 `'use cache'` + `cacheLife` / `cacheTag`를 쓴다. 현재 `'use cache'` 사용처는 없고, 세션 쿠키에 의존하는 데이터는 모두 요청 시점에 처리한다.
+- **요청 시점 데이터는 `<Suspense>` 안에서만 읽는다**:
+  - 대상: `cookies()` / `headers()`(= `createClient()` 서버), `params`, `searchParams`, `useSearchParams()`, 동적 세그먼트의 `usePathname()`.
+  - 예: 새소식 목록은 `NewsList`, 상세는 `NewsArticle`로 분리해 감싸고, 로그인의 `?error=`는 `AuthErrorToast`로 격리했다.
+  - fallback 스켈레톤은 실제 레이아웃을 따라 만든다.
+- **현재 시각·난수는 프리렌더 금지**:
+  - 서버 컴포넌트에서 `new Date()` / `Date.now()` / `Math.random()`을 쓰기 전에 `await connection()`을 호출하고 `<Suspense>`로 감싼다. 그렇지 않으면 빌드 시점 값이 셸에 굳는다.
+  - 홈 작성 폼(`TodayReportForm` + `ReportFormSkeleton`)과 cron GET이 이 패턴이다.
+  - 서버 Supabase 클라이언트(`lib/supabase/server.ts`의 `createClient()`)도 첫 줄에서 `connection()`을 호출한다. auth 가 세션 만료 검사에 `Date.now()`를 쓰는데, `partialPrefetching`의 세션별 셸 프리렌더(쿠키가 주어진 프리렌더)에서는 `cookies()`만으로 프리렌더가 멈추지 않기 때문이다. 로그인 상태의 `next dev`에서만 드러나고 `next build`로는 잡히지 않는다.
+- **루트 레이아웃에 fallback 없는 `<Suspense>`로 children 전체를 감싸지 않는다**: 하위의 동적 접근이 빌드 오류 대신 "빈 셸"로 조용히 흡수된다. 필요한 컴포넌트만 좁게 감싼다(예: `BackButtonHandler`).
+- **요청 단위 중복 조회는 `React.cache`로 합친다**: 예: `/whats-new/[id]`의 `getVisibleNews`는 `generateMetadata`와 본문이 공유한다.
+
+#### `<Activity>` 라우트 보존 — 이전 페이지는 언마운트되지 않는다
+
+클라이언트 이동 시 이전 라우트는 숨겨진 채(`display: none`) state와 DOM을 유지한다(최근 ~3개). 숨김 시 effect cleanup이 돌고, 다시 보일 때 effect가 **deps와 무관하게 재실행**된다. ref는 유지된다.
+
+- **일시적 UI는 숨김 시 초기화한다** — `useResetOnHide(() => ...)`(`hooks/use-reset-on-hide.ts`, `useLayoutEffect` cleanup):
+  - 열린 팝오버·다이얼로그(DatePicker, ReportPreview 크게 보기, ImportModal 등): 열린 채 복귀하면 BackStack에 재등록돼 history가 꼬인다.
+  - 지난 시도의 오류 문구, 편집 모드.
+  - 비밀번호 입력값.
+  - 반대로 작성 중인 초안처럼 보존이 이득인 state는 넣지 않는다.
+- **"신호가 올 때 한 번" 하는 DOM 부수효과**(포커스 이동 등)는 `useSignalEffect(signal, fn)`을 쓴다. 그냥 effect로 두면 재방문 때마다 마지막 대상이 다시 포커스된다.
+- **effect가 state를 한쪽으로만 바꾸지 않게 한다**: 예: `setVisible(true)`만 하면 재실행 시 내려가지 않는다. 결과를 그대로 반영한다.
+- **인증 주체가 바뀌는 이동**(로그인·로그아웃·게스트 시작·가입 완료):
+  - `router.push` + `refresh` 대신 `hardNavigate(href, { flash })`(`utils/navigation.ts`)로 문서를 새로 받는다.
+  - 그렇지 않으면 숨겨진 페이지에 이전 사용자의 세션 목록·입력값 등이 남는다.
+  - 이동 직후 토스트는 `flash`로 넘기면 `ToasterProvider`가 새 문서에서 띄운다.
+  - 같은 문서에 머무르는 초기화(게스트 기록 삭제)만 store `reset()` / `resetSession()`을 직접 호출한다.
+- **같은 화면이 두 번 DOM에 공존할 수 있다**(예: `/login` ↔ `/signup`). 폼 필드의 DOM `id`는 `useId()`로 만든다.
+- 데이터 재조회는 대부분 effect 재실행으로 자연히 이뤄진다. 단, "1회만" 가드(ref/플래그)를 둔 fetch는 재방문 시 갱신되지 않는다는 점을 의도적으로 판단한다.
+
 ### 디렉터리 구조
 
+`src/` 없이 프로젝트 루트에 소스를 둔다 (최신 `create-next-app` 기본 구조).
+
 ```
-src/
+./
 ├── app/                         # Next.js App Router (page/layout/route.ts만 default export 유지)
 │   ├── _components/             # 보고서 폼/프리뷰/캘린더 등 페이지 전용 컴포넌트 (kebab-case + index.ts 배럴)
 │   ├── (app)/                   # 로그인/게스트 보호 영역
@@ -147,7 +184,7 @@ src/
 ├── components/                  # 공용 UI 컴포넌트 (back-stack, news 등 하위 디렉터리 + 배럴)
 ├── constants/                   # `*.constants.ts` 파일로 상수 모음
 ├── core/                        # fetch 등 인프라 레이어
-├── enums/                       # `*.enum.ts` (as const 객체 + `src/types` 의 파생 union 타입 조합)
+├── enums/                       # `*.enum.ts` (as const 객체 + `types` 의 파생 union 타입 조합)
 ├── hooks/                       # `use-*.ts` — kebab-case + 네임드 export
 ├── lib/                         # supabase / webauthn / guest / news — 외부 의존 얇은 래퍼
 ├── providers/                   # 전역 Provider — query-provider(react-query) + query-keys 팩토리
@@ -155,6 +192,9 @@ src/
 ├── styles/                      # globals.css 등 글로벌 스타일
 ├── types/                       # `*.type.ts` + 전역 `.d.ts` (environments / query)
 ├── utils/                       # 범용 헬퍼
+├── docs/                        # 패스키 / Supabase 셋업 문서
+├── public/                      # 정적 파일 (`#/*` alias)
+├── supabase/migrations/         # SQL 마이그레이션 + RLS
 └── proxy.ts                     # 미들웨어 (파일명 주의: middleware.ts 아님)
 ```
 
@@ -180,17 +220,19 @@ src/
   - `route.ts`의 동적 세그먼트 → `RouteContext<'/api/route/[param]'>`
   - 자체 정의 `Params` / `PageProps` / `{ children }` 타입을 새로 작성하지 않는다.
 - **상수 / 타입 / 이넘 위치**:
-  - 상수 → `src/constants/<name>.constants.ts`
-  - 타입 → `src/types/<name>.type.ts` (전역 augmentation은 `.d.ts`)
-  - 이넘 → `src/enums/<name>.enum.ts`
+  - 상수 → `constants/<name>.constants.ts`
+  - 타입 → `types/<name>.type.ts` (전역 augmentation은 `.d.ts`)
+  - 이넘 → `enums/<name>.enum.ts`
 
 ### 기타 규약
 
-- Path alias: `@/*` → `src/*`, `#/*` → `public/*`
+- Path alias: `@/*` → 프로젝트 루트(`./*`), `#/*` → `public/*`
 - React Compiler 활성화 (`next.config.ts` `reactCompiler: true`) — `useMemo`/`useCallback` 과도 사용 지양
+- Tailwind CSS v4 는 PostCSS 가 아니라 `@tailwindcss/turbopack` 로더로 처리한다 (`next.config.ts` `turbopack.rules['*.css']`, `postcss.config.*` 없음 — create-next-app 기본 구성)
+- Tailwind 테마 토큰은 `@theme inline` 으로 선언한다 (`styles/colors.css` 등). 유틸리티가 `var(--background)` 를 직접 품어 사용 요소에서 해석되므로 `.dark` 등 하위에서 재정의한 변수가 그대로 반영된다. 대신 `--color-*` / `--container-*` 변수는 소스에 그 이름이 그대로 등장할 때만 `:root` 에 출력되니, CSS·JS 에서 직접 참조할 땐 변수명을 문자열로 조합하지 말고 그대로 적는다.
 - Vercel 배포 리전: `icn1` (Seoul, `vercel.json`)
-- 상태 관리: Zustand (`src/stores/`), 서버 데이터 페칭: `@tanstack/react-query` (SWR 미사용 — 제거됨)
-  - `QueryProvider`(`src/providers/query-provider/`)가 root layout 에 마운트된다.
-  - 쿼리 키는 `@lukemorales/query-key-factory` 로 `src/providers/query-provider/query-keys/` 에 도메인별로 정의하고 `mergeQueryKeys` 로 합친다. 소비 측은 `import { queries } from '@/providers'` 후 `useQuery(queries.<domain>.<query>(...))`.
-  - queryFn 은 `src/actions/*.actions.ts` 의 `'use server'` Server Action 을 호출한다 (예: 공휴일 `queries.holidays.byYear`, 서버시간 `queries.serverTime.now`).
+- 상태 관리: Zustand (`stores/`), 서버 데이터 페칭: `@tanstack/react-query` (SWR 미사용 — 제거됨)
+  - `QueryProvider`(`providers/query-provider/`)가 root layout 에 마운트된다.
+  - 쿼리 키는 `@lukemorales/query-key-factory` 로 `providers/query-provider/query-keys/` 에 도메인별로 정의하고 `mergeQueryKeys` 로 합친다. 소비 측은 `import { queries } from '@/providers'` 후 `useQuery(queries.<domain>.<query>(...))`.
+  - queryFn 은 `actions/*.actions.ts` 의 `'use server'` Server Action 을 호출한다 (예: 공휴일 `queries.holidays.byYear`, 서버시간 `queries.serverTime.now`).
 - 토스트는 `react-hot-toast`

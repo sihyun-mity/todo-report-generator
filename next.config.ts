@@ -1,9 +1,12 @@
-import { NextConfig } from 'next';
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   experimental: {
     scrollRestoration: true,
+    agentFeedback: false,
   },
+  cacheComponents: true,
+  partialPrefetching: true,
   reactCompiler: true,
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -11,6 +14,15 @@ const nextConfig: NextConfig = {
   },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error'] } : false,
+  },
+  turbopack: {
+    rules: {
+      // Tailwind CSS v4 를 PostCSS 대신 Turbopack 전용 로더로 처리한다 (create-next-app 기본 구성).
+      '*.css': {
+        loaders: ['@tailwindcss/turbopack'],
+        as: '*.css',
+      },
+    },
   },
   async headers() {
     return [
