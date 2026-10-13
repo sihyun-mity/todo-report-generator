@@ -11,7 +11,7 @@ import {
 } from '@/constants';
 import { useKrHolidays, useServerNow } from '@/hooks';
 import type { ReportHistoryItem } from '@/types';
-import { cn } from '@/utils';
+import { cn, reportItemDateKey, toDateKey } from '@/utils';
 
 type Props = {
   // 'YYYY-MM-DD' 도트 표시용 — 페이지네이션 미적재 월의 항목도 포함되어야 한다
@@ -37,13 +37,7 @@ function getDayColor(dow: number, isHoliday: boolean): CalendarDayColor {
   return CALENDAR_WEEKDAY_COLOR;
 }
 
-export const toDateKey = (y: number, m: number, d: number) =>
-  `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-
-export const getItemDateKey = (item: ReportHistoryItem) => {
-  const year = new Date(item.timestamp).getFullYear();
-  return toDateKey(year, parseInt(item.month, 10), parseInt(item.day, 10));
-};
+export const getItemDateKey = (item: ReportHistoryItem) => reportItemDateKey(item);
 
 export function ReportCalendar({
   dateKeys,

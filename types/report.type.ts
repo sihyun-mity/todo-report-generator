@@ -27,6 +27,9 @@ export type ReportHistoryItem = {
   todayProjects: Array<Project>;
   tomorrowProjects: Array<Project>;
   timestamp: number;
+  // 보고서 날짜의 연도. 텍스트 템플릿에는 월/일만 있어 연도를 따로 들고 다닌다.
+  // 도입 이전 게스트 기록에는 없으므로 소비 측은 `reportItemDateKey`로 timestamp 연도에 폴백한다.
+  year?: number;
 };
 
 export type ReportDate = {
@@ -104,6 +107,8 @@ export type ReportFormStore = {
 export type ReportHistoryMode = 'loading' | 'user' | 'guest';
 
 export type ReportHistoryAddArgs = {
+  // 생략하면 현재 연도로 저장한다.
+  year?: number;
   month: string;
   day: string;
   todayProjects: ReadonlyArray<Project>;

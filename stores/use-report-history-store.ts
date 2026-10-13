@@ -4,7 +4,7 @@ import { MAX_HISTORY_ITEMS, REPORT_HISTORY_STORAGE_KEY } from '@/constants';
 import { isGuestMode } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import type { Project, ReportHistoryItem, ReportHistoryStore } from '@/types';
-import { cloneProjects, generateReportText, normalizeProjects } from '@/utils';
+import { cloneProjects, generateReportText, normalizeProjects, reportItemDateKey, toDateKey } from '@/utils';
 
 type ReportRow = {
   id: string;
@@ -20,12 +20,9 @@ type ReportRow = {
   };
 };
 
-const toReportDate = (month: string, day: string) => {
-  const y = new Date().getFullYear();
-  const m = String(parseInt(month, 10)).padStart(2, '0');
-  const d = String(parseInt(day, 10)).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
+// 연도를 모르면(일반 작성 폼) 현재 연도로 본다.
+const toReportDate = (month: string, day: string, year: number = new Date().getFullYear()) =>
+  toDateKey(year, parseInt(month, 10), parseInt(day, 10));
 
 const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
 
@@ -37,26 +34,19 @@ const monthRangeBounds = (year: number, month: number) => {
   return { start, end };
 };
 
-// 게스트 모드 항목의 dateKey 도출 (timestamp 연도 + 월/일)
-const guestItemDateKey = (item: ReportHistoryItem) => {
-  const y = new Date(item.timestamp).getFullYear();
-  const m = String(parseInt(item.month, 10)).padStart(2, '0');
-  const d = String(parseInt(item.day, 10)).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
 // 게스트 모드 전용: 한 번 적재한 후 클라이언트에서 정렬한다 (전체 데이터가 메모리에 있으므로 의미 있음).
 // 로그인 사용자 모드에서는 Supabase 정렬을 그대로 신뢰하므로 클라이언트 정렬을 적용하지 않는다.
 const sortGuestByReportDateDesc = (items: ReadonlyArray<ReportHistoryItem>): Array<ReportHistoryItem> =>
   [...items].sort((a, b) => {
-    const ka = guestItemDateKey(a);
-    const kb = guestItemDateKey(b);
+    const ka = reportItemDateKey(a);
+    const kb = reportItemDateKey(b);
     if (ka !== kb) return ka < kb ? 1 : -1;
     return b.timestamp - a.timestamp;
   });
 
 const rowToItem = (row: ReportRow): ReportHistoryItem => ({
   id: row.id,
+  year: parseInt(row.report_date.slice(0, 4), 10),
   month: row.content.month,
   day: row.content.day,
   content: row.content.text,
@@ -188,7 +178,7 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
           isLoaded: true,
           hasLocalBackup: computeHasLocalBackup(),
           userId: null,
-          allReportDates: items.map(guestItemDateKey),
+          allReportDates: items.map(reportItemDateKey),
           loadedMonths: new Set<string>(),
           loadingMonths: new Set<string>(),
         });
@@ -274,7 +264,7 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
         isLoaded: true,
         hasLocalBackup: computeHasLocalBackup(),
         userId: null,
-        allReportDates: items.map(guestItemDateKey),
+        allReportDates: items.map(reportItemDateKey),
         loadedMonths: new Set<string>(),
         loadingMonths: new Set<string>(),
       });
@@ -346,16 +336,18 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
     const { mode, history } = get();
     if (mode === 'loading') return;
 
-    const reportDate = toReportDate(data.month, data.day);
+    const year = data.year ?? new Date().getFullYear();
+    const reportDate = toReportDate(data.month, data.day, year);
     const newText = generateReportText(data);
 
     // 같은 날짜의 기존 기록과 본문이 동일하면 I/O를 건너뛴다 (localStorage / Supabase 쓰기 생략)
-    const existingForDate = history.find((item) => toReportDate(item.month, item.day) === reportDate);
+    const existingForDate = history.find((item) => reportItemDateKey(item) === reportDate);
     if (existingForDate && existingForDate.content === newText) return;
 
     if (mode === 'guest') {
       const newItem: ReportHistoryItem = {
         id: generateLocalId(),
+        year,
         month: data.month,
         day: data.day,
         content: newText,
@@ -364,13 +356,13 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
         timestamp: Date.now(),
       };
 
-      const filtered = loadLocalHistory().filter((item) => toReportDate(item.month, item.day) !== reportDate);
+      const filtered = loadLocalHistory().filter((item) => reportItemDateKey(item) !== reportDate);
       const next = sortGuestByReportDateDesc([newItem, ...filtered]).slice(0, MAX_HISTORY_ITEMS);
       saveLocalHistory(next);
       set({
         history: next,
         hasLocalBackup: next.length > 0,
-        allReportDates: next.map(guestItemDateKey),
+        allReportDates: next.map(reportItemDateKey),
       });
       return;
     }
@@ -437,7 +429,7 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
         return {
           history: filtered,
           hasLocalBackup: next.length > 0,
-          allReportDates: filtered.map(guestItemDateKey),
+          allReportDates: filtered.map(reportItemDateKey),
         };
       });
       return;
@@ -446,11 +438,7 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
     const supabase = getSupabase();
     const removedDateKey = (() => {
       const target = get().history.find((item) => item.id === id);
-      if (!target) return null;
-      const y = new Date(target.timestamp).getFullYear();
-      const mm = String(parseInt(target.month, 10)).padStart(2, '0');
-      const dd = String(parseInt(target.day, 10)).padStart(2, '0');
-      return `${y}-${mm}-${dd}`;
+      return target ? reportItemDateKey(target) : null;
     })();
 
     set((state) => ({
@@ -495,7 +483,7 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
 
     const rows = parsed.map((item) => ({
       user_id: user.id,
-      report_date: toReportDate(item.month, item.day),
+      report_date: reportItemDateKey(item),
       content: {
         month: item.month,
         day: item.day,

@@ -1,19 +1,32 @@
 'use client';
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { AlertCircle, Check, Clipboard, Info, X } from 'lucide-react';
+import { AlertCircle, CalendarDays, Check, Clipboard, Info, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
-import type { Project } from '@/types';
-import { cn, parseReportText } from '@/utils';
+import type { Project, ReportDate } from '@/types';
+import { cn, inferReportYear, parseReportText } from '@/utils';
 import { Portal, useDismissOnBack } from '@/components';
 import { useOnClickOutside } from '@/hooks';
-import { ProjectPreview } from '.';
+import { DatePicker, ProjectPreview } from '.';
+
+type ImportDate = ReportDate & { year: number };
+
+// 텍스트의 `N월 N일`에는 연도가 없으므로 `inferReportYear`로 추정한 연도를 붙여 기본 날짜를 만든다.
+const inferImportDate = (parsed: ReturnType<typeof parseReportText>): ImportDate | null => {
+  if (!parsed?.month || !parsed.day) return null;
+  const year = inferReportYear(parseInt(parsed.month, 10), parseInt(parsed.day, 10));
+  return year === null ? null : { year, month: parsed.month, day: parsed.day };
+};
+
+// 텍스트를 고치는 중에도 사용자가 고른 날짜를 유지하되, 텍스트 속 날짜 자체가 바뀌면 다시 추정값을 따른다.
+const parsedDateKey = (parsed: ReturnType<typeof parseReportText>) => (parsed ? `${parsed.month}-${parsed.day}` : '');
 
 type ImportModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onApply: (data: {
+    year: number;
     month: string;
     day: string;
     todayProjects: ReadonlyArray<Project>;
@@ -24,12 +37,16 @@ type ImportModalProps = {
 export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalProps>) {
   const [text, setText] = useState('');
   const [parsedData, setParsedData] = useState<ReturnType<typeof parseReportText>>(null);
+  // 사용자가 날짜 선택기로 직접 고친 날짜. 없으면 텍스트에서 추정한 날짜를 쓴다.
+  const [dateOverride, setDateOverride] = useState<ImportDate | null>(null);
+  const importDate = dateOverride ?? inferImportDate(parsedData);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const { lock, unlock } = useScrollLock({ autoLock: false });
 
   const handleClose = () => {
     setText('');
     setParsedData(null);
+    setDateOverride(null);
     onClose();
   };
 
@@ -38,10 +55,15 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
   // 브라우저 back(안드 하드웨어 back 포함)으로도 모달이 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(isOpen, handleClose);
 
+  const updateParsed = (next: ReturnType<typeof parseReportText>) => {
+    if (parsedDateKey(next) !== parsedDateKey(parsedData)) setDateOverride(null);
+    setParsedData(next);
+  };
+
   const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
-    setParsedData(newText.trim() ? parseReportText(newText) : null);
+    updateParsed(newText.trim() ? parseReportText(newText) : null);
   };
 
   const handlePasteFromClipboard = async () => {
@@ -49,7 +71,7 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
       const clipboardText = await navigator.clipboard.readText();
       setText(clipboardText);
       const result = parseReportText(clipboardText);
-      setParsedData(result);
+      updateParsed(result);
       if (result) {
         toast.success('클립보드에서 텍스트를 가져왔습니다.');
       } else {
@@ -61,7 +83,7 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
   };
 
   const handleApply = () => {
-    if (parsedData) onApply(parsedData);
+    if (parsedData && importDate) onApply({ ...parsedData, ...importDate });
   };
 
   // 모달이 열려 있는 동안 배경 스크롤을 잠근다.
@@ -223,20 +245,48 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
             </div>
           </div>
 
-          <div className="flex gap-3 border-t border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
-            <button
-              onClick={handleClose}
-              className="flex-1 rounded-xl bg-zinc-100 px-4 py-3 font-medium transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-            >
-              취소
-            </button>
-            <button
-              disabled={!parsedData}
-              onClick={handleApply}
-              className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-            >
-              내용 적용하기
-            </button>
+          <div className="space-y-3 border-t border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
+            {parsedData && (
+              // 텍스트의 날짜에는 연도가 없어 적용 직전에 확정된 날짜를 보여주고 조정할 수 있게 한다.
+              // 본문 스크롤 영역 밖(푸터)에 두어 popover 가 잘리지 않게 위로 연다.
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                    <CalendarDays className="h-4 w-4 text-blue-500" />
+                    보고서 날짜
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    {dateOverride
+                      ? '직접 선택한 날짜로 적용합니다.'
+                      : importDate
+                        ? '텍스트에는 연도가 없어 오늘 기준 가장 최근 날짜로 추정했습니다. 다르면 직접 조정해주세요.'
+                        : '텍스트에서 날짜를 찾지 못했습니다. 적용하려면 날짜를 선택해주세요.'}
+                  </p>
+                </div>
+                <DatePicker
+                  value={importDate ?? { month: '', day: '' }}
+                  year={importDate?.year}
+                  onChange={(date, year) => setDateOverride({ ...date, year })}
+                  side="top"
+                  align="end"
+                />
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleClose}
+                className="flex-1 rounded-xl bg-zinc-100 px-4 py-3 font-medium transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+              >
+                취소
+              </button>
+              <button
+                disabled={!parsedData || !importDate}
+                onClick={handleApply}
+                className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                내용 적용하기
+              </button>
+            </div>
           </div>
         </div>
       </div>

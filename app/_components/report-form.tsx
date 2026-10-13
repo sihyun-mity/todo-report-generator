@@ -28,17 +28,8 @@ import {
   generateReportText,
   hasProjectContent,
   mergeIncompleteTasks,
+  toDateKey,
 } from '@/utils';
-
-// 오늘/내일을 제외한 기준 날짜(월/일)로 히스토리 추가 대상인지 판단
-const isEarlierDate = (month: string, day: string) => {
-  const importMonth = parseInt(month, 10);
-  const importDay = parseInt(day, 10);
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentDay = now.getDate();
-  return importMonth < currentMonth || (importMonth === currentMonth && importDay < currentDay);
-};
 
 // 오늘 자정 기준 dateKey ('YYYY-MM-DD'). getItemDateKey와 동일한 형식이라 lexical 비교 가능.
 const todayDateKey = () => {
@@ -101,13 +92,10 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const [dirtyBaseline, setDirtyBaseline] = useState<string | null>(null);
 
   // 기록 추가/실행취소 직후 ReportHistory 캘린더를 해당 월로 이동시키기 위한 요청 토큰.
-  // toReportDate와 동일한 규칙으로 dateKey를 만든다 (현재 연도 + 보고서 month/day).
+  // toReportDate와 동일한 규칙으로 dateKey를 만든다 (연도 미지정 시 현재 연도 + 보고서 month/day).
   const [historyFocus, setHistoryFocus] = useState<{ dateKey: string; nonce: number } | null>(null);
-  const requestHistoryFocus = useCallback((month: string, day: string) => {
-    const y = new Date().getFullYear();
-    const mm = String(parseInt(month, 10)).padStart(2, '0');
-    const dd = String(parseInt(day, 10)).padStart(2, '0');
-    setHistoryFocus({ dateKey: `${y}-${mm}-${dd}`, nonce: Date.now() });
+  const requestHistoryFocus = useCallback((month: string, day: string, year: number = new Date().getFullYear()) => {
+    setHistoryFocus({ dateKey: toDateKey(year, parseInt(month, 10), parseInt(day, 10)), nonce: Date.now() });
   }, []);
 
   // 외부 액션(복사·리셋·기록 불러오기·텍스트 적용) 후 store가 새 값으로 갱신된 직후 baseline을 다시 잡는다.
@@ -536,7 +524,9 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   };
 
   // 텍스트 분석 결과 적용 (과거 날짜라면 히스토리에도 기록)
+  // 연도는 가져오기 모달에서 확정된 값을 쓴다 — 텍스트에는 월/일만 있어 해를 넘기는 시점에 현재 연도로 두면 어긋난다.
   const handleImportApply = async (data: {
+    year: number;
     month: string;
     day: string;
     todayProjects: ReadonlyArray<Project>;
@@ -551,10 +541,10 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       if (!ok) return;
     }
 
-    if (isEarlierDate(data.month, data.day)) {
+    if (toDateKey(data.year, parseInt(data.month, 10), parseInt(data.day, 10)) < todayDateKey()) {
       void addHistory(data);
-      requestHistoryFocus(data.month, data.day);
-      toast.success(`${data.month}월 ${data.day}일 기록을 이전 기록에 추가했습니다.`);
+      requestHistoryFocus(data.month, data.day, data.year);
+      toast.success(`${data.year}년 ${data.month}월 ${data.day}일 기록을 이전 기록에 추가했습니다.`);
     }
 
     setReportDate({ month: data.month, day: data.day });

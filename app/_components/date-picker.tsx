@@ -9,7 +9,13 @@ import { useDismissOnBack } from '@/components';
 
 type DatePickerProps = {
   value: ReportDate;
-  onChange: (date: ReportDate) => void;
+  // 고른 날짜의 연도도 함께 넘긴다. 연도를 쓰지 않는 호출자는 두 번째 인자를 무시하면 된다.
+  onChange: (date: ReportDate, year: number) => void;
+  // 지정하면 연도까지 고르는 모드 — 버튼 라벨에 연도를 표시하고, 선택 강조도 연도까지 일치할 때만 한다.
+  year?: number;
+  // popover 위치. 스크롤 영역 하단이나 우측 끝에 놓일 때 잘리지 않도록 방향을 바꾼다.
+  side?: 'top' | 'bottom';
+  align?: 'start' | 'end';
 };
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -21,14 +27,17 @@ const buildCells = (year: number, month: number): ReadonlyArray<number | null> =
   const result: Array<number | null> = [];
   for (let i = 0; i < startDow; i++) result.push(null);
   for (let d = 1; d <= daysInMonth; d++) result.push(d);
-  while (result.length % 7 !== 0) result.push(null);
+  // 달마다 주 수(4~6)가 달라도 popover 높이가 변하지 않게 항상 6주로 채운다.
+  // 위로 여는 popover(side="top")는 높이가 바뀌면 월 이동 버튼 위치가 움직여 연속 클릭이 바깥 클릭이 된다.
+  while (result.length < 42) result.push(null);
   return result;
 };
 
 // 보고서 날짜 입력용 popover 캘린더
 // - ReportDate({month, day})는 연도를 갖지 않으므로 popover는 현재 연도를 시작점으로 표시
 // - 사용자는 월 네비게이션으로 어느 달이든 선택 가능 (연도가 바뀌어도 commit은 month/day만)
-export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
+// - `year`를 주면 연도까지 고르는 모드로 동작한다 (텍스트 가져오기처럼 연도가 저장 대상에 영향을 줄 때)
+export const DatePicker = ({ value, onChange, year, side = 'bottom', align = 'start' }: Readonly<DatePickerProps>) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -42,14 +51,14 @@ export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
   const valueDay = parseInt(value.day, 10);
   const hasValidValue = !Number.isNaN(valueMonth) && !Number.isNaN(valueDay);
 
-  const [viewYear, setViewYear] = useState(currentYear);
+  const [viewYear, setViewYear] = useState(year ?? currentYear);
   const [viewMonth, setViewMonth] = useState(hasValidValue ? valueMonth : currentMonth);
 
   // popover를 열 때마다 view를 현재 선택값(없으면 오늘) 기준으로 재설정
   const openPicker = () => {
     const now = new Date();
     setToday(now);
-    setViewYear(now.getFullYear());
+    setViewYear(hasValidValue && year !== undefined ? year : now.getFullYear());
     setViewMonth(hasValidValue ? valueMonth : now.getMonth() + 1);
     setIsOpen(true);
   };
@@ -101,18 +110,20 @@ export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
   };
 
   const handlePickDay = (day: number) => {
-    onChange({ month: String(viewMonth), day: String(day) });
+    onChange({ month: String(viewMonth), day: String(day) }, viewYear);
     setIsOpen(false);
   };
 
   const handlePickToday = () => {
     setViewYear(currentYear);
     setViewMonth(currentMonth);
-    onChange({ month: String(currentMonth), day: String(currentDay) });
+    onChange({ month: String(currentMonth), day: String(currentDay) }, currentYear);
     setIsOpen(false);
   };
 
-  const buttonLabel = hasValidValue ? `${valueMonth}월 ${valueDay}일` : '날짜 선택';
+  const buttonLabel = hasValidValue
+    ? `${year !== undefined ? `${year}년 ` : ''}${valueMonth}월 ${valueDay}일`
+    : '날짜 선택';
 
   return (
     <div ref={containerRef} className="relative">
@@ -131,7 +142,11 @@ export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
         <div
           role="dialog"
           aria-label="날짜 선택"
-          className="absolute top-full left-0 z-30 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+          className={cn(
+            'absolute z-30 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-800 dark:bg-zinc-900',
+            side === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2',
+            align === 'start' ? 'left-0' : 'right-0'
+          )}
         >
           <div className="mb-2 flex items-center justify-between">
             <button
@@ -169,7 +184,11 @@ export const DatePicker = ({ value, onChange }: Readonly<DatePickerProps>) => {
           <div className="grid grid-cols-7 gap-1">
             {cells.map((d, idx) => {
               if (d === null) return <div key={`empty-${idx}`} className="aspect-square" />;
-              const isSelected = hasValidValue && valueMonth === viewMonth && valueDay === d;
+              const isSelected =
+                hasValidValue &&
+                (year === undefined || year === viewYear) &&
+                valueMonth === viewMonth &&
+                valueDay === d;
               const isToday = viewYear === currentYear && viewMonth === currentMonth && d === currentDay;
               return (
                 <button
