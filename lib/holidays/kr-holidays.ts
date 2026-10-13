@@ -67,9 +67,19 @@ async function fetchHolidaysForYear(year: number): Promise<Array<{ holiday_date:
   }
 
   const items = normalizeItems(json.response?.body?.items?.item);
-  const holidays = items
-    .filter((it) => it.isHoliday === 'Y')
-    .map((it) => ({ holiday_date: locdateToDateKey(it.locdate), name: it.dateName }));
+
+  // 같은 날짜에 공휴일이 겹치면(예: 명절 연휴와 다른 공휴일) 응답에 같은 locdate 가 여러 건 온다.
+  // kr_holidays 는 holiday_date 가 PK 라 한 번의 upsert 에 같은 날짜가 두 번 있으면
+  // 'ON CONFLICT DO UPDATE command cannot affect row a second time'(21000)으로 통째로 실패한다 — 날짜당 1건으로 합친다.
+  const namesByDate = new Map<string, Array<string>>();
+  for (const it of items) {
+    if (it.isHoliday !== 'Y') continue;
+    const dateKey = locdateToDateKey(it.locdate);
+    const names = namesByDate.get(dateKey) ?? [];
+    if (!names.includes(it.dateName)) names.push(it.dateName);
+    namesByDate.set(dateKey, names);
+  }
+  const holidays = [...namesByDate].map(([holiday_date, names]) => ({ holiday_date, name: names.join(', ') }));
 
   // 대한민국에 공휴일이 하나도 없는 해는 없다 — 0건은 응답 이상으로 보고 캐시하지 않는다.
   // (여기서 캐시하면 잘못된 '휴일 없음'이 TTL 동안 굳고, 기존 캐시를 통째로 지우게 된다)
