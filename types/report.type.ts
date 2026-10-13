@@ -106,6 +106,8 @@ export type ReportFormStore = {
 
 export type ReportHistoryMode = 'loading' | 'user' | 'guest';
 
+export type ReportExportFormat = 'txt' | 'json';
+
 export type ReportHistoryAddArgs = {
   // 생략하면 현재 연도로 저장한다.
   year?: number;
@@ -133,5 +135,7 @@ export type ReportHistoryStore = {
   addHistory: (data: ReportHistoryAddArgs) => Promise<void>;
   deleteHistory: (id: string) => Promise<void>;
   importFromLocalStorage: () => Promise<{ imported: number }>;
+  // 내보내기용 전체 기록 조회 (보고서 날짜 오름차순). store 상태는 건드리지 않는다. 실패하면 null.
+  fetchAllHistory: () => Promise<Array<ReportHistoryItem> | null>;
   reset: () => void;
 };

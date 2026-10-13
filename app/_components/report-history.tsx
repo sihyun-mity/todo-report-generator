@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import type { ReportHistoryItem, ReportHistoryMode } from '@/types';
 import { MAX_HISTORY_ITEMS } from '@/constants';
-import { ReportCalendar, getItemDateKey } from '.';
+import { ReportCalendar, ReportExportMenu, getItemDateKey } from '.';
 import { getChunkedArray } from '@/utils';
 
 type Props = {
@@ -189,6 +189,7 @@ export function ReportHistory({
       <div className="mb-4 flex items-center gap-2">
         <History size={18} className="text-zinc-500" />
         <h2 className="text-sm font-semibold tracking-wider text-zinc-500 uppercase">이전 기록</h2>
+        <ReportExportMenu disabled={!isLoaded || allDateKeys.length === 0} />
       </div>
 
       {mode === 'guest' && (

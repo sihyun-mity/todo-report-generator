@@ -150,6 +150,30 @@ const fetchMonthFromSupabase = async (year: number, month: number): Promise<Arra
   return (data ?? []).map(rowToItem);
 };
 
+// PostgREST 기본 max-rows(1000)에 걸려 잘리지 않도록 범위 단위로 나눠 받는다.
+const EXPORT_PAGE_SIZE = 1000;
+
+// 내보내기 전용: 로그인 사용자의 전체 보고서를 날짜 오름차순으로 fetch. 월 단위 캐시와 무관하게 매번 새로 읽는다.
+const fetchAllFromSupabase = async (): Promise<Array<ReportHistoryItem> | null> => {
+  const supabase = getSupabase();
+  const rows: Array<ReportRow> = [];
+  for (let from = 0; ; from += EXPORT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('reports')
+      .select('id, report_date, created_at, updated_at, content')
+      .order('report_date', { ascending: true })
+      .range(from, from + EXPORT_PAGE_SIZE - 1)
+      .returns<Array<ReportRow>>();
+    if (error) {
+      console.error('전체 보고서 불러오기 실패', error);
+      return null;
+    }
+    rows.push(...(data ?? []));
+    if (!data || data.length < EXPORT_PAGE_SIZE) break;
+  }
+  return rows.map(rowToItem);
+};
+
 // 보고서 기록(이전 작성 내역)을 모듈 레벨에서 캐싱.
 // - 로그인 사용자: report_date 목록 + 가장 최근 월 본문을 함께 fetch한 뒤에 isLoaded를 true로 한다 (form hydration race 회피).
 //   추가 월은 loadMonth(year, month)로 lazy 로드.
@@ -534,6 +558,14 @@ export const useReportHistoryStore = create<ReportHistoryStore>()((set, get) => 
     });
 
     return { imported: rows.length };
+  },
+
+  fetchAllHistory: async () => {
+    const { mode } = get();
+    if (mode === 'loading') return null;
+    // 게스트는 localStorage 가 원본 — store 의 history 와 같지만 최신 저장분을 그대로 읽는다.
+    if (mode === 'guest') return sortGuestByReportDateDesc(loadLocalHistory()).reverse();
+    return fetchAllFromSupabase();
   },
 
   reset: () => {

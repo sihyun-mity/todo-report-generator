@@ -9,6 +9,7 @@ export * from './project-list';
 export * from './project-list-skeleton';
 export * from './project-preview';
 export * from './report-calendar';
+export * from './report-export-menu';
 export * from './report-form';
 export * from './report-form-skeleton';
 export * from './report-header';
