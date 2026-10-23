@@ -9,7 +9,12 @@ import {
 } from '@/constants';
 import { GithubApiError, inspectGithubToken, listMyCommitsSince } from '@/lib/github/api';
 import { parseGithubImportIntent } from '@/lib/github/import-intent';
-import { clearGithubToken, createGithubTokenCookie, readGithubToken } from '@/lib/github/token-cookie';
+import {
+  clearGithubToken,
+  createGithubTokenCookie,
+  readGithubToken,
+  refreshGithubToken,
+} from '@/lib/github/token-cookie';
 import { createClient } from '@/lib/supabase/server';
 import type { GithubCaptureResult, GithubCommitsResult, GithubConnection } from '@/types';
 
@@ -107,6 +112,8 @@ export async function fetchGithubCommits(
     // 작성 시각 오름차순이라 뒤쪽이 최근 커밋이다
     const found = await listMyCommitsSince(token.accessToken, token.login, since, until, excluded);
     const commits = found.slice(-GITHUB_COMMITS_CLASSIFY_LIMIT);
+    // 쓰는 동안은 연결을 유지한다 — 마지막으로 가져온 때부터 GITHUB_TOKEN_TTL_SECONDS 동안 안 쓰면 끊긴다
+    await refreshGithubToken(token);
     return {
       ok: true,
       login: token.login,

@@ -54,6 +54,13 @@ export async function readGithubToken(userId: string): Promise<GithubTokenPayloa
   }
 }
 
+// 토큰을 실제로 쓴 뒤 만료를 지금부터 다시 센다. 봉인값 안에도 만료 시각이 있어 maxAge 만 늘리지 않고 다시 봉인한다.
+export async function refreshGithubToken(payload: GithubTokenPayload): Promise<void> {
+  const cookie = await createGithubTokenCookie(payload);
+  const cookieStore = await cookies();
+  cookieStore.set(cookie.name, cookie.value, cookie.options);
+}
+
 export async function clearGithubToken(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(GITHUB_TOKEN_COOKIE_NAME);

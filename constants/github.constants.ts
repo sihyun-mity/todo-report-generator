@@ -1,6 +1,6 @@
 // GitHub OAuth 액세스 토큰을 담는 봉인(iron-session) 쿠키. httpOnly 라 브라우저 JS 에서는 읽을 수 없다.
 export const GITHUB_TOKEN_COOKIE_NAME = 'github_token';
-// OAuth App 토큰은 만료가 없지만, 쿠키는 30일마다 다시 연결하게 해 노출 기간을 줄인다.
+// OAuth App 토큰은 만료가 없지만, 쿠키는 30일 동안 커밋을 가져오지 않으면 끊어 노출 기간을 줄인다(가져올 때마다 다시 센다).
 export const GITHUB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 // 로그인에 쓰는 Supabase GitHub OAuth App 을 그대로 쓰되, 연결할 때만 `repo` 스코프를 추가로 요청한다.
