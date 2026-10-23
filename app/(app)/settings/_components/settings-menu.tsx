@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { Bell, ChevronRight, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
+import { Bell, ChevronRight, Database, KeyRound, Link2, Lock, Mail, MonitorSmartphone } from 'lucide-react';
 import Link from 'next/link';
 import { useAccountInfo } from '.';
 
@@ -24,7 +24,7 @@ export function SettingsMenu() {
       <header className="mb-8">
         <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">계정 설정</h1>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          로그인 수단부터 기기 보안, 작성 알림까지 항목별로 관리할 수 있어요.
+          로그인 수단부터 기기 보안, 작성 알림, 저장된 데이터까지 항목별로 관리할 수 있어요.
         </p>
       </header>
 
@@ -65,6 +65,12 @@ export function SettingsMenu() {
           icon={<Bell size={18} />}
           title="작성 알림"
           subtitle="평일 오후 4시, 미작성 시 보고서 작성 알림 받기"
+        />
+        <MenuLink
+          href="/settings/data"
+          icon={<Database size={18} />}
+          title="저장된 데이터 관리"
+          subtitle="계정에 저장된 데이터를 골라 삭제"
         />
       </ul>
     </div>

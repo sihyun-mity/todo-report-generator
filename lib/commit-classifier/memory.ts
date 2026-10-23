@@ -172,6 +172,13 @@ export const readCommitImportMemory = async (userId: string | null): Promise<Com
   }
 };
 
+// 설정 > 저장된 데이터 관리에서 서버 기록을 지우기 직전에 부른다. 진행 중인 쓰기를 기다리고 이 기기에 남은 예전 기록도
+// 지운다 — 남겨 두면 다음에 읽을 때 DB 로 다시 합쳐져 지운 기록이 되살아난다.
+export const clearLocalCommitImportMemory = async (userId: string) => {
+  await writeQueue;
+  clearLegacyMemory(userId);
+};
+
 // 미리보기에서 사용자가 고친 내용을 기억하고, 폼에 들어간 항목 연결을 저장 대기로 남긴다.
 // 프로젝트명·작업명은 분류 결과(original)와 달라진 것만 기억한다 — AI 판정을 그대로 받아들인 것까지 여기서 기억하면
 // 보고서를 저장하지 않고 폼을 비워도 다음 분류(다시 분류 포함)가 AI 를 건너뛰고 같은 결과만 되풀이한다.

@@ -150,6 +150,14 @@ Next.js 기본 파일명이 아니다. 동작:
 - **새 작업 진행률은 커밋 제목으로 가늠한다**(`progressPrompt`, 프로젝트마다 한 번). 커밋 종류(feat/fix 등)·개수로 나누지 않고, 제목에 미완성 신호(WIP·진행 중·1차·초안 등)가 분명할 때만 낮춘다 — 애매하면 100(`COMMIT_IMPORT_DEFAULT_PROGRESS`). AI 가 없거나 판정이 빠지면 100. 기존 작업은 폼에 적힌 진행률을 그대로 둔다. 검증된 이름짓기 프롬프트에 덧붙이지 않고 따로 묻는다.
 - **세부 항목은 AI 가 필요하다고 판단한 작업에만 미리 채운다**(`detailSuggestionPrompt`). 커밋은 분류 근거일 뿐 세부 항목과 1:1 이 아니다. 커밋 하나로 새로 만든 작업은 묻지 않고, 개수 상한을 커밋 수로 둔다(상한이 없으면 커밋 하나에서 여러 줄을 지어냈다). 작업명과 겹치는 줄은 버린다. 세부 항목을 거의 안 쓰는 사용자(최근 작업의 10% 미만)이거나 제안을 지운 횟수가 남긴 횟수보다 많으면 더 아끼라고 알린다. 미리보기에서는 폼처럼 세부 항목을 추가·삭제할 수 있고, 작업 반영 여부는 작업 머리줄의 "가져오기" 체크로 고른다.
 
+### 저장된 데이터 관리 (`/settings/data`)
+
+회원이 서버에 저장된 데이터를 종류별로 골라 지운다. 종류는 `ACCOUNT_DATA_KIND`(`enums/account-data.enum.ts`), 조회·삭제는 `actions/account-data.actions.ts`(RLS 적용 서버 클라이언트, `user_id` 기준).
+
+- **회원 행을 담는 테이블을 새로 만들면 여기 종류로 추가할지 판단하고, 본인 행 delete RLS 정책을 함께 둔다.** RLS 가 삭제를 막으면 오류 없이 0행만 지워지므로 Action 은 지운 뒤 다시 세어 남은 행이 있으면 실패로 돌려준다.
+- 서버에서 지운 뒤 **이 기기에 남은 사본을 정리**한다(`DataManagementSection` 의 `cleanUpLocal`): 보고서 기록 store 재적재, 커밋 보정 메모리 쿼리 초기화. 커밋 보정 메모리는 서버 삭제 **전에** `clearLocalCommitImportMemory` 로 쓰기 큐를 비우고 예전 localStorage 기록을 지운다 — 남기면 다음 읽기에서 DB 로 다시 합쳐져 되살아난다.
+- 계정 자체·로그인 수단(패스키·로그인 기기)·작성 알림 구독·새소식 읽음 기록·GitHub 토큰 쿠키는 대상이 아니다.
+
 ### Hydration-safe 패턴 (보고서 기록 컴포넌트)
 
 `report-history.tsx` / `report-calendar.tsx`는 SSR 시점에서 `new Date()`로 인한 hydration mismatch를 회피해야 한다.

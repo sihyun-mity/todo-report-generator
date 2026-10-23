@@ -1,3 +1,4 @@
+export * from './data-management-section';
 export * from './email-form';
 export * from './email-section';
 export * from './notifications-section';
