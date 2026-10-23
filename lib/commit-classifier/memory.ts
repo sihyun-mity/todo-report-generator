@@ -183,6 +183,19 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
   const progressEdits: Array<ProgressEdit> = [];
   const feedback = { ...memory.detailFeedback };
   const alive: Array<CommitImportLink> = [];
+  // 같은 작업을 여러 번 가져오면(다시 가져와 기존 작업에 세부 항목을 덧붙인 경우) 작업마다 `details` 연결이 여럿 생긴다.
+  // 앞선 연결의 known 에는 뒤에 AI 가 넣은 줄이 없어 그 줄을 "직접 추가"로 잘못 센다 — 작업 단위로 known 과
+  // AI 제안 줄(`detail` 연결)을 모두 합쳐 판단하고, 작업마다 한 번만 센다.
+  const taskKey = (link: { projectId: string; taskId: string }) => `${link.projectId}:${link.taskId}`;
+  const knownDetails = new Map<string, Set<string>>();
+  for (const link of memory.pendingLinks) {
+    if (link.kind !== 'details' && link.kind !== 'detail') continue;
+    const known = knownDetails.get(taskKey(link)) ?? new Set<string>();
+    if (link.kind === 'details') link.known.forEach((id) => known.add(id));
+    else known.add(link.detailId);
+    knownDetails.set(taskKey(link), known);
+  }
+  const countedTasks = new Set<string>();
 
   for (const link of memory.pendingLinks) {
     const project = projects.find((p) => p.id === link.projectId);
@@ -200,10 +213,15 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       continue;
     }
     if (link.kind === 'details') {
-      // 폼에 넣은 뒤 사용자가 직접 추가한 세부 항목. 센 줄은 known 에 더해 다시 저장해도 두 번 세지 않는다.
-      const added = task.details.filter((d) => !link.known.includes(d.id) && d.content.trim()).map((d) => d.id);
+      // 폼에 넣은 뒤 사용자가 직접 추가한 세부 항목. 센 줄은 known 에 더해 다시 저장해도 두 번 세지 않고,
+      // 같은 작업의 나머지 `details` 연결은 이 하나로 합쳐 버린다.
+      const key = taskKey(link);
+      if (countedTasks.has(key)) continue;
+      countedTasks.add(key);
+      const known = knownDetails.get(key) ?? new Set<string>();
+      const added = task.details.filter((d) => !known.has(d.id) && d.content.trim()).map((d) => d.id);
       feedback.added += added.length;
-      alive.push(added.length ? { ...link, known: [...link.known, ...added] } : link);
+      alive.push({ ...link, known: [...known, ...added] });
       continue;
     }
     if (link.kind === 'progress') {
