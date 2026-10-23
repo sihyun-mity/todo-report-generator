@@ -66,8 +66,12 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  // GitHub 커밋 가져오기 다이얼로그. 열 때 계산한 조회 범위를 함께 들고 있다 (null = 닫힘).
-  const [githubRange, setGithubRange] = useState<{ sinceMs: number; untilMs: number | null } | null>(null);
+  // GitHub 커밋 가져오기 다이얼로그. 열 때 계산한 조회 범위와 보고서 날짜를 함께 들고 있다 (null = 닫힘).
+  const [githubRange, setGithubRange] = useState<{
+    sinceMs: number;
+    untilMs: number | null;
+    reportDateKey: string;
+  } | null>(null);
   // 토스트 "실행 취소" 클릭 후 복구된 input으로 포커스를 보내기 위한 신호 (today/tomorrow 분리).
   const [todayFocusRequest, setTodayFocusRequest] = useState<ProjectListFocusRequest | null>(null);
   const [tomorrowFocusRequest, setTomorrowFocusRequest] = useState<ProjectListFocusRequest | null>(null);
@@ -440,13 +444,13 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   // GitHub 커밋 가져오기 조회 범위: 보고서 날짜 직전 보고서(오늘이면 오늘 저장한 보고서 포함)의 작성 시각부터 (`commitImportRange`).
   // 회원은 기록을 월 단위로 적재하므로, 기준 보고서가 속한 월이 아직 없으면 먼저 불러온다.
   // 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
+  // 폼의 보고서 날짜 키('YYYY-MM-DD') — 연도는 올해로 본다
+  const currentReportDateKey = () =>
+    toDateKey(new Date().getFullYear(), parseInt(reportDate.month, 10), parseInt(reportDate.day, 10));
+
   const openGithubImport = async () => {
     const todayKey = todayDateKey();
-    const reportDateKey = toDateKey(
-      new Date().getFullYear(),
-      parseInt(reportDate.month, 10),
-      parseInt(reportDate.day, 10)
-    );
+    const reportDateKey = currentReportDateKey();
     const isPast = reportDateKey < todayKey;
     const anchorKey = allReportDates.find((d) => (isPast ? d < reportDateKey : d <= todayKey));
     if (anchorKey) {
@@ -454,13 +458,13 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       await loadMonth(y, m);
     }
     const { history: loaded } = useReportHistoryStore.getState();
-    setGithubRange(commitImportRange(loaded, reportDateKey, todayKey, Date.now()));
+    setGithubRange({ ...commitImportRange(loaded, reportDateKey, todayKey, Date.now()), reportDateKey });
   };
 
   const handleGithubApply = (plan: CommitImportPlan, original: CommitImportPlan) => {
     const { projects, links } = applyCommitImportPlan(today.projects, plan);
     today.setProjects(projects);
-    void rememberCommitImport(userId, plan, original, links);
+    void rememberCommitImport(userId, plan, original, links, githubRange?.reportDateKey ?? currentReportDateKey());
     setGithubRange(null);
     toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
   };
@@ -488,7 +492,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       toast.success('내용이 클립보드에 복사되었습니다.');
       void addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
       // 가져온 커밋 항목을 폼에서 고쳐 저장했다면 그 최종 표기를 보정 메모리에 기억한다
-      void learnFromSavedReport(userId, today.projects);
+      void learnFromSavedReport(userId, today.projects, currentReportDateKey());
       requestHistoryFocus(reportDate.month, reportDate.day);
       // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
       refreshBaseline();
@@ -683,6 +687,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
           viewerMode={historyMode}
           userId={userId}
           todayProjects={today.projects}
+          reportDateKey={githubRange.reportDateKey}
           history={history}
           sinceMs={githubRange.sinceMs}
           untilMs={githubRange.untilMs}

@@ -10,6 +10,7 @@ import {
   FolderGit2,
   FolderPlus,
   GitCommitHorizontal,
+  History,
   Link2,
   ListPlus,
   Sparkles,
@@ -109,6 +110,21 @@ function StatusBadge({ isNew, newLabel, existingLabel }: Readonly<BadgeProps>) {
     >
       <Icon size={11} aria-hidden />
       {isNew ? newLabel : existingLabel}
+    </span>
+  );
+}
+
+// 전에 가져와 보고서에 넣은 작업과 비슷해 가져오기를 해제해 둔 작업 — 어느 작업과 비슷한지 함께 알린다
+function SimilarBadge({ name }: Readonly<{ name: string }>) {
+  const description = `전에 등록한 “${name}” 작업과 비슷해요`;
+  return (
+    <span
+      title={description}
+      aria-label={`기존 작업과 유사 — ${description}`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+    >
+      <History size={11} aria-hidden />
+      기존 작업과 유사
     </span>
   );
 }
@@ -260,7 +276,11 @@ function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps
           </span>
           가져오기
         </label>
-        <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
+        {task.similarTo !== null ? (
+          <SimilarBadge name={task.similarTo} />
+        ) : (
+          <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
+        )}
         {progressChanged && (
           <span className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400">
             진행률 {previousProgress}% <ArrowRight size={10} aria-hidden /> {task.progress}%

@@ -76,6 +76,38 @@ For each task, score 0-10 how likely these commits are work on that exact task. 
   };
 };
 
+export type SimilarTaskScoreResult = { summary: string; scores: Array<{ taskId: string; score: number }> };
+
+// 새로 지은 작업이 이미 보고서에 넣은 작업과 같은 일인지 — 이름이 다르게 표현된 같은 작업을 잡는다.
+// 작업 판정(taskScorePrompt)과 같은 "후보별 0-10 점수" 형태로 묻는다. 이어서 한 다른 기능을 같은 작업으로 보지 않게
+// 기준을 "같은 기능/버그"로 좁힌다. 소규모 PoC(같은 작업 4건·같은 영역 다른 작업 4건, 각 3회): 같은 작업 8-9,
+// 다른 작업 ≤7 로 갈려 임계값 8(두 번 채점)에서 오탐·누락 없음. 여유가 1점뿐이라 프롬프트를 바꾸면 다시 검증한다.
+export const similarTaskScorePrompt = (
+  task: string,
+  messages: ReadonlyArray<string>,
+  candidates: ReadonlyArray<{ id: string; names: ReadonlyArray<string> }>
+) => ({
+  prompt: `Tasks already in today's work report (Korean; alternative titles of the same task are separated by " / "):
+${candidates.map((c) => `- ${c.id}: ${c.names.join(' / ')}`).join('\n')}
+
+New task: "${task}"
+Its commits (Korean):
+${messages.map((m) => `- ${m}`).join('\n')}
+
+For each existing task, score 0-10 how likely the new task is the SAME work item, only worded differently. 10 = same feature/bug, just a different title. 5 = same general area but a different feature. 0 = unrelated.`,
+  schema: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', maxLength: 240 },
+      scores: scoreArray(
+        'taskId',
+        candidates.map((c) => c.id)
+      ),
+    },
+    required: ['summary', 'scores'],
+  },
+});
+
 export type NewTaskNamingResult = { items: Array<{ titleKo: string; groups: Array<number> }> };
 
 // 새 작업 그룹을 같은 작업끼리 합치고 한국어 작업명을 붙인다. 이전 기록의 작업명을 예시로 줘 문체를 맞춘다.

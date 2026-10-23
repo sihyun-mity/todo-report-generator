@@ -149,6 +149,8 @@ export const applyCommitImportPlan = (
       project.tasks = [...project.tasks.filter((t) => t.content.trim() || t.details.length), task];
       linkTask(project.id, task.id, plannedTask.commits, added);
       linkDetails(project.id, task);
+      // 등록 기록 id 는 계획의 작업 key 를 쓴다 — `rememberCommitImport` 가 이 key 로 계획의 작업을 찾아 기록을 만든다
+      links.push({ kind: 'imported', projectId: project.id, taskId: task.id, recordId: plannedTask.key });
       if (plannedTask.suggestedProgress !== null) {
         links.push({
           kind: 'progress',

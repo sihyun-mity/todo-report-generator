@@ -35,6 +35,15 @@ export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;
 // 기억할 진행률 보정 최대 개수 / 진행률 유추 프롬프트에 예시로 넘기는 개수
 export const COMMIT_IMPORT_PROGRESS_EDIT_LIMIT = 20;
 export const COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT = 8;
+// 기억할 가져온 작업(등록 기록) 최대 개수 — 다음 가져오기에서 이미 등록한 작업을 알아보는 데 쓴다
+export const COMMIT_IMPORT_IMPORTED_TASK_LIMIT = 60;
+// 가져온 작업명과 등록 기록의 작업명(AI 원래 이름·사용자 최종 이름)이 이 유사도(글자 bigram Dice, 0-1) 이상이면 같은 작업으로 본다
+export const COMMIT_IMPORT_SIMILAR_TASK_THRESHOLD = 0.7;
+// 유사도가 이 값 이상 ~ 위 임계값 미만인 애매한 후보만 AI 에 묻는다(표현만 다른 같은 작업). 작업마다 묻는 후보 수 상한.
+export const COMMIT_IMPORT_SIMILAR_TASK_AI_MIN = 0.2;
+export const COMMIT_IMPORT_SIMILAR_TASK_AI_CANDIDATE_LIMIT = 5;
+// AI 가 "같은 작업"이라고 볼 점수(0-10). 잘못 맞으면 실제 새 작업이 해제돼 빠지므로 작업 연결(7)보다 엄격하게 두고 두 번 채점한다.
+export const COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE = 8;
 // 저장소 작업을 하나도 넣지 않고 적용한 횟수가 이만큼 연속되면 미리보기에서 그 저장소 제외를 제안한다
 export const COMMIT_IMPORT_REPO_SKIP_SUGGEST_COUNT = 3;
 // 진행률을 알 수 없을 때의 기본값 — 커밋이 있으면 대개 그 일은 끝난 것으로 본다

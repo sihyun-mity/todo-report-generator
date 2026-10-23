@@ -73,6 +73,8 @@ type GithubImportDialogProps = {
   // 보정 메모리 주인(회원 id)
   userId: string | null;
   todayProjects: ReadonlyArray<Project>;
+  // 가져오는 보고서 날짜('YYYY-MM-DD') — 이 날짜에 이미 넣은 작업과 비슷한 작업은 해제해 둔다
+  reportDateKey: string;
   history: ReadonlyArray<ReportHistoryItem>;
   // 이 범위의 커밋을 가져온다 (`commitImportRange` — 직전 보고서 작성 시각부터, untilMs 가 null 이면 지금까지)
   sinceMs: number;
@@ -160,6 +162,7 @@ export function GithubImportDialog({
   viewerMode,
   userId,
   todayProjects,
+  reportDateKey,
   history,
   sinceMs,
   untilMs,
@@ -250,6 +253,7 @@ export function GithubImportDialog({
         // 이번에 미리보기에서 뺀 저장소는 이미 받아 둔 커밋에도 들어 있어 여기서 거른다
         commits: commitsResult?.ok ? commitsResult.commits.filter((c) => !excludedRef.current.includes(c.repo)) : [],
         todayProjects,
+        reportDateKey,
         history,
         onProgress: setProgress,
         onThinking: (thought) =>

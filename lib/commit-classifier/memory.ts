@@ -1,5 +1,6 @@
 import {
   COMMIT_IMPORT_DETAIL_EDIT_LIMIT,
+  COMMIT_IMPORT_IMPORTED_TASK_LIMIT,
   COMMIT_IMPORT_MEMORY_STORAGE_KEY,
   COMMIT_IMPORT_PENDING_LINK_LIMIT,
   COMMIT_IMPORT_PROGRESS_EDIT_LIMIT,
@@ -11,6 +12,7 @@ import type {
   CommitImportMemory,
   CommitImportPlan,
   DetailEdit,
+  ImportedTask,
   ProgressEdit,
   Project,
   ReportHistoryItem,
@@ -28,6 +30,8 @@ import { createClient } from '@/lib/supabase/client';
 // 4) 진행률: 새 작업에 제안한 진행률 → 사용자가 고친 진행률 쌍을 예시로 넘겨 다음 유추가 사용자 성향을 따르게 한다.
 // 5) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
 //    매번 작업을 하나도 넣지 않고 적용하는 저장소는 횟수를 세 두었다가 미리보기에서 제외를 제안한다.
+// 6) 가져온 작업(등록 기록): 가져와 보고서에 넣은 새 작업의 보고서 날짜·AI 원래 이름·사용자 최종 이름·커밋을 남겨 두고,
+//    같은 날짜 보고서로 다시 가져올 때 같은 작업이 잡히면 "기존 작업과 유사"로 가져오기를 해제해 둔다(`registered-tasks.ts`).
 // 보정은 미리보기에서 확정할 때 한 번(사용자가 고친 것만), 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
 // 회원과 함께 기기를 옮겨 다니도록 DB 에 둔다. 예전에 브라우저 localStorage 에 쌓인 기록은 처음 읽을 때 옮기고 지운다.
 
@@ -39,6 +43,7 @@ const emptyMemory = (): CommitImportMemory => ({
   progressEdits: [],
   excludedRepos: [],
   repoSkips: {},
+  importedTasks: [],
   pendingLinks: [],
 });
 
@@ -60,6 +65,16 @@ const pushProgressEdits = (current: ReadonlyArray<ProgressEdit>, edits: Readonly
   );
 };
 
+// 새 기록을 앞에 쌓는다. 커밋이 겹치는 예전 기록은 같은 작업을 다시 넣은 것이라 지운다.
+const pushImportedTasks = (current: ReadonlyArray<ImportedTask>, records: ReadonlyArray<ImportedTask>) => {
+  const shas = new Set(records.flatMap((r) => r.shas));
+  const ids = new Set(records.map((r) => r.id));
+  return [...records, ...current.filter((r) => !ids.has(r.id) && !r.shas.some((sha) => shas.has(sha)))].slice(
+    0,
+    COMMIT_IMPORT_IMPORTED_TASK_LIMIT
+  );
+};
+
 const TABLE = 'commit_import_memories';
 
 const normalizeMemory = (raw: Partial<CommitImportMemory> | null | undefined): CommitImportMemory => ({
@@ -70,6 +85,7 @@ const normalizeMemory = (raw: Partial<CommitImportMemory> | null | undefined): C
   progressEdits: raw?.progressEdits ?? [],
   excludedRepos: raw?.excludedRepos ?? [],
   repoSkips: raw?.repoSkips ?? {},
+  importedTasks: raw?.importedTasks ?? [],
   pendingLinks: raw?.pendingLinks ?? [],
 });
 
@@ -113,6 +129,7 @@ const mergeMemories = (remote: CommitImportMemory, local: CommitImportMemory): C
     progressEdits: pushProgressEdits(local.progressEdits, remote.progressEdits),
     excludedRepos: [...new Set([...remote.excludedRepos, ...local.excludedRepos])].sort(),
     repoSkips: maxCounts(remote.repoSkips, local.repoSkips),
+    importedTasks: pushImportedTasks(local.importedTasks, remote.importedTasks),
     pendingLinks: [...remote.pendingLinks, ...local.pendingLinks.filter((l) => !linkKeys.has(JSON.stringify(l)))].slice(
       0,
       COMMIT_IMPORT_PENDING_LINK_LIMIT
@@ -187,7 +204,8 @@ export const rememberCommitImport = (
   userId: string | null,
   plan: CommitImportPlan,
   original: CommitImportPlan,
-  links: ReadonlyArray<CommitImportLink>
+  links: ReadonlyArray<CommitImportLink>,
+  reportDateKey: string
 ) =>
   updateMemory(userId, (memory) => {
     const repoProjects = { ...memory.repoProjects };
@@ -236,16 +254,38 @@ export const rememberCommitImport = (
         feedback.added += task.details.filter((d) => d.suggested === null && d.content.trim()).length;
       }
     }
-    // 이번에 작업을 하나도 넣지 않은 저장소는 횟수를 올리고, 하나라도 넣은 저장소는 처음부터 다시 센다
+    // 이번에 작업을 하나도 넣지 않은 저장소는 횟수를 올리고, 하나라도 넣은 저장소는 처음부터 다시 센다.
+    // 이미 등록한 작업과 비슷해 해제해 둔 작업만 있는 저장소는 세지 않는다 — 뺀 게 아니라 이미 넣은 것이라
+    // 그 저장소 제외를 제안할 근거가 아니다.
     const repoSkips = { ...memory.repoSkips };
+    const plannedTasks = plan.projects.flatMap((p) => p.tasks);
     const includedRepos = new Set(
-      plan.projects.flatMap((p) =>
-        p.tasks.filter((t) => t.included && t.content.trim()).flatMap((t) => t.commits.map((c) => c.repo))
-      )
+      plannedTasks.filter((t) => t.included && t.content.trim()).flatMap((t) => t.commits.map((c) => c.repo))
+    );
+    const freshRepos = new Set(
+      plannedTasks.filter((t) => t.similarTo === null).flatMap((t) => t.commits.map((c) => c.repo))
     );
     for (const repo of new Set(plan.projects.flatMap((p) => p.repos))) {
       if (includedRepos.has(repo)) delete repoSkips[repo];
-      else repoSkips[repo] = (repoSkips[repo] ?? 0) + 1;
+      else if (freshRepos.has(repo)) repoSkips[repo] = (repoSkips[repo] ?? 0) + 1;
+    }
+    // 폼에 새로 넣은 작업을 등록 기록으로 남긴다. suggested 는 AI 가 처음 지은 이름(분류 결과), final 은 지금 이름이다.
+    const records: Array<ImportedTask> = [];
+    for (const link of links) {
+      if (link.kind !== 'imported') continue;
+      const task = plannedTasks.find((t) => t.key === link.recordId);
+      if (!task) continue;
+      const final = task.content.trim();
+      records.push({
+        id: link.recordId,
+        reportDate: reportDateKey,
+        suggested: originalTaskName(task.commits[0]?.sha ?? '') ?? final,
+        final,
+        repos: [...new Set(task.commits.map((c) => c.repo))],
+        shas: task.commits.map((c) => c.sha),
+        messages: task.commits.map((c) => c.message),
+        saved: false,
+      });
     }
     return {
       ...memory,
@@ -255,14 +295,16 @@ export const rememberCommitImport = (
       detailEdits: pushDetailEdits(memory.detailEdits, edits),
       detailFeedback: feedback,
       progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
+      importedTasks: pushImportedTasks(memory.importedTasks, records),
       pendingLinks: [...links, ...memory.pendingLinks].slice(0, COMMIT_IMPORT_PENDING_LINK_LIMIT),
     };
   });
 
 // 보고서를 저장할 때 호출 — 가져온 항목들이 폼에서 최종적으로 어떤 이름·문구가 됐는지 읽어 기억한다.
+// reportDateKey 는 저장하는 보고서 날짜 — 가져온 뒤 날짜를 바꿔 저장했으면 등록 기록도 그 날짜로 옮긴다.
 // 작업이 남아 있는데 제안 세부 항목만 지워졌다면 "제안이 필요 없었다"로 센다. 사라진 항목의 연결은 버리고,
 // 남은 연결은 두어 같은 날 다시 고쳐 저장해도 반영된다.
-export const learnFromSavedReport = (userId: string | null, projects: ReadonlyArray<Project>) =>
+export const learnFromSavedReport = (userId: string | null, projects: ReadonlyArray<Project>, reportDateKey: string) =>
   updateMemory(userId, (memory) => {
     if (!memory.pendingLinks.length) return null;
     const repoProjects = { ...memory.repoProjects };
@@ -284,9 +326,28 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       knownDetails.set(taskKey(link), known);
     }
     const countedTasks = new Set<string>();
+    // 등록 기록: 저장된 작업은 최종 이름으로 확정하고, 확정 전에 폼에서 지운 작업은 기록에서 뺀다
+    const importedTasks = new Map(memory.importedTasks.map((r) => [r.id, r]));
 
     for (const link of memory.pendingLinks) {
       const project = projects.find((p) => p.id === link.projectId);
+      if (link.kind === 'imported') {
+        const record = importedTasks.get(link.recordId);
+        const task = project?.tasks.find((t) => t.id === link.taskId);
+        if (!record) continue;
+        if (!task || !task.content.trim()) {
+          if (!record.saved) importedTasks.delete(link.recordId);
+          continue;
+        }
+        importedTasks.set(link.recordId, {
+          ...record,
+          final: task.content.trim(),
+          reportDate: reportDateKey,
+          saved: true,
+        });
+        alive.push(link);
+        continue;
+      }
       if (!project) continue;
       if (link.kind === 'project') {
         if (project.name.trim()) repoProjects[link.repo] = project.name.trim();
@@ -348,6 +409,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       detailEdits: pushDetailEdits(memory.detailEdits, edits),
       detailFeedback: feedback,
       progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
+      importedTasks: [...importedTasks.values()],
       pendingLinks: alive,
     };
   });

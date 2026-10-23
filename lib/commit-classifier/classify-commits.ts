@@ -2,6 +2,7 @@ import {
   COMMIT_IMPORT_DEFAULT_PROGRESS,
   COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT,
   COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT,
+  COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE,
   COMMIT_TASK_MATCH_THRESHOLD,
 } from '@/constants';
 import { COMMIT_CLASSIFY_STAGE } from '@/enums';
@@ -23,6 +24,11 @@ import type {
 import { commitScope, commitScopeKey, createId, stripCommitPrefix } from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
 import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
+import {
+  findRegisteredTask,
+  findSimilarFormTask,
+  similarTaskCandidates,
+} from '@/lib/commit-classifier/registered-tasks';
 import { getPromptApiAvailability, type JsonAsker, openPromptSession } from '@/lib/commit-classifier/prompt-api';
 import {
   detailStylePrompt,
@@ -33,6 +39,8 @@ import {
   type NewTaskNamingResult,
   progressPrompt,
   type ProgressResult,
+  similarTaskScorePrompt,
+  type SimilarTaskScoreResult,
   REPO_NONE_ID,
   type RepoCandidate,
   repoScorePrompt,
@@ -54,6 +62,8 @@ type ClassifyArgs = {
   userId: string | null;
   commits: ReadonlyArray<GithubCommit>;
   todayProjects: ReadonlyArray<Project>;
+  // 가져오는 보고서 날짜('YYYY-MM-DD') — 이미 등록한 작업은 이 날짜에 넣은 것만 견준다
+  reportDateKey: string;
   history: ReadonlyArray<ReportHistoryItem>;
   onProgress: (progress: ClassifyProgress) => void;
   // AI 판단 과정(분류 중 화면 표시용). AI 를 쓸 때만 불린다.
@@ -91,6 +101,7 @@ export async function classifyCommits({
   userId,
   commits,
   todayProjects,
+  reportDateKey,
   history,
   onProgress,
   onThinking,
@@ -268,6 +279,7 @@ export async function classifyCommits({
           commits: [],
           details: [],
           suggestedDetails: [],
+          similarTo: null,
         };
         plan.tasks.push(task);
       }
@@ -399,6 +411,77 @@ export async function classifyCommits({
       tick();
     }
 
+    // ── 이미 등록한 작업 알아보기 ──
+    // 이 보고서 날짜에 이미 넣은 작업이 다시 잡히면 가져오기를 해제해 프로젝트 작업 목록 맨 아래로 보낸다.
+    // 견줄 대상은 ① 이 날짜에 가져와 넣은 작업(등록 기록 — AI 원래 이름·사용자 최종 이름·커밋) ② 폼에 직접 적은 작업.
+    // 확실한 경우(같은 커밋·제목 겹침·이름이 거의 같음)는 문자열로 바로 정하고, 이름이 애매하게 비슷한 후보만 AI 에
+    // 두 번 채점시켜 둘 다 임계값을 넘을 때 같은 작업으로 본다(표현만 다른 같은 작업). 사용자가 다시 체크하면 그대로 들어간다.
+    const registered = memory.importedTasks.filter((r) => r.reportDate === reportDateKey);
+    // 계획이 들어갈 폼 프로젝트 — 기존 프로젝트, 또는 폼 반영 때 이름이 같아 합쳐질 프로젝트
+    const formProjectOf = (plan: PlannedProject) =>
+      plan.existingProjectId !== null
+        ? formProjects.find((p) => p.id === plan.existingProjectId)
+        : formByName.get(plan.name.trim());
+    const hasFormTasks = [...projectPlans.values()].some((plan) =>
+      formProjectOf(plan)?.tasks.some((t) => t.content.trim())
+    );
+    if (registered.length || hasFormTasks) {
+      let similarCount = 0;
+      const markSimilar = (task: PlannedTask, name: string) => {
+        task.similarTo = name;
+        task.included = false;
+        similarCount += 1;
+      };
+      for (const plan of projectPlans.values()) {
+        const formTasks = (formProjectOf(plan)?.tasks ?? []).filter((t) => t.content.trim());
+        for (const task of plan.tasks) {
+          if (task.existingTaskId !== null) continue;
+          const similarTo =
+            findRegisteredTask(task, registered)?.final ?? findSimilarFormTask(task, formTasks)?.content.trim() ?? null;
+          if (similarTo !== null) {
+            think(`${quote(task.content)} 작업`).conclude(`이미 넣은 ${quote(similarTo)} 작업과 같아 빼 둘게요`);
+            markSimilar(task, similarTo);
+            continue;
+          }
+          if (!ask) continue;
+          const candidates = similarTaskCandidates(task, registered, formTasks).map((c, i) => ({ ...c, id: `r${i}` }));
+          if (!candidates.length) continue;
+          const { prompt, schema } = similarTaskScorePrompt(
+            task.content,
+            task.commits.map((c) => c.message),
+            candidates
+          );
+          const names = new Map(candidates.map((c) => [c.id, c.label]));
+          const lines = (text: string) => [
+            ...readStringValues(text, 'summary')
+              .map((line) => line.trim())
+              .filter(Boolean),
+            ...scoreLines('taskId', names)(text),
+          ];
+          const thought = think(`${quote(task.content)}이(가) 이미 넣은 작업과 같은지 보고 있어요`, lines);
+          const result = await safeAsk<SimilarTaskScoreResult>(prompt, schema, thought.onText);
+          const best = [...(result?.scores ?? [])].sort((a, b) => b.score - a.score)[0];
+          if (!best || best.score < COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE) {
+            thought.conclude('다른 작업이에요');
+            continue;
+          }
+          const bestName = names.get(best.taskId) ?? '';
+          thought.conclude(`${quote(bestName)} 작업과 같아 보여요 — 한 번 더 확인해요`);
+          const recheck = think(`${quote(task.content)}이(가) ${quote(bestName)} 작업인지 다시 채점하고 있어요`, lines);
+          const again = await safeAsk<SimilarTaskScoreResult>(prompt, schema, recheck.onText);
+          const confirmed =
+            (again?.scores.find((s) => s.taskId === best.taskId)?.score ?? 0) >= COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE;
+          recheck.conclude(confirmed ? '두 번 모두 같은 작업이라 빼 둘게요' : '점수가 엇갈려 새 작업으로 둬요');
+          if (confirmed) markSimilar(task, bestName);
+        }
+        plan.tasks = [
+          ...plan.tasks.filter((t) => t.similarTo === null),
+          ...plan.tasks.filter((t) => t.similarTo !== null),
+        ];
+      }
+      if (similarCount) think('이미 넣은 작업 확인').conclude(`${similarCount}개는 이미 넣은 작업과 같아 빼 둘게요`);
+    }
+
     // ── 4단계: 새 작업 진행률 — 커밋 제목으로 가늠한다(프로젝트마다 한 번) ──
     // 기존 작업은 사용자가 적어 둔 진행률을 그대로 둔다. AI 가 없거나 판정이 빠진 작업은 기본값(100)이다.
     const plansWithNewTasks = [...projectPlans.values()].filter((p) => p.tasks.some((t) => t.existingTaskId === null));
@@ -439,7 +522,10 @@ export async function classifyCommits({
     // 사용자가 세부 항목을 직접 추가한 줄도 "세부 항목을 원한다"로 센다 — 지운 횟수만 보면 한 번 아끼기 시작한 뒤 되돌아오지 않는다
     const { removed, kept, added } = memory.detailFeedback;
     const sparse = !usesDetails(history) || removed > kept + added;
-    const needsAsk = plans.flatMap((p) => p.tasks).filter((t) => t.existingTaskId !== null || t.commits.length > 1);
+    // 이미 등록한 작업과 비슷해 해제해 둔 작업은 묻지 않는다 — 대개 넣지 않으므로 호출을 아낀다
+    const needsAsk = plans
+      .flatMap((p) => p.tasks)
+      .filter((t) => t.similarTo === null && (t.existingTaskId !== null || t.commits.length > 1));
     // AI 가 없으면 묻지 않으므로 할 일이 없는 단계(건너뜀)가 된다
     startStage(COMMIT_CLASSIFY_STAGE.DETAIL, ask ? needsAsk.length + (memory.detailEdits.length ? 1 : 0) : 0);
     if (ask) {
@@ -502,6 +588,7 @@ function newTask(content: string, commits: ReadonlyArray<GithubCommit>): Planned
     commits: [...commits],
     details: [],
     suggestedDetails: [],
+    similarTo: null,
   };
 }
 

@@ -25,6 +25,8 @@ export type PlannedTask = {
   details: Array<PlannedDetail>;
   // AI 가 처음 제안한 세부 항목 문구 — 미리보기에서 몇 개를 지웠는지 세어 다음 제안을 조절한다
   suggestedDetails: Array<string>;
+  // 전에 가져와 보고서에 넣은 작업과 비슷하면 그 작업명(사용자 최종 표기). 처음엔 가져오기를 해제해 둔다.
+  similarTo: string | null;
 };
 
 // 폼의 기존 프로젝트(existingProjectId)에 붙이거나 새 프로젝트로 추가할 프로젝트 단위
@@ -61,6 +63,8 @@ export type CommitImportLink =
   | { kind: 'task'; scopeKey: string; projectId: string; taskId: string }
   // original = AI 가 제안한 문구, inserted = 폼에 넣은 문구. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
   | { kind: 'detail'; projectId: string; taskId: string; detailId: string; original: string; inserted: string }
+  // 가져와 새로 만든 작업 — 저장 시 최종 작업명을 등록 기록(`importedTasks`)에 반영한다. recordId 는 그 기록의 id 다.
+  | { kind: 'imported'; projectId: string; taskId: string; recordId: string }
   // 가져온 작업에 폼 반영 시점에 있던 세부 항목 id — 저장 시 여기 없는 줄은 사용자가 직접 추가한 것이다
   | { kind: 'details'; projectId: string; taskId: string; known: Array<string> }
   // 새 작업 진행률. suggested = 제안한 값, inserted = 폼에 넣은 값. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
@@ -80,7 +84,25 @@ export type DetailEdit = { original: string; edited: string };
 // 진행률 보정 — 이 커밋들로 만든 작업에 제안한 진행률 → 사용자가 최종으로 쓴 진행률
 export type ProgressEdit = { task: string; commits: Array<string>; suggested: number; edited: number };
 
-// 사용자별 보정 메모리(기기의 localStorage, 회원 id 별로 분리)
+// 가져와 보고서에 넣은 새 작업 하나 — 다음 가져오기에서 같은 작업이 다시 잡히면 알아보는 데 쓴다.
+// AI 출력(suggested)과 사용자 최종 표기(final)를 함께 둬, 고쳐서 넣은 작업도 AI 가 같은 이름을 다시 내면 알아본다.
+export type ImportedTask = {
+  id: string;
+  // 넣은 보고서 날짜('YYYY-MM-DD'). 같은 날짜 보고서를 가져올 때만 견준다 — 다른 날 이어서 한 일은 그날 다시 보고할 일이다.
+  reportDate: string;
+  // AI 가 처음 지은 작업명
+  suggested: string;
+  // 사용자가 최종으로 쓴 작업명(미리보기 확정 시, 보고서 저장 시 갱신)
+  final: string;
+  repos: Array<string>;
+  shas: Array<string>;
+  // 커밋 제목 — rebase·cherry-pick 으로 sha 가 바뀐 같은 커밋을 알아본다
+  messages: Array<string>;
+  // 보고서 저장으로 확정됐는지. 확정 전에 폼에서 지운 작업은 저장 시 기록에서 뺀다.
+  saved: boolean;
+};
+
+// 사용자별 보정 메모리(Supabase `commit_import_memories`, 회원당 한 행)
 export type CommitImportMemory = {
   // 저장소 full_name → 사용자가 마지막으로 쓴 프로젝트명
   repoProjects: Record<string, string>;
@@ -97,6 +119,8 @@ export type CommitImportMemory = {
   excludedRepos: Array<string>;
   // 저장소 → 그 저장소 작업을 하나도 넣지 않고 적용한 연속 횟수. 쌓이면 미리보기에서 제외를 제안한다(자동 제외는 안 한다)
   repoSkips: Record<string, number>;
+  // 가져와 보고서에 넣은 새 작업(최신순) — 다시 잡히면 미리보기에서 "기존 작업과 유사"로 해제해 둔다
+  importedTasks: Array<ImportedTask>;
   // 아직 보고서 저장으로 확정되지 않은 연결 — 저장 시 최종 표기를 읽어 위 항목에 반영한다
   pendingLinks: Array<CommitImportLink>;
 };
