@@ -39,3 +39,65 @@
     }
   }
 }
+
+/**
+ * rainbow-glow: AI 기능 버튼(iOS·Gemini 풍)을 감싸는 무지개 빛 — 배경 전체가 무지개로 빛나고 바깥으로 번진다.
+ * 감싼 요소(버튼)를 반투명 배경으로 두면 그 아래 무지개가 비친다. padding 만큼은 무지개가 그대로 드러나 테두리가 된다.
+ * 의사 요소는 isolate 로 만든 쌓임 맥락 안의 z-index:-1 이라 감싼 요소 뒤, 바깥 배경 위에 그려진다.
+ */
+@property --rainbow-glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rainbow-glow-spin {
+  to {
+    --rainbow-glow-angle: 360deg;
+  }
+}
+
+@utility rainbow-glow {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  padding: 1px;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--rainbow-glow-angle),
+      #ff5f6d,
+      #ffc371,
+      #f9f871,
+      #47e891,
+      #38bdf8,
+      #818cf8,
+      #e879f9,
+      #ff5f6d
+    );
+    animation: rainbow-glow-spin 4s linear infinite;
+  }
+
+  &::after {
+    filter: blur(10px);
+    opacity: 0.6;
+    transition: opacity 200ms ease;
+  }
+
+  &:hover::after {
+    opacity: 0.9;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::before,
+    &::after {
+      animation: none;
+    }
+  }
+}

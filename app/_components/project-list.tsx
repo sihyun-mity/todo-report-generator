@@ -153,12 +153,16 @@ export const ProjectList = ({
         </div>
         <div className="flex gap-2">
           {onImportGithub && (
-            <button
-              onClick={onImportGithub}
-              className="flex cursor-pointer items-center gap-1 rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-            >
-              <Github size={16} /> GitHub에서 가져오기
-            </button>
+            // AI 분류 기능이라 무지개 빛으로 강조한다. 반투명 배경 아래로 무지개가 비친다.
+            // 테두리(1px)만큼 안쪽 여백을 줄여 다른 버튼과 크기를 맞춘다.
+            <span className="rainbow-glow rounded-md">
+              <button
+                onClick={onImportGithub}
+                className="flex cursor-pointer items-center gap-1 rounded-[5px] bg-white/60 px-[11px] py-[3px] text-sm font-semibold text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/45 dark:bg-zinc-900/50 dark:text-white dark:hover:bg-zinc-900/35"
+              >
+                <Github size={16} /> GitHub에서 가져오기
+              </button>
+            </span>
           )}
           {onImportIncomplete && (
             <button
