@@ -1,7 +1,12 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { GITHUB_COMMITS_MAX_LOOKBACK_DAYS, GITHUB_IMPORT_INTENT_COOKIE, GITHUB_IMPORT_OAUTH_SCOPES } from '@/constants';
+import {
+  GITHUB_COMMITS_CLASSIFY_LIMIT,
+  GITHUB_COMMITS_MAX_LOOKBACK_DAYS,
+  GITHUB_IMPORT_INTENT_COOKIE,
+  GITHUB_IMPORT_OAUTH_SCOPES,
+} from '@/constants';
 import { GithubApiError, inspectGithubToken, listMyCommitsSince } from '@/lib/github/api';
 import { parseGithubImportIntent } from '@/lib/github/import-intent';
 import { clearGithubToken, createGithubTokenCookie, readGithubToken } from '@/lib/github/token-cookie';
@@ -71,12 +76,14 @@ export async function getGithubConnection(): Promise<GithubConnection> {
 }
 
 /**
- * `sinceMs` 이후 본인이 작성한 커밋을 최근 push 된 저장소에서 모은다.
- * 너무 오래된 기준 시각은 `GITHUB_COMMITS_MAX_LOOKBACK_DAYS` 로 잘라 API 호출 수를 제한한다.
+ * `sinceMs` ~ `untilMs`(null 이면 지금) 사이에 본인이 작성한 커밋을 최근 push 된 저장소에서 모은다.
+ * 조회 기간은 범위 끝에서 `GITHUB_COMMITS_MAX_LOOKBACK_DAYS` 까지로 잘라 API 호출 수를 제한하고,
+ * 분류할 커밋은 최근 `GITHUB_COMMITS_CLASSIFY_LIMIT` 건만 남긴다(뺀 개수는 `omitted` 로 알려 미리보기에서 안내한다).
  * `excludedRepos`(사용자가 분류에서 뺀 저장소)는 조회하지 않는다.
  */
 export async function fetchGithubCommits(
   sinceMs: number,
+  untilMs: number | null,
   excludedRepos: ReadonlyArray<string> = []
 ): Promise<GithubCommitsResult> {
   const userId = await getMemberId();
@@ -85,8 +92,11 @@ export async function fetchGithubCommits(
   if (!token) return { ok: false, reason: 'not_connected', message: 'GitHub 계정을 먼저 연결해 주세요.' };
 
   const now = Date.now();
-  const floor = now - GITHUB_COMMITS_MAX_LOOKBACK_DAYS * 86_400_000;
-  const since = new Date(Math.min(Math.max(Number.isFinite(sinceMs) ? sinceMs : floor, floor), now));
+  const end = typeof untilMs === 'number' && Number.isFinite(untilMs) ? Math.min(untilMs, now) : now;
+  const floor = end - GITHUB_COMMITS_MAX_LOOKBACK_DAYS * 86_400_000;
+  const since = new Date(Math.min(Math.max(Number.isFinite(sinceMs) ? sinceMs : floor, floor), end));
+  // 지금까지 조회하면 until 을 두지 않는다(조회 중에 생긴 커밋도 담는다)
+  const until = end < now ? new Date(end) : null;
 
   try {
     const excluded = new Set(
@@ -94,8 +104,18 @@ export async function fetchGithubCommits(
         .filter((r): r is string => typeof r === 'string')
         .slice(0, 200)
     );
-    const commits = await listMyCommitsSince(token.accessToken, token.login, since, excluded);
-    return { ok: true, login: token.login, since: since.toISOString(), commits };
+    // 작성 시각 오름차순이라 뒤쪽이 최근 커밋이다
+    const found = await listMyCommitsSince(token.accessToken, token.login, since, until, excluded);
+    const commits = found.slice(-GITHUB_COMMITS_CLASSIFY_LIMIT);
+    return {
+      ok: true,
+      login: token.login,
+      since: since.toISOString(),
+      until: until?.toISOString() ?? null,
+      clipped: since.getTime() === floor && sinceMs < floor,
+      omitted: found.length - commits.length,
+      commits,
+    };
   } catch (error) {
     if (error instanceof GithubApiError && error.status === 401) {
       // 사용자가 GitHub 에서 승인을 철회했거나 토큰이 폐기된 경우 — 쿠키도 비운다

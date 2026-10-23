@@ -1,5 +1,56 @@
-import type { CommitImportLink, CommitImportPlan, GithubCommit, PlannedDetail, Project, Task } from '@/types';
-import { cloneProjects, commitScope, createId, isProjectEmpty } from '@/utils';
+import type {
+  CommitImportLink,
+  CommitImportPlan,
+  GithubCommit,
+  PlannedDetail,
+  Project,
+  ReportHistoryItem,
+  Task,
+} from '@/types';
+import { cloneProjects, commitScope, createId, isProjectEmpty, reportItemDateKey } from '@/utils';
+
+// 날짜 키('YYYY-MM-DD')의 로컬 0시 + offsetDays 일
+const dayStartMs = (dateKey: string, offsetDays = 0) => {
+  const [y, m, d] = dateKey.split('-').map((s) => parseInt(s, 10));
+  return new Date(y, m - 1, d + offsetDays).getTime();
+};
+
+/**
+ * 보고서 날짜(`reportDateKey`)에 담을 커밋의 조회 범위. `untilMs === null` 이면 지금까지다.
+ *
+ * - 기준(anchor)은 그 날짜 직전 보고서다. 오늘(이후) 보고서를 쓰는 중이면 오늘 이미 저장한 보고서도 기준이 된다 —
+ *   오늘 한 번 보고한 뒤 다시 가져오면 그 뒤 커밋만 온다. 지난 날짜면 그 날짜 자신의 기록은 기준에서 뺀다.
+ * - since: 기준 보고서 작성(저장) 시각. 단, 밀린 보고서를 나중에 몰아 쓴 경우처럼 기준 보고서가 범위 끝 이후에 저장됐으면
+ *   작성 시각 대신 그 보고서 날짜의 다음 날 0시로 본다(보고서 날짜의 커밋은 그 보고서 몫).
+ *   기준 보고서가 없으면 보고서 날짜 0시.
+ * - until: 지난 날짜면 그 날짜 다음 날 0시 — 그 뒤 커밋은 다음 보고서 몫이다.
+ * - 기준이 아주 오래전이어도 여기서는 자르지 않는다. 최대 조회 기간은 서버(`fetchGithubCommits`)가 강제한다.
+ *
+ * `history` 에 기준 보고서가 적재돼 있어야 한다(회원은 월 단위로 적재하므로 호출부가 그 월을 먼저 불러온다).
+ */
+export const commitImportRange = (
+  history: ReadonlyArray<ReportHistoryItem>,
+  reportDateKey: string,
+  todayKey: string,
+  nowMs: number
+): { sinceMs: number; untilMs: number | null } => {
+  const isPast = reportDateKey < todayKey;
+  const untilMs = isPast ? dayStartMs(reportDateKey, 1) : null;
+  const endMs = untilMs ?? nowMs;
+
+  let anchor: { key: string; timestamp: number } | null = null;
+  for (const item of history) {
+    const key = reportItemDateKey(item);
+    if (isPast ? key >= reportDateKey : key > todayKey) continue;
+    if (!anchor || key > anchor.key || (key === anchor.key && item.timestamp > anchor.timestamp)) {
+      anchor = { key, timestamp: item.timestamp };
+    }
+  }
+
+  if (!anchor) return { sinceMs: dayStartMs(isPast ? reportDateKey : todayKey), untilMs };
+  const sinceMs = anchor.timestamp < endMs ? anchor.timestamp : Math.min(dayStartMs(anchor.key, 1), endMs);
+  return { sinceMs, untilMs };
+};
 
 // 저장소 + Conventional Commit scope. 같은 묶음의 작업명 보정을 기억하는 키다(scope 가 없으면 기억하지 않는다).
 export const commitScopeKey = (commit: Pick<GithubCommit, 'repo' | 'message'>): string | null => {

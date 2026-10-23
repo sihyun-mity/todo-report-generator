@@ -11,7 +11,18 @@ export type GithubCommit = {
 export type GithubConnection = { connected: false } | { connected: true; login: string };
 
 export type GithubCommitsResult =
-  | { ok: true; login: string; since: string; commits: Array<GithubCommit> }
+  | {
+      ok: true;
+      login: string;
+      since: string;
+      // null 이면 지금까지
+      until: string | null;
+      // 요청한 시작 시각이 최대 조회 기간보다 오래돼 잘렸는지
+      clipped: boolean;
+      // 분류 상한(`GITHUB_COMMITS_CLASSIFY_LIMIT`)을 넘어 뺀 오래된 커밋 수
+      omitted: number;
+      commits: Array<GithubCommit>;
+    }
   | {
       ok: false;
       reason: 'members_only' | 'not_connected' | 'unauthorized' | 'rate_limited' | 'failed';

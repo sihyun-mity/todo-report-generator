@@ -48,6 +48,7 @@ import {
   COMMIT_CLASSIFY_COMPLETE_HOLD_MS,
   GITHUB_IMPORT_INTENT_COOKIE,
   GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
+  GITHUB_COMMITS_MAX_LOOKBACK_DAYS,
   GITHUB_IMPORT_OAUTH_SCOPES,
 } from '@/constants';
 import { Portal, useDismissOnBack } from '@/components';
@@ -73,17 +74,48 @@ type GithubImportDialogProps = {
   userId: string | null;
   todayProjects: ReadonlyArray<Project>;
   history: ReadonlyArray<ReportHistoryItem>;
-  // 이 시각 이후 커밋을 가져온다 (마지막 보고서 작성 시각과 오늘 0시 중 이른 쪽)
+  // 이 범위의 커밋을 가져온다 (`commitImportRange` — 직전 보고서 작성 시각부터, untilMs 가 null 이면 지금까지)
   sinceMs: number;
+  untilMs: number | null;
   onClose: () => void;
   // original 은 사용자가 고치기 전의 분류 결과 — 보정 메모리는 둘을 비교해 사용자가 실제로 고친 것만 배운다
   onApply: (plan: CommitImportPlan, original: CommitImportPlan) => void;
 };
 
-const sinceLabel = (iso: string) =>
+const timeLabel = (iso: string) =>
   new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(
     new Date(iso)
   );
+
+// 범위가 잘렸거나(최대 조회 기간) 분류 상한을 넘어 빠진 커밋이 있을 때 미리보기에 보여 줄 안내. 없으면 null.
+// 빠진 커밋이 범위 안의 이전 날짜에 있을 수 있으면, 지난 날짜 보고서는 그날 커밋만 가져온다는 점을 함께 알린다.
+const omissionNotice = (result: {
+  since: string;
+  until: string | null;
+  clipped: boolean;
+  omitted: number;
+  commits: ReadonlyArray<unknown>;
+}) => {
+  if (!result.clipped && result.omitted === 0) return null;
+  const lines: Array<string> = [];
+  if (result.clipped) {
+    lines.push(
+      `마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일 커밋만 가져왔어요.`
+    );
+  }
+  if (result.omitted > 0) {
+    lines.push(`커밋이 ${result.commits.length + result.omitted}건이라 최근 ${result.commits.length}건만 분류했어요.`);
+  }
+  const end = result.until ? new Date(new Date(result.until).getTime() - 1) : new Date();
+  if (result.clipped || new Date(result.since).toDateString() !== end.toDateString()) {
+    lines.push('빠진 커밋은 보고서 날짜를 그날로 바꿔 가져올 수 있어요.');
+  }
+  return lines.join(' ');
+};
+
+// "10월 20일 오후 06:00 이후" / 지난 날짜 보고서면 "10월 20일 오후 06:00부터 10월 21일 오전 12:00까지"
+const rangeLabel = ({ since, until }: { since: string; until: string | null }) =>
+  until ? `${timeLabel(since)}부터 ${timeLabel(until)}까지` : `${timeLabel(since)} 이후`;
 
 // 미리보기에서 저장소를 제외하면 그 저장소 커밋을 빼고, 커밋이 남지 않은 작업·프로젝트는 지운다
 const removeRepoFromPlan = (plan: CommitImportPlan, repo: string): CommitImportPlan => ({
@@ -130,6 +162,7 @@ export function GithubImportDialog({
   todayProjects,
   history,
   sinceMs,
+  untilMs,
   onClose,
   onApply,
 }: Readonly<GithubImportDialogProps>) {
@@ -195,7 +228,7 @@ export function GithubImportDialog({
   }
 
   const commits = useQuery({
-    ...queries.github.commits(sinceMs, fetchExcludedRepos),
+    ...queries.github.commits(sinceMs, untilMs, fetchExcludedRepos),
     enabled: isConnected && memoryReady,
     staleTime: 0,
     gcTime: 0,
@@ -204,6 +237,7 @@ export function GithubImportDialog({
   });
   const commitsResult = commits.data;
   const hasCommits = commitsResult?.ok === true && commitsResult.commits.length > 0;
+  const notice = commitsResult?.ok ? omissionNotice(commitsResult) : null;
 
   // 분류는 같은 커밋 조회 결과(조회 시각)마다 한 번만 돌린다.
   const plan = useQuery({
@@ -412,7 +446,7 @@ export function GithubImportDialog({
               <StatusPanel
                 icon={Inbox}
                 title="가져올 커밋이 없어요"
-                description={`${sinceLabel(commitsResult.since)} 이후 @${commitsResult.login} 계정으로 작성한 커밋을 찾지 못했어요. 커밋 작성 이메일이 GitHub 계정에 연결돼 있는지 확인해 주세요.${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
+                description={`${rangeLabel(commitsResult)} @${commitsResult.login} 계정으로 작성한 커밋을 찾지 못했어요. 커밋 작성 이메일이 GitHub 계정에 연결돼 있는지 확인해 주세요.${commitsResult.clipped ? ` 마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일만 찾아봤어요.` : ''}${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
               />
             ) : plan.isError ? (
               <StatusPanel
@@ -490,10 +524,16 @@ export function GithubImportDialog({
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-                    <SummaryItem icon={CalendarClock}>{sinceLabel(commitsResult.since)} 이후</SummaryItem>
+                    <SummaryItem icon={CalendarClock}>{rangeLabel(commitsResult)}</SummaryItem>
                     <SummaryItem icon={Github}>@{commitsResult.login}</SummaryItem>
                     <SummaryItem icon={FolderGit2}>저장소 {summary?.repos}개</SummaryItem>
                   </div>
+                  {notice && (
+                    <div className="flex items-start gap-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900/50 dark:text-zinc-300">
+                      <Info size={14} className="mt-px shrink-0 text-zinc-400" />
+                      <span className="min-w-0 flex-1">{notice}</span>
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-2">
                     <SummaryStat label="기존 작업에 추가" value={summary?.linkedTasks ?? 0} />
                     <SummaryStat label="새 작업" value={summary?.newTasks ?? 0} />

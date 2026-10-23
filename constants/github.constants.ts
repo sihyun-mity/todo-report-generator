@@ -16,8 +16,11 @@ export const GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS = 600;
 // 연결 결과를 원래 화면으로 돌려보낼 때 쓰는 쿼리 키 (`?github=connected|denied|error`)
 export const GITHUB_OAUTH_RESULT_PARAM = 'github';
 
-// 커밋 수집 범위 상한 — 마지막 보고서가 아주 오래전이어도 이 기간까지만 거슬러 올라간다.
-export const GITHUB_COMMITS_MAX_LOOKBACK_DAYS = 14;
+// 커밋 수집 범위 상한 — 마지막 보고서가 아주 오래전이어도 조회 범위 끝에서 이 기간까지만 거슬러 올라간다.
+export const GITHUB_COMMITS_MAX_LOOKBACK_DAYS = 7;
+// 한 번에 분류할 커밋 수 상한. 온디바이스 AI 는 직렬로만 돌고 호출 수가 커밋(묶음) 수에 비례하며,
+// 새 작업 이름짓기 프롬프트에 묶음 전체가 들어가므로 넘치면 최근 커밋만 남긴다(금일 보고서에는 최근 작업이 더 중요하다).
+export const GITHUB_COMMITS_CLASSIFY_LIMIT = 40;
 // 최근 push 된 저장소 중 조회할 최대 개수 / 저장소당 조회할 최대 브랜치 수
 export const GITHUB_MAX_REPOS = 20;
 export const GITHUB_MAX_BRANCHES_PER_REPO = 10;

@@ -22,13 +22,14 @@ import {
   type RemoveOptions,
 } from '.';
 import { useProjects, useReportHistory, useResetOnHide, type UseProjectsReturn } from '@/hooks';
-import { confirm, useReportFormStore } from '@/stores';
+import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
 import { learnFromSavedReport, rememberCommitImport } from '@/lib/commit-classifier/memory';
 import {
   applyCommitImportPlan,
   areAllAttemptedProjectsValid,
   cloneProjects,
+  commitImportRange,
   generateReportText,
   hasProjectContent,
   mergeIncompleteTasks,
@@ -65,8 +66,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  // GitHub 커밋 가져오기 다이얼로그. 열 때 계산한 기준 시각을 함께 들고 있다 (null = 닫힘).
-  const [githubSinceMs, setGithubSinceMs] = useState<number | null>(null);
+  // GitHub 커밋 가져오기 다이얼로그. 열 때 계산한 조회 범위를 함께 들고 있다 (null = 닫힘).
+  const [githubRange, setGithubRange] = useState<{ sinceMs: number; untilMs: number | null } | null>(null);
   // 토스트 "실행 취소" 클릭 후 복구된 input으로 포커스를 보내기 위한 신호 (today/tomorrow 분리).
   const [todayFocusRequest, setTodayFocusRequest] = useState<ProjectListFocusRequest | null>(null);
   const [tomorrowFocusRequest, setTomorrowFocusRequest] = useState<ProjectListFocusRequest | null>(null);
@@ -168,7 +169,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   useResetOnHide(() => {
     setIsImportModalOpen(false);
     setIsImportDialogOpen(false);
-    setGithubSinceMs(null);
+    setGithubRange(null);
     setImportPromptCheckedUserId(null);
     setCopyError(null);
   });
@@ -436,23 +437,31 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
-  // GitHub 커밋 가져오기 기준 시각: 마지막 보고서(오늘 이전 날짜) 작성 시각과 오늘 0시 중 이른 쪽.
-  // 마지막 보고 이후 커밋과 오늘 커밋을 모두 포함한다. 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
-  const openGithubImport = () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+  // GitHub 커밋 가져오기 조회 범위: 보고서 날짜 직전 보고서(오늘이면 오늘 저장한 보고서 포함)의 작성 시각부터 (`commitImportRange`).
+  // 회원은 기록을 월 단위로 적재하므로, 기준 보고서가 속한 월이 아직 없으면 먼저 불러온다.
+  // 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
+  const openGithubImport = async () => {
     const todayKey = todayDateKey();
-    const lastReportAt = history
-      .filter((item) => getItemDateKey(item) < todayKey)
-      .reduce((max, item) => Math.max(max, item.timestamp), 0);
-    setGithubSinceMs(lastReportAt > 0 ? Math.min(lastReportAt, todayStart.getTime()) : todayStart.getTime());
+    const reportDateKey = toDateKey(
+      new Date().getFullYear(),
+      parseInt(reportDate.month, 10),
+      parseInt(reportDate.day, 10)
+    );
+    const isPast = reportDateKey < todayKey;
+    const anchorKey = allReportDates.find((d) => (isPast ? d < reportDateKey : d <= todayKey));
+    if (anchorKey) {
+      const [y, m] = anchorKey.split('-').map((s) => parseInt(s, 10));
+      await loadMonth(y, m);
+    }
+    const { history: loaded } = useReportHistoryStore.getState();
+    setGithubRange(commitImportRange(loaded, reportDateKey, todayKey, Date.now()));
   };
 
   const handleGithubApply = (plan: CommitImportPlan, original: CommitImportPlan) => {
     const { projects, links } = applyCommitImportPlan(today.projects, plan);
     today.setProjects(projects);
     void rememberCommitImport(userId, plan, original, links);
-    setGithubSinceMs(null);
+    setGithubRange(null);
     toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
   };
 
@@ -669,14 +678,15 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
 
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
 
-      {githubSinceMs !== null && (
+      {githubRange !== null && (
         <GithubImportDialog
           viewerMode={historyMode}
           userId={userId}
           todayProjects={today.projects}
           history={history}
-          sinceMs={githubSinceMs}
-          onClose={() => setGithubSinceMs(null)}
+          sinceMs={githubRange.sinceMs}
+          untilMs={githubRange.untilMs}
+          onClose={() => setGithubRange(null)}
           onApply={handleGithubApply}
         />
       )}

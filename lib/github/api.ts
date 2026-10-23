@@ -79,11 +79,12 @@ async function findPushedBranches(token: string, repo: RepoItem, login: string, 
   return [...branches].slice(0, GITHUB_MAX_BRANCHES_PER_REPO);
 }
 
-// since 이후 본인이 작성한 커밋. 권한상으로는 저장소 전체를 읽을 수 있으므로 `author` 필터로 본인 것만 거른다.
+// since ~ until(null 이면 지금) 사이에 본인이 작성한 커밋. 권한상으로는 저장소 전체를 읽을 수 있으므로 `author` 필터로 본인 것만 거른다.
 export async function listMyCommitsSince(
   token: string,
   login: string,
   since: Date,
+  until: Date | null,
   excludedRepos: ReadonlySet<string>
 ): Promise<Array<GithubCommit>> {
   const repos = await gh<Array<RepoItem>>(
@@ -96,6 +97,7 @@ export async function listMyCommitsSince(
     .slice(0, GITHUB_MAX_REPOS);
 
   const sinceIso = since.toISOString();
+  const untilQuery = until ? `&until=${until.toISOString()}` : '';
   const perRepo = await Promise.all(
     recent.map(async (repo) => {
       const branches = await findPushedBranches(token, repo, login, since);
@@ -105,7 +107,7 @@ export async function listMyCommitsSince(
         try {
           items = await gh<Array<CommitItem>>(
             token,
-            `/repos/${repo.full_name}/commits?author=${encodeURIComponent(login)}&since=${sinceIso}&sha=${encodeURIComponent(branch)}&per_page=100`
+            `/repos/${repo.full_name}/commits?author=${encodeURIComponent(login)}&since=${sinceIso}${untilQuery}&sha=${encodeURIComponent(branch)}&per_page=100`
           );
         } catch (error) {
           // 빈 저장소(409) 등 저장소 단위 오류는 건너뛴다
