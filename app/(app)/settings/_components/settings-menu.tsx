@@ -73,6 +73,15 @@ export function SettingsMenu() {
           subtitle="계정에 저장된 데이터를 골라 삭제"
         />
       </ul>
+
+      <div className="mt-8 flex justify-end">
+        <Link
+          href="/settings/withdraw"
+          className="text-xs font-semibold text-zinc-400 underline-offset-2 hover:text-rose-500 hover:underline dark:text-zinc-500 dark:hover:text-rose-400"
+        >
+          회원 탈퇴
+        </Link>
+      </div>
     </div>
   );
 }

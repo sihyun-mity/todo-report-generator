@@ -1,3 +1,4 @@
+export * from './account.type';
 export * from './account-data.type';
 export * from './commit-import.type';
 export * from './confirm.type';
