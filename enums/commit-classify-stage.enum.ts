@@ -8,6 +8,8 @@ export const COMMIT_CLASSIFY_STAGE = {
   TASK: 'task',
   /** 새 작업 묶기 + 이름짓기 */
   NAMING: 'naming',
+  /** 새 작업 진행률 유추 */
+  PROGRESS: 'progress',
   /** 세부 항목 제안 + 표기 보정 */
   DETAIL: 'detail',
 } as const;
@@ -17,5 +19,6 @@ export const COMMIT_CLASSIFY_STAGE_VALUES = [
   COMMIT_CLASSIFY_STAGE.REPO,
   COMMIT_CLASSIFY_STAGE.TASK,
   COMMIT_CLASSIFY_STAGE.NAMING,
+  COMMIT_CLASSIFY_STAGE.PROGRESS,
   COMMIT_CLASSIFY_STAGE.DETAIL,
 ] as const;

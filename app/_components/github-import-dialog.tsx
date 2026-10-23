@@ -605,6 +605,7 @@ const CLASSIFY_STAGE_LABELS: Record<CommitClassifyStage, string> = {
   [COMMIT_CLASSIFY_STAGE.REPO]: '저장소별 프로젝트 판단',
   [COMMIT_CLASSIFY_STAGE.TASK]: '기존 작업 연결',
   [COMMIT_CLASSIFY_STAGE.NAMING]: '새 작업 정리',
+  [COMMIT_CLASSIFY_STAGE.PROGRESS]: '진행률 가늠',
   [COMMIT_CLASSIFY_STAGE.DETAIL]: '세부 항목 제안',
 };
 

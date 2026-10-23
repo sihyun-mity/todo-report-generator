@@ -16,6 +16,9 @@ export type PlannedTask = {
   existingTaskId: string | null;
   content: string;
   progress: number;
+  // 새 작업에 처음 제안한 진행률(AI 유추 또는 기본값 100). 기존 작업은 폼의 진행률을 그대로 쓰므로 null.
+  // 사용자가 이 값을 고쳤을 때만 진행률 보정으로 기억한다.
+  suggestedProgress: number | null;
   // 이 작업을 폼에 반영할지
   included: boolean;
   commits: Array<GithubCommit>;
@@ -57,10 +60,23 @@ export type CommitImportLink =
   | { kind: 'project'; repo: string; projectId: string }
   | { kind: 'task'; scopeKey: string; projectId: string; taskId: string }
   // original = AI 가 제안한 문구, inserted = 폼에 넣은 문구. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
-  | { kind: 'detail'; projectId: string; taskId: string; detailId: string; original: string; inserted: string };
+  | { kind: 'detail'; projectId: string; taskId: string; detailId: string; original: string; inserted: string }
+  // 새 작업 진행률. suggested = 제안한 값, inserted = 폼에 넣은 값. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
+  | {
+      kind: 'progress';
+      projectId: string;
+      taskId: string;
+      task: string;
+      commits: Array<string>;
+      suggested: number;
+      inserted: number;
+    };
 
 // 세부 항목 표기 보정 — AI 가 제안한 문구 → 사용자가 최종으로 쓴 문구
 export type DetailEdit = { original: string; edited: string };
+
+// 진행률 보정 — 이 커밋들로 만든 작업에 제안한 진행률 → 사용자가 최종으로 쓴 진행률
+export type ProgressEdit = { task: string; commits: Array<string>; suggested: number; edited: number };
 
 // 사용자별 보정 메모리(기기의 localStorage, 회원 id 별로 분리)
 export type CommitImportMemory = {
@@ -72,6 +88,8 @@ export type CommitImportMemory = {
   detailEdits: Array<DetailEdit>;
   // AI 가 제안한 세부 항목을 사용자가 지운 횟수 / 그대로 둔(또는 고친) 횟수 — 제안을 얼마나 아껴야 하는지의 신호
   detailFeedback: { removed: number; kept: number };
+  // 최근 새 작업 진행률 보정(최신순) — 다음 진행률 유추에 예시로 넘긴다
+  progressEdits: Array<ProgressEdit>;
   // 분류에서 뺄 저장소(개인 프로젝트 등) — 커밋 조회부터 건너뛴다
   excludedRepos: Array<string>;
   // 아직 보고서 저장으로 확정되지 않은 연결 — 저장 시 최종 표기를 읽어 위 항목에 반영한다

@@ -29,6 +29,11 @@ export const COMMIT_IMPORT_DETAIL_EDIT_LIMIT = 20;
 export const COMMIT_IMPORT_PENDING_LINK_LIMIT = 300;
 // 세부 항목 표기 보정을 프롬프트 예시로 넘기는 개수
 export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;
+// 기억할 진행률 보정 최대 개수 / 진행률 유추 프롬프트에 예시로 넘기는 개수
+export const COMMIT_IMPORT_PROGRESS_EDIT_LIMIT = 20;
+export const COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT = 8;
+// 진행률을 알 수 없을 때의 기본값 — 커밋이 있으면 대개 그 일은 끝난 것으로 본다
+export const COMMIT_IMPORT_DEFAULT_PROGRESS = 100;
 // 새 작업명 문체를 맞출 때 예시로 넘기는 과거 작업명 최대 개수
 export const COMMIT_IMPORT_STYLE_SAMPLE_LIMIT = 12;
 // 분류 프롬프트 1회 제한 시간. 모델 호출이 드물게 멈추는 경우를 끊어낸다.

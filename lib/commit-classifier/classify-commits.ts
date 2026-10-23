@@ -1,4 +1,9 @@
-import { COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT, COMMIT_TASK_MATCH_THRESHOLD } from '@/constants';
+import {
+  COMMIT_IMPORT_DEFAULT_PROGRESS,
+  COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT,
+  COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT,
+  COMMIT_TASK_MATCH_THRESHOLD,
+} from '@/constants';
 import { COMMIT_CLASSIFY_STAGE } from '@/enums';
 import type {
   ClassifyProgress,
@@ -15,7 +20,7 @@ import type {
   ReportHistoryItem,
   StyleSample,
 } from '@/types';
-import { commitScope, commitScopeKey, createId, isDiscreteCommit, stripCommitPrefix } from '@/utils';
+import { commitScope, commitScopeKey, createId, stripCommitPrefix } from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
 import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
 import { getPromptApiAvailability, openPromptSession, type JsonAsker } from '@/lib/commit-classifier/prompt-api';
@@ -23,12 +28,14 @@ import {
   detailStylePrompt,
   detailSuggestionPrompt,
   newTaskNamingPrompt,
+  progressPrompt,
   REPO_NONE_ID,
   repoScorePrompt,
   taskScorePrompt,
   type DetailStyleResult,
   type DetailSuggestionResult,
   type NewTaskNamingResult,
+  type ProgressResult,
   type RepoCandidate,
   type RepoScoreResult,
   type TaskScoreResult,
@@ -63,11 +70,6 @@ type Think = (
 type RepoTarget = { kind: 'existing'; project: Project } | { kind: 'new'; name: string };
 
 const repoShortName = (repo: string) => repo.split('/').pop() ?? repo;
-
-// 새 작업 진행률 기본값 — 커밋만으로는 진행률을 알 수 없어, 버그 수정·잡무처럼 하루 단위로 끝나는
-// 커밋뿐이면 100%, 기능 개발이 섞여 있으면 50% 로 두고 미리보기에서 고치게 한다.
-const defaultNewTaskProgress = (commits: ReadonlyArray<GithubCommit>) =>
-  commits.every((c) => isDiscreteCommit(c.message)) ? 100 : 50;
 
 // 같은 저장소 안에서 Conventional Commit scope 가 같은 커밋을 한 묶음으로 본다. scope 가 없으면 단독.
 const groupByScope = (commits: ReadonlyArray<GithubCommit>) => {
@@ -261,6 +263,7 @@ export async function classifyCommits({
           existingTaskId: source.id,
           content: source.content,
           progress: source.progress,
+          suggestedProgress: null,
           included: true,
           commits: [],
           details: [],
@@ -396,7 +399,40 @@ export async function classifyCommits({
       tick();
     }
 
-    // ── 4단계: 세부 항목 — AI 가 필요하다고 판단한 작업에만 만든다 ──
+    // ── 4단계: 새 작업 진행률 — 커밋 제목으로 가늠한다(프로젝트마다 한 번) ──
+    // 기존 작업은 사용자가 적어 둔 진행률을 그대로 둔다. AI 가 없거나 판정이 빠진 작업은 기본값(100)이다.
+    const plansWithNewTasks = [...projectPlans.values()].filter((p) => p.tasks.some((t) => t.existingTaskId === null));
+    startStage(COMMIT_CLASSIFY_STAGE.PROGRESS, ask ? plansWithNewTasks.length : 0);
+    if (ask) {
+      const examples = memory.progressEdits.slice(0, COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT);
+      for (const plan of plansWithNewTasks) {
+        const tasks = plan.tasks.filter((t) => t.existingTaskId === null);
+        const candidates = tasks.map((t, i) => ({
+          id: `t${i}`,
+          title: t.content,
+          messages: t.commits.map((c) => c.message),
+        }));
+        const { prompt, schema } = progressPrompt(plan.name, candidates, examples);
+        const names = new Map(candidates.map((c) => [c.id, c.title]));
+        const thought = think(
+          `${quote(plan.name)}의 새 작업 ${tasks.length}개가 얼마나 끝났는지 가늠하고 있어요`,
+          (text) => readScores(text, 'taskId', 'progress').map(({ id, score }) => `${names.get(id) ?? id} — ${score}%`)
+        );
+        const result = await safeAsk<ProgressResult>(prompt, schema, thought.onText);
+        tick();
+        for (const item of result?.items ?? []) {
+          const task = tasks[Number(item.taskId.slice(1))];
+          if (!task || !Number.isFinite(item.progress)) continue;
+          const value = Math.min(100, Math.max(0, Math.round(item.progress)));
+          task.progress = value;
+          task.suggestedProgress = value;
+        }
+        const unfinished = tasks.filter((t) => t.progress < 100).length;
+        thought.conclude(unfinished ? `${unfinished}개는 아직 진행 중으로 봐요` : '모두 끝난 작업으로 봐요');
+      }
+    }
+
+    // ── 5단계: 세부 항목 — AI 가 필요하다고 판단한 작업에만 만든다 ──
     // 커밋 하나로 새로 만든 작업은 작업명이 곧 그 커밋이라 묻지 않는다(호출 절약). 사용자가 세부 항목을
     // 거의 쓰지 않거나 제안을 자주 지웠다면 더 아끼도록 프롬프트에 알린다.
     const plans = [...projectPlans.values()];
@@ -458,7 +494,8 @@ function newTask(content: string, commits: ReadonlyArray<GithubCommit>): Planned
     key: createId(),
     existingTaskId: null,
     content,
-    progress: defaultNewTaskProgress(commits),
+    progress: COMMIT_IMPORT_DEFAULT_PROGRESS,
+    suggestedProgress: COMMIT_IMPORT_DEFAULT_PROGRESS,
     included: true,
     commits: [...commits],
     details: [],

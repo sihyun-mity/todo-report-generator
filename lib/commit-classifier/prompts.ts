@@ -1,4 +1,4 @@
-import type { DetailEdit, Project, StyleSample } from '@/types';
+import type { DetailEdit, ProgressEdit, Project, StyleSample } from '@/types';
 
 // PoC(3개 데이터 세트, 47 커밋) 로 고른 프롬프트들.
 // - 한 번에 여러 결정을 묻는 방식(단일 프롬프트, 선택형 enum)은 기존 항목으로 쏠려 "새 작업"을 거의 고르지 못했다.
@@ -159,6 +159,52 @@ When needed, write short Korean sub-items (noun phrases), at most one per commit
         details: { type: 'array', maxItems: max, items: { type: 'string', maxLength: 60 } },
       },
       required: ['reason', 'details'],
+    },
+  };
+};
+
+export type ProgressCandidate = { id: string; title: string; messages: ReadonlyArray<string> };
+export type ProgressResult = { items: Array<{ taskId: string; progress: number }> };
+
+// 진행률 예시·후보에 넣는 커밋 제목 수 — 커밋이 많은 작업도 프롬프트가 길어지지 않게 자른다
+const PROGRESS_MESSAGE_LIMIT = 6;
+const joinMessages = (messages: ReadonlyArray<string>) => messages.slice(0, PROGRESS_MESSAGE_LIMIT).join(' / ');
+
+// 새 작업마다 커밋 제목으로 진행률(0-100)을 가늠한다. 커밋 종류(feat/fix 등)나 개수로 판단하지 않고,
+// 제목에 미완성 신호가 분명할 때만 낮춘다 — 애매하면 100. 사용자가 전에 고친 진행률을 예시로 넘겨 성향을 따르게 한다.
+// 이름짓기 프롬프트(PoC 검증)에 진행률을 덧붙이지 않고 따로 묻는다 — 검증된 프롬프트·스키마를 건드리지 않기 위해서다.
+export const progressPrompt = (
+  projectName: string,
+  tasks: ReadonlyArray<ProgressCandidate>,
+  edits: ReadonlyArray<ProgressEdit>
+) => {
+  const examples = edits.length
+    ? `\n\nThis user corrected earlier suggestions as below (task — commits: suggested → user's value). Follow the user's tendency for similar work:\n${edits.map((e) => `- "${e.task}" — ${joinMessages(e.commits)}: ${e.suggested} → ${e.edited}`).join('\n')}`
+    : '';
+  return {
+    prompt: `A developer's daily work report lists tasks with a completion percentage (0-100). These new tasks of project "${projectName}" were made from today's git commits (Korean or English):
+${tasks.map((t) => `- ${t.id}: "${t.title}" — commits: ${joinMessages(t.messages)}`).join('\n')}
+
+For each task, estimate how complete it is after these commits.
+Assume the work is finished (100) unless the commit messages clearly say it is not — e.g. WIP, in progress, partial, part 1, first pass, draft, skeleton, TODO, 진행 중, 작업 중, 일부, 1차, 초안. When unsure, answer 100. Do not lower it because of the commit type (feat, fix, refactor, ...) or the number of commits.${examples}`,
+    schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          minItems: tasks.length,
+          maxItems: tasks.length,
+          items: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', enum: tasks.map((t) => t.id) },
+              progress: { type: 'integer', minimum: 0, maximum: 100 },
+            },
+            required: ['taskId', 'progress'],
+          },
+        },
+      },
+      required: ['items'],
     },
   };
 };

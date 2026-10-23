@@ -10,7 +10,7 @@ export const commitScopeKey = (commit: Pick<GithubCommit, 'repo' | 'message'>): 
 // 미리보기에서 확정한 계획을 금일 프로젝트 목록에 병합한다. 기존 내용은 지우지 않고 더하기만 한다.
 // - 체크한 작업만 반영한다. 새 작업 / 새 프로젝트는 뒤에 추가하고, 폼이 초기 빈 상태면 그 빈 프로젝트를 대체한다.
 // - 기존 작업: 진행률을 계획 값으로 맞추고 세부 항목을 덧붙인다(같은 문구는 건너뜀).
-// links 는 폼에 들어간 프로젝트·작업·세부 항목 id 와 원래 커밋·제안 문구의 연결이다 — 사용자가 폼에서 이름·문구를
+// links 는 폼에 들어간 프로젝트·작업·세부 항목 id 와 원래 커밋·제안 문구(새 작업은 제안 진행률도)의 연결이다 — 사용자가 폼에서 이름·문구를
 // 고친 뒤 보고서를 저장하면 이 연결로 최종 표기를 찾아 메모리에 기억한다(`learnFromSavedReport`).
 export const applyCommitImportPlan = (
   today: ReadonlyArray<Project>,
@@ -92,6 +92,17 @@ export const applyCommitImportPlan = (
       // 비어 있는 작업 줄(새 프로젝트의 기본 줄 등)은 지우고 채운다
       project.tasks = [...project.tasks.filter((t) => t.content.trim() || t.details.length), task];
       linkTask(project.id, task.id, plannedTask.commits, added);
+      if (plannedTask.suggestedProgress !== null) {
+        links.push({
+          kind: 'progress',
+          projectId: project.id,
+          taskId: task.id,
+          task: task.content,
+          commits: plannedTask.commits.map((c) => c.message),
+          suggested: plannedTask.suggestedProgress,
+          inserted: task.progress,
+        });
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import {
   COMMIT_IMPORT_DETAIL_EDIT_LIMIT,
   COMMIT_IMPORT_MEMORY_STORAGE_KEY,
   COMMIT_IMPORT_PENDING_LINK_LIMIT,
+  COMMIT_IMPORT_PROGRESS_EDIT_LIMIT,
   COMMIT_IMPORT_STYLE_SAMPLE_LIMIT,
 } from '@/constants';
 import type {
@@ -9,6 +10,7 @@ import type {
   CommitImportMemory,
   CommitImportPlan,
   DetailEdit,
+  ProgressEdit,
   Project,
   ReportHistoryItem,
   StyleSample,
@@ -21,7 +23,8 @@ import { commitScopeKey } from '@/utils';
 // 2) `저장소#scope` → 작업명: 같은 묶음의 커밋을 그 작업에 붙이거나 그 이름으로 새 작업을 만든다.
 // 3) 세부 항목: AI 제안 문구 → 사용자가 고친 문구 쌍을 예시로 넘겨 새 제안을 사용자 표기로 바꾸고,
 //    제안을 지운 / 남긴 횟수로 다음 제안을 얼마나 아낄지 정한다.
-// 4) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
+// 4) 진행률: 새 작업에 제안한 진행률 → 사용자가 고친 진행률 쌍을 예시로 넘겨 다음 유추가 사용자 성향을 따르게 한다.
+// 5) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
 // 보정은 미리보기에서 확정할 때 한 번(사용자가 고친 것만), 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
 
 const emptyMemory = (): CommitImportMemory => ({
@@ -29,6 +32,7 @@ const emptyMemory = (): CommitImportMemory => ({
   scopeTasks: {},
   detailEdits: [],
   detailFeedback: { removed: 0, kept: 0 },
+  progressEdits: [],
   excludedRepos: [],
   pendingLinks: [],
 });
@@ -46,6 +50,7 @@ export const readCommitImportMemory = (userId: string | null): CommitImportMemor
       scopeTasks: parsed.scopeTasks ?? {},
       detailEdits: parsed.detailEdits ?? [],
       detailFeedback: parsed.detailFeedback ?? { removed: 0, kept: 0 },
+      progressEdits: parsed.progressEdits ?? [],
       excludedRepos: parsed.excludedRepos ?? [],
       pendingLinks: parsed.pendingLinks ?? [],
     };
@@ -69,6 +74,17 @@ const pushDetailEdits = (current: ReadonlyArray<DetailEdit>, edits: ReadonlyArra
   return [...fresh, ...current.filter((e) => !originals.has(e.original))].slice(0, COMMIT_IMPORT_DETAIL_EDIT_LIMIT);
 };
 
+// 같은 커밋 묶음은 최신 보정 하나만 남기고 앞에 쌓는다. 제안 그대로인 값은 보정이 아니다.
+const progressEditKey = (edit: ProgressEdit) => edit.commits.join('\n');
+const pushProgressEdits = (current: ReadonlyArray<ProgressEdit>, edits: ReadonlyArray<ProgressEdit>) => {
+  const fresh = edits.filter((e) => e.edited !== e.suggested);
+  const keys = new Set(fresh.map(progressEditKey));
+  return [...fresh, ...current.filter((e) => !keys.has(progressEditKey(e)))].slice(
+    0,
+    COMMIT_IMPORT_PROGRESS_EDIT_LIMIT
+  );
+};
+
 // 미리보기에서 사용자가 고친 내용을 기억하고, 폼에 들어간 항목 연결을 저장 대기로 남긴다.
 // 프로젝트명·작업명은 분류 결과(original)와 달라진 것만 기억한다 — AI 판정을 그대로 받아들인 것까지 여기서 기억하면
 // 보고서를 저장하지 않고 폼을 비워도 다음 분류(다시 분류 포함)가 AI 를 건너뛰고 같은 결과만 되풀이한다.
@@ -84,6 +100,7 @@ export const rememberCommitImport = (
   const repoProjects = { ...memory.repoProjects };
   const scopeTasks = { ...memory.scopeTasks };
   const edits: Array<DetailEdit> = [];
+  const progressEdits: Array<ProgressEdit> = [];
   const feedback = { ...memory.detailFeedback };
   const originalProjectName = (repo: string) => original.projects.find((p) => p.repos.includes(repo))?.name.trim();
   const originalTaskName = (sha: string) =>
@@ -104,6 +121,14 @@ export const rememberCommitImport = (
         const scopeKey = commitScopeKey(commit);
         if (scopeKey && content !== originalTaskName(commit.sha)) scopeTasks[scopeKey] = content;
       }
+      if (task.suggestedProgress !== null && task.progress !== task.suggestedProgress) {
+        progressEdits.push({
+          task: content,
+          commits: task.commits.map((c) => c.message),
+          suggested: task.suggestedProgress,
+          edited: task.progress,
+        });
+      }
       // AI 제안 세부 항목: 미리보기에서 지운 개수 / 남긴 개수, 그리고 사용자가 고친 문구
       for (const suggested of task.suggestedDetails) {
         const detail = task.details.find((d) => d.suggested === suggested);
@@ -122,6 +147,7 @@ export const rememberCommitImport = (
     scopeTasks,
     detailEdits: pushDetailEdits(memory.detailEdits, edits),
     detailFeedback: feedback,
+    progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
     pendingLinks: [...links, ...memory.pendingLinks].slice(0, COMMIT_IMPORT_PENDING_LINK_LIMIT),
   });
 };
@@ -136,6 +162,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
   const repoProjects = { ...memory.repoProjects };
   const scopeTasks = { ...memory.scopeTasks };
   const edits: Array<DetailEdit> = [];
+  const progressEdits: Array<ProgressEdit> = [];
   const feedback = { ...memory.detailFeedback };
   const alive: Array<CommitImportLink> = [];
 
@@ -151,6 +178,21 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
     if (!task) continue;
     if (link.kind === 'task') {
       if (task.content.trim()) scopeTasks[link.scopeKey] = task.content.trim();
+      alive.push(link);
+      continue;
+    }
+    if (link.kind === 'progress') {
+      // 폼에 넣은 뒤 사용자가 진행률을 고친 경우만. 예시의 기준은 처음 제안한 값(suggested)이다.
+      if (task.progress !== link.inserted) {
+        progressEdits.push({
+          task: task.content.trim() || link.task,
+          commits: link.commits,
+          suggested: link.suggested,
+          edited: task.progress,
+        });
+        alive.push({ ...link, inserted: task.progress });
+        continue;
+      }
       alive.push(link);
       continue;
     }
@@ -174,6 +216,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
     scopeTasks,
     detailEdits: pushDetailEdits(memory.detailEdits, edits),
     detailFeedback: feedback,
+    progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
     pendingLinks: alive,
   });
 };
@@ -199,10 +242,7 @@ export const collectStyleSamples = (history: ReadonlyArray<ReportHistoryItem>): 
         const content = task.content.trim();
         if (!content || seen.has(content)) continue;
         seen.add(content);
-        samples.push({
-          projectName: project.name.trim(),
-          taskContent: content,
-        });
+        samples.push({ projectName: project.name.trim(), taskContent: content });
         if (samples.length >= COMMIT_IMPORT_STYLE_SAMPLE_LIMIT) return samples;
       }
     }

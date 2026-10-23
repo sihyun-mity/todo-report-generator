@@ -50,10 +50,13 @@ export const readStringArray = (text: string, key: string): Array<string> => {
   return items;
 };
 
-// `{"<idKey>": "...", "score": n}` 쌍. 숫자가 아직 생성 중이면(10 의 1 까지만 나온 경우 등) 건너뛴다.
-export const readScores = (text: string, idKey: string): Array<{ id: string; score: number }> =>
+// `{"<idKey>": "...", "<valueKey>": n}` 쌍. 숫자가 아직 생성 중이면(10 의 1 까지만 나온 경우 등) 건너뛴다.
+export const readScores = (text: string, idKey: string, valueKey = 'score'): Array<{ id: string; score: number }> =>
   [
     ...text.matchAll(
-      new RegExp(`"${escapeKey(idKey)}"\\s*:\\s*"([^"]*)"\\s*,\\s*"score"\\s*:\\s*(\\d+)(?=\\s*[,}])`, 'g')
+      new RegExp(
+        `"${escapeKey(idKey)}"\\s*:\\s*"([^"]*)"\\s*,\\s*"${escapeKey(valueKey)}"\\s*:\\s*(\\d+)(?=\\s*[,}])`,
+        'g'
+      )
     ),
   ].map((m) => ({ id: m[1], score: Number(m[2]) }));
