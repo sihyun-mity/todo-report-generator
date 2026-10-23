@@ -23,21 +23,21 @@ import type {
 import { commitScope, commitScopeKey, createId, stripCommitPrefix } from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
 import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
-import { getPromptApiAvailability, openPromptSession, type JsonAsker } from '@/lib/commit-classifier/prompt-api';
+import { getPromptApiAvailability, type JsonAsker, openPromptSession } from '@/lib/commit-classifier/prompt-api';
 import {
   detailStylePrompt,
-  detailSuggestionPrompt,
-  newTaskNamingPrompt,
-  progressPrompt,
-  REPO_NONE_ID,
-  repoScorePrompt,
-  taskScorePrompt,
   type DetailStyleResult,
+  detailSuggestionPrompt,
   type DetailSuggestionResult,
+  newTaskNamingPrompt,
   type NewTaskNamingResult,
+  progressPrompt,
   type ProgressResult,
+  REPO_NONE_ID,
   type RepoCandidate,
+  repoScorePrompt,
   type RepoScoreResult,
+  taskScorePrompt,
   type TaskScoreResult,
 } from '@/lib/commit-classifier/prompts';
 
@@ -415,7 +415,7 @@ export async function classifyCommits({
         const { prompt, schema } = progressPrompt(plan.name, candidates, examples);
         const names = new Map(candidates.map((c) => [c.id, c.title]));
         const thought = think(
-          `${quote(plan.name)}의 새 작업 ${tasks.length}개가 얼마나 끝났는지 가늠하고 있어요`,
+          `${quote(plan.name)}의 새 작업 ${tasks.length}개가 얼마나 끝났는지 계산하고 있어요`,
           (text) => readScores(text, 'taskId', 'progress').map(({ id, score }) => `${names.get(id) ?? id} — ${score}%`)
         );
         const result = await safeAsk<ProgressResult>(prompt, schema, thought.onText);
