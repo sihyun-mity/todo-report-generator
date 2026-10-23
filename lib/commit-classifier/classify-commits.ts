@@ -95,7 +95,7 @@ export async function classifyCommits({
   onProgress,
   onThinking,
 }: ClassifyArgs): Promise<CommitImportPlan> {
-  const memory = readCommitImportMemory(userId);
+  const memory = await readCommitImportMemory(userId);
   const styleSamples = collectStyleSamples(history);
   const formProjects = todayProjects.filter((p) => p.name.trim());
   const formByName = new Map(formProjects.map((p) => [p.name.trim(), p]));

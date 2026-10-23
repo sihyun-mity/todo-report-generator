@@ -22,7 +22,7 @@ export const GITHUB_COMMITS_MAX_LOOKBACK_DAYS = 14;
 export const GITHUB_MAX_REPOS = 20;
 export const GITHUB_MAX_BRANCHES_PER_REPO = 10;
 
-/** 커밋 가져오기 보정 메모리 localStorage 키 접두어. 실제 키는 `${접두어}:${회원 id}` — 계정별로 따로 쌓인다. */
+/** 예전 커밋 가져오기 보정 메모리 localStorage 키 접두어(`${접두어}:${회원 id}`). 지금은 DB 에 두고, 남은 기록을 옮길 때만 읽는다. */
 export const COMMIT_IMPORT_MEMORY_STORAGE_KEY = 'commit-import-memory';
 // 기억할 세부 항목 표기 보정 / 저장 대기 연결 최대 개수
 export const COMMIT_IMPORT_DETAIL_EDIT_LIMIT = 20;

@@ -451,7 +451,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const handleGithubApply = (plan: CommitImportPlan, original: CommitImportPlan) => {
     const { projects, links } = applyCommitImportPlan(today.projects, plan);
     today.setProjects(projects);
-    rememberCommitImport(userId, plan, original, links);
+    void rememberCommitImport(userId, plan, original, links);
     setGithubSinceMs(null);
     toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
   };
@@ -479,7 +479,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       toast.success('내용이 클립보드에 복사되었습니다.');
       void addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
       // 가져온 커밋 항목을 폼에서 고쳐 저장했다면 그 최종 표기를 보정 메모리에 기억한다
-      learnFromSavedReport(userId, today.projects);
+      void learnFromSavedReport(userId, today.projects);
       requestHistoryFocus(reportDate.month, reportDate.day);
       // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
       refreshBaseline();

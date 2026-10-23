@@ -53,7 +53,12 @@ import { Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import { useOnClickOutside } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
-import { readCommitImportMemory, repoExcludeSuggestions, setRepoExcluded } from '@/lib/commit-classifier/memory';
+import {
+  readCommitImportMemory,
+  repoExcludeSuggestions,
+  setRepoExcluded,
+  toggleExcludedRepo,
+} from '@/lib/commit-classifier/memory';
 import { downloadPromptModel } from '@/lib/commit-classifier/prompt-api';
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
@@ -141,15 +146,18 @@ export function GithubImportDialog({
   const [isConnecting, setIsConnecting] = useState(false);
   // 온디바이스 AI 모델 내려받기 진행률(0~1). null 이면 내려받는 중이 아님.
   const [modelDownload, setModelDownload] = useState<number | null>(null);
-  // 분류에서 뺀 저장소(회원별 메모리). 다이얼로그는 열 때만 마운트돼 첫 렌더부터 localStorage 를 읽어도 된다.
-  const [excludedRepos, setExcludedRepos] = useState(() => readCommitImportMemory(userId).excludedRepos);
+  // 아래 세 값은 보정 메모리(DB)를 처음 받아 왔을 때 채운다(memoryReady). 커밋 조회는 그 뒤에 시작한다.
+  const [memoryReady, setMemoryReady] = useState(false);
+  // 분류에서 뺀 저장소(회원별 메모리)
+  const [excludedRepos, setExcludedRepos] = useState<ReadonlyArray<string>>([]);
   // 매번 작업을 넣지 않고 적용해 온 저장소 — 미리보기 저장소 칩에서 제외를 권한다(누를 때만 제외)
-  const [suggestedExcludes] = useState(() => repoExcludeSuggestions(readCommitImportMemory(userId)));
+  const [suggestedExcludes, setSuggestedExcludes] = useState<ReadonlyArray<string>>([]);
   // 커밋 조회에 쓴 제외 목록 — 미리보기에서 제외할 때는 다시 조회하지 않고 그 저장소만 빼고,
   // 제외를 해제할 때만 그 저장소의 커밋을 불러오려고 다시 조회·분류한다.
-  const [fetchExcludedRepos, setFetchExcludedRepos] = useState(excludedRepos);
-  // 분류(queryFn)가 실행 시점의 제외 목록을 보도록 ref 로도 들고 있는다
-  const excludedRef = useRef(excludedRepos);
+  const [fetchExcludedRepos, setFetchExcludedRepos] = useState<ReadonlyArray<string>>([]);
+  // 분류(queryFn)가 실행 시점의 제외 목록을 보도록 ref 로도 들고 있는다. 조회 때 뺀 저장소는 커밋에 없으므로
+  // 이번 미리보기에서 바꾼 것만 담기면 된다(핸들러에서 갱신).
+  const excludedRef = useRef<ReadonlyArray<string>>([]);
 
   useOnClickOutside(modalRef, onClose);
   useDismissOnBack(true, onClose);
@@ -169,9 +177,25 @@ export function GithubImportDialog({
   const isConnected = connection.data?.connected === true;
   const login = connection.data?.connected ? connection.data.login : '';
 
+  // 읽기 실패는 빈 메모리로 돌아온다 — 기억하지 못해도 가져오기는 동작한다
+  const memory = useQuery({
+    ...queries.github.memory(userId),
+    queryFn: () => readCommitImportMemory(userId),
+    enabled: isMember,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  if (memory.data && !memoryReady) {
+    setMemoryReady(true);
+    setExcludedRepos(memory.data.excludedRepos);
+    setFetchExcludedRepos(memory.data.excludedRepos);
+    setSuggestedExcludes(repoExcludeSuggestions(memory.data));
+  }
+
   const commits = useQuery({
     ...queries.github.commits(sinceMs, fetchExcludedRepos),
-    enabled: isConnected,
+    enabled: isConnected && memoryReady,
     staleTime: 0,
     gcTime: 0,
     refetchOnWindowFocus: false,
@@ -248,7 +272,8 @@ export function GithubImportDialog({
   };
 
   const handleExcludeRepo = (repo: string) => {
-    const next = setRepoExcluded(userId, repo, true);
+    const next = toggleExcludedRepo(excludedRepos, repo, true);
+    void setRepoExcluded(userId, repo, true);
     excludedRef.current = next;
     setExcludedRepos(next);
     setDraft((current) => (current ? removeRepoFromPlan(current, repo) : current));
@@ -256,7 +281,8 @@ export function GithubImportDialog({
   };
 
   const handleIncludeRepo = (repo: string) => {
-    const next = setRepoExcluded(userId, repo, false);
+    const next = toggleExcludedRepo(excludedRepos, repo, false);
+    void setRepoExcluded(userId, repo, false);
     excludedRef.current = next;
     setExcludedRepos(next);
     if (fetchExcludedRepos.includes(repo)) {
@@ -350,7 +376,7 @@ export function GithubImportDialog({
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
             {viewerMode === 'guest' ? (
               <MembersOnlyGuide />
-            ) : viewerMode === 'loading' || connection.isPending ? (
+            ) : viewerMode === 'loading' || connection.isPending || (isConnected && !memoryReady) ? (
               <StatusPanel icon={Loader2} spin title="GitHub 연결 상태를 확인하고 있어요" />
             ) : !isConnected ? (
               <ConnectGuide onConnect={handleConnect} isConnecting={isConnecting} />
