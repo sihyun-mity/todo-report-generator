@@ -3,7 +3,7 @@ import {
   COMMIT_IMPORT_SIMILAR_TASK_AI_MIN,
   COMMIT_IMPORT_SIMILAR_TASK_THRESHOLD,
 } from '@/constants';
-import type { ImportedTask, PlannedTask, Task } from '@/types';
+import type { GithubCommit, ImportedTask, PlannedTask, Task } from '@/types';
 import { stripCommitPrefix } from '@/utils';
 
 // 이미 보고서에 넣은 작업이 이번 분류에서 다시 잡혔는지 알아본다. 같은 보고서 날짜의 작업만 견준다 — 다른 날 이어서 한
@@ -15,6 +15,7 @@ import { stripCommitPrefix } from '@/utils';
 //    바로 넣은 작업은 AI 가 비슷한 이름을 다시 내고, 고쳐 넣은 작업은 고치기 전 이름과 비슷하게 나오므로 둘 다 견준다.
 //    저장소가 겹칠 때만 이름을 견준다 — "버그 수정" 같은 흔한 이름이 무관한 프로젝트 작업과 이어지지 않게.
 // 폼에 직접 적은 작업(`findSimilarFormTask`): 커밋 연결이 없어 이름 유사도만 본다.
+// 폼의 기존 작업에 붙은 커밋(`isReportedCommit`): 모두 이미 보고된 커밋이면 다시 넣을 게 없다 — 이어서 한 일이 아니다.
 // 위는 확실한 경우라 문자열로 바로 정한다(AI 점수는 실행마다 흔들린다). 이름 유사도가 애매한 구간의 후보만
 // `similarTaskCandidates` 로 골라 AI 에 묻는다(`similarTaskScorePrompt`) — 표현만 다른 같은 작업을 잡으려고.
 
@@ -115,4 +116,18 @@ export const similarTaskCandidates = (
     .sort((a, b) => b.score - a.score)
     .filter((c) => !seen.has(c.label) && seen.add(c.label))
     .slice(0, COMMIT_IMPORT_SIMILAR_TASK_AI_CANDIDATE_LIMIT);
+};
+
+// 이 보고서 날짜에 이미 보고된 커밋인지 — 이 날짜에 가져와 넣은 기록에 있거나(sha 또는 제목), 이 날짜 보고서를 마지막으로
+// 저장하기 전에 만든 커밋(저장할 때 이미 있던 일이라 직접 적은 작업에 담겼다고 본다). savedAtMs 가 null 이면 저장 전이다.
+export const isReportedCommit = (
+  commit: GithubCommit,
+  records: ReadonlyArray<ImportedTask>,
+  savedAtMs: number | null
+): boolean => {
+  if (savedAtMs !== null && new Date(commit.committedAt).getTime() <= savedAtMs) return true;
+  const message = normalize(commit.message);
+  return records.some(
+    (r) => r.shas.includes(commit.sha) || (!!message && r.messages.some((m) => normalize(m) === message))
+  );
 };

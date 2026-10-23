@@ -115,8 +115,11 @@ function StatusBadge({ isNew, newLabel, existingLabel }: Readonly<BadgeProps>) {
 }
 
 // 전에 가져와 보고서에 넣은 작업과 비슷해 가져오기를 해제해 둔 작업 — 어느 작업과 비슷한지 함께 알린다
-function SimilarBadge({ name }: Readonly<{ name: string }>) {
-  const description = `전에 등록한 “${name}” 작업과 비슷해요`;
+// 기존 작업(isExisting)이면 이미 보고한 커밋만 붙은 경우다
+function SimilarBadge({ name, isExisting }: Readonly<{ name: string; isExisting: boolean }>) {
+  const description = isExisting
+    ? `“${name}” 작업에 이미 보고한 커밋뿐이에요`
+    : `전에 등록한 “${name}” 작업과 비슷해요`;
   return (
     <span
       title={description}
@@ -277,7 +280,7 @@ function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps
           가져오기
         </label>
         {task.similarTo !== null ? (
-          <SimilarBadge name={task.similarTo} />
+          <SimilarBadge name={task.similarTo} isExisting={!isNew} />
         ) : (
           <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
         )}

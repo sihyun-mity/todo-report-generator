@@ -21,12 +21,13 @@ import type {
   ReportHistoryItem,
   StyleSample,
 } from '@/types';
-import { commitScope, commitScopeKey, createId, stripCommitPrefix } from '@/utils';
+import { commitScope, commitScopeKey, createId, reportItemDateKey, stripCommitPrefix } from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
 import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
 import {
   findRegisteredTask,
   findSimilarFormTask,
+  isReportedCommit,
   similarTaskCandidates,
 } from '@/lib/commit-classifier/registered-tasks';
 import { getPromptApiAvailability, type JsonAsker, openPromptSession } from '@/lib/commit-classifier/prompt-api';
@@ -416,7 +417,12 @@ export async function classifyCommits({
     // 견줄 대상은 ① 이 날짜에 가져와 넣은 작업(등록 기록 — AI 원래 이름·사용자 최종 이름·커밋) ② 폼에 직접 적은 작업.
     // 확실한 경우(같은 커밋·제목 겹침·이름이 거의 같음)는 문자열로 바로 정하고, 이름이 애매하게 비슷한 후보만 AI 에
     // 두 번 채점시켜 둘 다 임계값을 넘을 때 같은 작업으로 본다(표현만 다른 같은 작업). 사용자가 다시 체크하면 그대로 들어간다.
+    // 폼의 기존 작업에 붙은 묶음은 커밋이 모두 이미 보고된 것일 때만 뺀다 — 새 커밋이 섞였으면 이어서 한 일이다.
     const registered = memory.importedTasks.filter((r) => r.reportDate === reportDateKey);
+    // 이 날짜 보고서를 마지막으로 저장한 시각(저장 전이면 null)
+    const savedAtMs = history
+      .filter((item) => reportItemDateKey(item) === reportDateKey)
+      .reduce<number | null>((latest, item) => Math.max(latest ?? 0, item.timestamp), null);
     // 계획이 들어갈 폼 프로젝트 — 기존 프로젝트, 또는 폼 반영 때 이름이 같아 합쳐질 프로젝트
     const formProjectOf = (plan: PlannedProject) =>
       plan.existingProjectId !== null
@@ -435,7 +441,14 @@ export async function classifyCommits({
       for (const plan of projectPlans.values()) {
         const formTasks = (formProjectOf(plan)?.tasks ?? []).filter((t) => t.content.trim());
         for (const task of plan.tasks) {
-          if (task.existingTaskId !== null) continue;
+          if (task.existingTaskId !== null) {
+            if (task.commits.length && task.commits.every((c) => isReportedCommit(c, registered, savedAtMs))) {
+              const name = task.content.trim();
+              think(`${quote(name)} 작업`).conclude('이미 보고한 커밋뿐이라 다시 넣지 않고 빼 둘게요');
+              markSimilar(task, name);
+            }
+            continue;
+          }
           const similarTo =
             findRegisteredTask(task, registered)?.final ?? findSimilarFormTask(task, formTasks)?.content.trim() ?? null;
           if (similarTo !== null) {
