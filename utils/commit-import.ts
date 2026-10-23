@@ -18,8 +18,9 @@ const dayStartMs = (dateKey: string, offsetDays = 0) => {
 /**
  * 보고서 날짜(`reportDateKey`)에 담을 커밋의 조회 범위. `untilMs === null` 이면 지금까지다.
  *
- * - 기준(anchor)은 그 날짜 직전 보고서다. 오늘(이후) 보고서를 쓰는 중이면 오늘 이미 저장한 보고서도 기준이 된다 —
- *   오늘 한 번 보고한 뒤 다시 가져오면 그 뒤 커밋만 온다. 지난 날짜면 그 날짜 자신의 기록은 기준에서 뺀다.
+ * - 기준(anchor)은 그 날짜 직전 보고서다. 보고서 날짜 자신의 기록은 오늘이든 지난 날짜든 기준에서 뺀다 —
+ *   오늘 보고서를 한 번 저장한 뒤 다시 가져와도 저장하기 전처럼 직전 보고서 이후 커밋을 모두 받는다(임시 저장처럼 나눠 가져오기).
+ *   이미 넣은 작업은 분류기가 "기존 작업과 유사"로 해제해 둔다(`registered-tasks.ts`).
  * - since: 기준 보고서 작성(저장) 시각. 단, 밀린 보고서를 나중에 몰아 쓴 경우처럼 기준 보고서가 범위 끝 이후에 저장됐으면
  *   작성 시각 대신 그 보고서 날짜의 다음 날 0시로 본다(보고서 날짜의 커밋은 그 보고서 몫).
  *   기준 보고서가 없으면 보고서 날짜 0시.
@@ -41,7 +42,7 @@ export const commitImportRange = (
   let anchor: { key: string; timestamp: number } | null = null;
   for (const item of history) {
     const key = reportItemDateKey(item);
-    if (isPast ? key >= reportDateKey : key > todayKey) continue;
+    if (key >= reportDateKey) continue;
     if (!anchor || key > anchor.key || (key === anchor.key && item.timestamp > anchor.timestamp)) {
       anchor = { key, timestamp: item.timestamp };
     }

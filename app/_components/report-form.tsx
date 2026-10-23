@@ -441,18 +441,18 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
-  // GitHub 커밋 가져오기 조회 범위: 보고서 날짜 직전 보고서(오늘이면 오늘 저장한 보고서 포함)의 작성 시각부터 (`commitImportRange`).
-  // 회원은 기록을 월 단위로 적재하므로, 기준 보고서가 속한 월이 아직 없으면 먼저 불러온다.
-  // 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
   // 폼의 보고서 날짜 키('YYYY-MM-DD') — 연도는 올해로 본다
   const currentReportDateKey = () =>
     toDateKey(new Date().getFullYear(), parseInt(reportDate.month, 10), parseInt(reportDate.day, 10));
 
+  // GitHub 커밋 가져오기 조회 범위: 보고서 날짜 직전 보고서의 작성 시각부터 (`commitImportRange`). 보고서 날짜에 이미 저장한
+  // 보고서는 기준이 아니다 — 오늘 저장한 뒤 다시 가져와도 오늘 커밋을 모두 받고, 이미 넣은 작업은 미리보기에서 해제돼 나온다.
+  // 회원은 기록을 월 단위로 적재하므로, 기준 보고서가 속한 월이 아직 없으면 먼저 불러온다.
+  // 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
   const openGithubImport = async () => {
     const todayKey = todayDateKey();
     const reportDateKey = currentReportDateKey();
-    const isPast = reportDateKey < todayKey;
-    const anchorKey = allReportDates.find((d) => (isPast ? d < reportDateKey : d <= todayKey));
+    const anchorKey = allReportDates.find((d) => d < reportDateKey);
     if (anchorKey) {
       const [y, m] = anchorKey.split('-').map((s) => parseInt(s, 10));
       await loadMonth(y, m);
