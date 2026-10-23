@@ -239,13 +239,25 @@ function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps
     <div className={cn('transition-opacity', !task.included && 'opacity-50')}>
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         {/* 이 작업을 폼에 반영할지 — 세부 항목과 헷갈리지 않게 작업 머리줄 맨 앞에 둔다 */}
-        <label className="flex cursor-pointer items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+        {/* 실제 input 은 숨기고(sr-only) 그린 박스로 보여준다 — 커스텀 포인터가 input 과 label 을 따로 하이라이트하지 않고 머리줄 하나로 감싼다 */}
+        <label className="flex cursor-pointer items-center gap-1.5 rounded-md py-0.5 pr-1.5 pl-1 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 has-focus-visible:ring-2 has-focus-visible:ring-blue-400 dark:text-zinc-300 dark:hover:bg-zinc-800">
           <input
             type="checkbox"
             checked={task.included}
             onChange={(e) => onUpdate((t) => ({ ...t, included: e.target.checked }))}
-            className="size-3.5 cursor-pointer accent-blue-600"
+            className="sr-only"
           />
+          <span
+            aria-hidden
+            className={cn(
+              'flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors',
+              task.included
+                ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-500'
+                : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800'
+            )}
+          >
+            {task.included && <Check size={10} strokeWidth={3.5} />}
+          </span>
           가져오기
         </label>
         <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
