@@ -22,7 +22,7 @@ import { commitScopeKey } from '@/utils';
 // 3) 세부 항목: AI 제안 문구 → 사용자가 고친 문구 쌍을 예시로 넘겨 새 제안을 사용자 표기로 바꾸고,
 //    제안을 지운 / 남긴 횟수로 다음 제안을 얼마나 아낄지 정한다.
 // 4) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
-// 보정은 미리보기에서 확정할 때 한 번, 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
+// 보정은 미리보기에서 확정할 때 한 번(사용자가 고친 것만), 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
 
 const emptyMemory = (): CommitImportMemory => ({
   repoProjects: {},
@@ -69,10 +69,14 @@ const pushDetailEdits = (current: ReadonlyArray<DetailEdit>, edits: ReadonlyArra
   return [...fresh, ...current.filter((e) => !originals.has(e.original))].slice(0, COMMIT_IMPORT_DETAIL_EDIT_LIMIT);
 };
 
-// 미리보기에서 확정한 내용을 기억하고, 폼에 들어간 항목 연결을 저장 대기로 남긴다.
+// 미리보기에서 사용자가 고친 내용을 기억하고, 폼에 들어간 항목 연결을 저장 대기로 남긴다.
+// 프로젝트명·작업명은 분류 결과(original)와 달라진 것만 기억한다 — AI 판정을 그대로 받아들인 것까지 여기서 기억하면
+// 보고서를 저장하지 않고 폼을 비워도 다음 분류(다시 분류 포함)가 AI 를 건너뛰고 같은 결과만 되풀이한다.
+// 고치지 않은 판정은 보고서를 저장할 때(`learnFromSavedReport`) 확정한다.
 export const rememberCommitImport = (
   userId: string | null,
   plan: CommitImportPlan,
+  original: CommitImportPlan,
   links: ReadonlyArray<CommitImportLink>
 ) => {
   if (!userId) return;
@@ -81,15 +85,24 @@ export const rememberCommitImport = (
   const scopeTasks = { ...memory.scopeTasks };
   const edits: Array<DetailEdit> = [];
   const feedback = { ...memory.detailFeedback };
+  const originalProjectName = (repo: string) => original.projects.find((p) => p.repos.includes(repo))?.name.trim();
+  const originalTaskName = (sha: string) =>
+    original.projects
+      .flatMap((p) => p.tasks)
+      .find((t) => t.commits.some((c) => c.sha === sha))
+      ?.content.trim();
   for (const project of plan.projects) {
     const included = project.tasks.filter((t) => t.included && t.content.trim());
     const name = project.name.trim();
     if (!name || !included.length) continue;
-    for (const repo of project.repos) repoProjects[repo] = name;
+    for (const repo of project.repos) {
+      if (name !== originalProjectName(repo)) repoProjects[repo] = name;
+    }
     for (const task of included) {
+      const content = task.content.trim();
       for (const commit of task.commits) {
         const scopeKey = commitScopeKey(commit);
-        if (scopeKey) scopeTasks[scopeKey] = task.content.trim();
+        if (scopeKey && content !== originalTaskName(commit.sha)) scopeTasks[scopeKey] = content;
       }
       // AI 제안 세부 항목: 미리보기에서 지운 개수 / 남긴 개수, 그리고 사용자가 고친 문구
       for (const suggested of task.suggestedDetails) {
@@ -186,7 +199,10 @@ export const collectStyleSamples = (history: ReadonlyArray<ReportHistoryItem>): 
         const content = task.content.trim();
         if (!content || seen.has(content)) continue;
         seen.add(content);
-        samples.push({ projectName: project.name.trim(), taskContent: content });
+        samples.push({
+          projectName: project.name.trim(),
+          taskContent: content,
+        });
         if (samples.length >= COMMIT_IMPORT_STYLE_SAMPLE_LIMIT) return samples;
       }
     }

@@ -70,7 +70,8 @@ type GithubImportDialogProps = {
   // 이 시각 이후 커밋을 가져온다 (마지막 보고서 작성 시각과 오늘 0시 중 이른 쪽)
   sinceMs: number;
   onClose: () => void;
-  onApply: (plan: CommitImportPlan) => void;
+  // original 은 사용자가 고치기 전의 분류 결과 — 보정 메모리는 둘을 비교해 사용자가 실제로 고친 것만 배운다
+  onApply: (plan: CommitImportPlan, original: CommitImportPlan) => void;
 };
 
 const sinceLabel = (iso: string) =>
@@ -257,7 +258,9 @@ export function GithubImportDialog({
     excludedRef.current = next;
     setExcludedRepos(next);
     if (fetchExcludedRepos.includes(repo)) {
-      // 조회 때부터 뺐던 저장소 — 그 저장소 커밋을 받아 오도록 다시 조회한다(새 조회 결과로 다시 분류된다)
+      // 조회 때부터 뺐던 저장소 — 그 저장소 커밋을 받아 오도록 다시 조회한다(새 조회 결과로 다시 분류된다).
+      // 새 분류가 끝날 때까지 그 저장소가 빠진 이전 결과가 남아 있지 않도록 미리보기를 비운다.
+      setDraft(null);
       setFetchExcludedRepos(next);
     } else {
       // 이번에 미리보기에서 뺐던 저장소 — 커밋은 이미 있으니 다시 분류만 한다
@@ -283,6 +286,9 @@ export function GithubImportDialog({
     setIsDisconnecting(true);
     try {
       await disconnectGithub();
+      // 받아 둔 분류 결과는 연결이 끊기면 더 이상 쓰지 않는다 — 연결 안내와 함께 적용 버튼이 남지 않게 비운다
+      setDraft(null);
+      setRetryArmed(false);
       await queryClient.invalidateQueries({ queryKey: queries.github.connection().queryKey });
       toast.success('GitHub 연결을 해제했습니다.');
     } finally {
@@ -309,6 +315,8 @@ export function GithubImportDialog({
 
   const summary = draft ? summarize(draft) : null;
   const isClassifyDone = progress?.current === null;
+  // 본문이 미리보기를 보여 주는 동안에만 하단에 적용 버튼을 둔다(연결 안내·오류·내려받기 화면에서는 닫기만)
+  const preview = isMember && isConnected && hasCommits && !plan.isError && modelDownload === null ? draft : null;
 
   return (
     <Portal>
@@ -513,12 +521,12 @@ export function GithubImportDialog({
                 onClick={onClose}
                 className="flex-1 rounded-xl bg-zinc-100 px-4 py-3 font-medium transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
               >
-                {draft ? '취소' : '닫기'}
+                {preview ? '취소' : '닫기'}
               </button>
-              {draft && (
+              {preview && draftSource && (
                 <button
                   disabled={included === 0}
-                  onClick={() => onApply(draft)}
+                  onClick={() => onApply(preview, draftSource)}
                   className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
                 >
                   {included > 0 ? '작업 추가' : '추가할 작업을 선택해 주세요'}

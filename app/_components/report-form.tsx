@@ -448,10 +448,10 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     setGithubSinceMs(lastReportAt > 0 ? Math.min(lastReportAt, todayStart.getTime()) : todayStart.getTime());
   };
 
-  const handleGithubApply = (plan: CommitImportPlan) => {
+  const handleGithubApply = (plan: CommitImportPlan, original: CommitImportPlan) => {
     const { projects, links } = applyCommitImportPlan(today.projects, plan);
     today.setProjects(projects);
-    rememberCommitImport(userId, plan, links);
+    rememberCommitImport(userId, plan, original, links);
     setGithubSinceMs(null);
     toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
   };
