@@ -27,6 +27,8 @@ type GithubImportPreviewProps = {
   onChange: (plan: CommitImportPlan) => void;
   // 저장소를 분류 대상에서 뺀다(개인 프로젝트 등) — 다음 가져오기부터는 조회하지 않는다
   onExcludeRepo: (repo: string) => void;
+  // 최근 연속으로 작업을 하나도 넣지 않은 저장소 — 칩에서 제외를 권한다
+  suggestedExcludes: ReadonlyArray<string>;
 };
 
 const NEW_PROJECT_VALUE = '__new__';
@@ -50,6 +52,7 @@ export function GithubImportPreview({
   todayProjects,
   onChange,
   onExcludeRepo,
+  suggestedExcludes,
 }: Readonly<GithubImportPreviewProps>) {
   const namedProjects = todayProjects.filter((p) => p.name.trim());
 
@@ -84,6 +87,7 @@ export function GithubImportPreview({
           onRename={(name) => updateProject(project.key, (p) => ({ ...p, name }))}
           onUpdateTask={(taskKey, updater) => updateTask(project.key, taskKey, updater)}
           onExcludeRepo={onExcludeRepo}
+          suggestedExcludes={suggestedExcludes}
         />
       ))}
     </div>
@@ -116,6 +120,7 @@ type ProjectBlockProps = {
   onRename: (name: string) => void;
   onUpdateTask: (taskKey: string, updater: (task: PlannedTask) => PlannedTask) => void;
   onExcludeRepo: (repo: string) => void;
+  suggestedExcludes: ReadonlyArray<string>;
 };
 
 function ProjectBlock({
@@ -125,6 +130,7 @@ function ProjectBlock({
   onRename,
   onUpdateTask,
   onExcludeRepo,
+  suggestedExcludes,
 }: Readonly<ProjectBlockProps>) {
   const isNew = project.existingProjectId === null;
   const source = namedProjects.find((p) => p.id === project.existingProjectId);
@@ -155,26 +161,41 @@ function ProjectBlock({
       </div>
       {/* 이 프로젝트로 분류된 저장소 — 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 여기서 뺀다 */}
       <ul className="mb-4 flex flex-wrap gap-1.5">
-        {project.repos.map((repo) => (
-          <li
-            key={repo}
-            className="flex max-w-full items-center gap-1 rounded-md bg-zinc-50 py-0.5 pr-0.5 pl-1.5 text-[11px] text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400"
-          >
-            <FolderGit2 size={12} className="shrink-0" aria-hidden />
-            <span className="truncate font-mono" title={repo}>
-              {repo}
-            </span>
-            <button
-              type="button"
-              onClick={() => onExcludeRepo(repo)}
-              title="이 저장소를 분류 대상에서 빼요. 다음 가져오기부터 커밋을 불러오지 않아요."
-              className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+        {project.repos.map((repo) => {
+          const isSuggested = suggestedExcludes.includes(repo);
+          return (
+            <li
+              key={repo}
+              className={cn(
+                'flex max-w-full items-center gap-1 rounded-md py-0.5 pr-0.5 pl-1.5 text-[11px]',
+                isSuggested
+                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+                  : 'bg-zinc-50 text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400'
+              )}
             >
-              <EyeOff size={11} aria-hidden />
-              제외
-            </button>
-          </li>
-        ))}
+              <FolderGit2 size={12} className="shrink-0" aria-hidden />
+              <span className="truncate font-mono" title={repo}>
+                {repo}
+              </span>
+              <button
+                type="button"
+                onClick={() => onExcludeRepo(repo)}
+                title={
+                  isSuggested
+                    ? '최근 여러 번 이 저장소 작업을 넣지 않았어요. 빼 두면 다음 가져오기부터 커밋을 불러오지 않아요.'
+                    : '이 저장소를 분류 대상에서 빼요. 다음 가져오기부터 커밋을 불러오지 않아요.'
+                }
+                className={cn(
+                  'flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30',
+                  isSuggested ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-zinc-400'
+                )}
+              >
+                <EyeOff size={11} aria-hidden />
+                {isSuggested ? '자주 빼는 저장소 · 제외' : '제외'}
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       <div className="ml-2 space-y-4 sm:ml-4">

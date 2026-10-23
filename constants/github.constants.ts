@@ -32,6 +32,8 @@ export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;
 // 기억할 진행률 보정 최대 개수 / 진행률 유추 프롬프트에 예시로 넘기는 개수
 export const COMMIT_IMPORT_PROGRESS_EDIT_LIMIT = 20;
 export const COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT = 8;
+// 저장소 작업을 하나도 넣지 않고 적용한 횟수가 이만큼 연속되면 미리보기에서 그 저장소 제외를 제안한다
+export const COMMIT_IMPORT_REPO_SKIP_SUGGEST_COUNT = 3;
 // 진행률을 알 수 없을 때의 기본값 — 커밋이 있으면 대개 그 일은 끝난 것으로 본다
 export const COMMIT_IMPORT_DEFAULT_PROGRESS = 100;
 // 새 작업명 문체를 맞출 때 예시로 넘기는 과거 작업명 최대 개수

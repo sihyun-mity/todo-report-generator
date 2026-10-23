@@ -1,4 +1,4 @@
-import type { CommitImportLink, CommitImportPlan, GithubCommit, PlannedDetail, Project } from '@/types';
+import type { CommitImportLink, CommitImportPlan, GithubCommit, PlannedDetail, Project, Task } from '@/types';
 import { cloneProjects, commitScope, createId, isProjectEmpty } from '@/utils';
 
 // 저장소 + Conventional Commit scope. 같은 묶음의 작업명 보정을 기억하는 키다(scope 가 없으면 기억하지 않는다).
@@ -43,6 +43,10 @@ export const applyCommitImportPlan = (
     });
   };
 
+  // 반영 시점의 세부 항목 — 보고서 저장 때 여기 없는 줄을 사용자가 직접 추가한 것으로 센다
+  const linkDetails = (projectId: string, task: Pick<Task, 'id' | 'details'>) =>
+    links.push({ kind: 'details', projectId, taskId: task.id, known: task.details.map((d) => d.id) });
+
   for (const plannedProject of plan.projects) {
     const tasks = plannedProject.tasks.filter((t) => t.included && t.content.trim());
     if (!tasks.length) continue;
@@ -80,6 +84,7 @@ export const applyCommitImportPlan = (
         ];
         existingTask.progress = plannedTask.progress;
         linkTask(project.id, existingTask.id, plannedTask.commits, added);
+        linkDetails(project.id, existingTask);
         continue;
       }
       const added = plannedDetails.map((planned) => ({ id: createId(), planned }));
@@ -92,6 +97,7 @@ export const applyCommitImportPlan = (
       // 비어 있는 작업 줄(새 프로젝트의 기본 줄 등)은 지우고 채운다
       project.tasks = [...project.tasks.filter((t) => t.content.trim() || t.details.length), task];
       linkTask(project.id, task.id, plannedTask.commits, added);
+      linkDetails(project.id, task);
       if (plannedTask.suggestedProgress !== null) {
         links.push({
           kind: 'progress',

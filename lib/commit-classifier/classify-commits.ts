@@ -436,7 +436,9 @@ export async function classifyCommits({
     // 커밋 하나로 새로 만든 작업은 작업명이 곧 그 커밋이라 묻지 않는다(호출 절약). 사용자가 세부 항목을
     // 거의 쓰지 않거나 제안을 자주 지웠다면 더 아끼도록 프롬프트에 알린다.
     const plans = [...projectPlans.values()];
-    const sparse = !usesDetails(history) || memory.detailFeedback.removed > memory.detailFeedback.kept;
+    // 사용자가 세부 항목을 직접 추가한 줄도 "세부 항목을 원한다"로 센다 — 지운 횟수만 보면 한 번 아끼기 시작한 뒤 되돌아오지 않는다
+    const { removed, kept, added } = memory.detailFeedback;
+    const sparse = !usesDetails(history) || removed > kept + added;
     const needsAsk = plans.flatMap((p) => p.tasks).filter((t) => t.existingTaskId !== null || t.commits.length > 1);
     // AI 가 없으면 묻지 않으므로 할 일이 없는 단계(건너뜀)가 된다
     startStage(COMMIT_CLASSIFY_STAGE.DETAIL, ask ? needsAsk.length + (memory.detailEdits.length ? 1 : 0) : 0);

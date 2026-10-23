@@ -61,6 +61,8 @@ export type CommitImportLink =
   | { kind: 'task'; scopeKey: string; projectId: string; taskId: string }
   // original = AI 가 제안한 문구, inserted = 폼에 넣은 문구. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
   | { kind: 'detail'; projectId: string; taskId: string; detailId: string; original: string; inserted: string }
+  // 가져온 작업에 폼 반영 시점에 있던 세부 항목 id — 저장 시 여기 없는 줄은 사용자가 직접 추가한 것이다
+  | { kind: 'details'; projectId: string; taskId: string; known: Array<string> }
   // 새 작업 진행률. suggested = 제안한 값, inserted = 폼에 넣은 값. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
   | {
       kind: 'progress';
@@ -86,12 +88,15 @@ export type CommitImportMemory = {
   scopeTasks: Record<string, string>;
   // 최근 세부 항목 표기 보정(최신순)
   detailEdits: Array<DetailEdit>;
-  // AI 가 제안한 세부 항목을 사용자가 지운 횟수 / 그대로 둔(또는 고친) 횟수 — 제안을 얼마나 아껴야 하는지의 신호
-  detailFeedback: { removed: number; kept: number };
+  // AI 가 제안한 세부 항목을 사용자가 지운 횟수 / 그대로 둔(또는 고친) 횟수 / 사용자가 직접 추가한 줄 수
+  // — 제안을 얼마나 아껴야 하는지의 신호. added 가 없으면 "아끼라"는 쪽으로만 기울어 되돌아오지 않는다.
+  detailFeedback: { removed: number; kept: number; added: number };
   // 최근 새 작업 진행률 보정(최신순) — 다음 진행률 유추에 예시로 넘긴다
   progressEdits: Array<ProgressEdit>;
   // 분류에서 뺄 저장소(개인 프로젝트 등) — 커밋 조회부터 건너뛴다
   excludedRepos: Array<string>;
+  // 저장소 → 그 저장소 작업을 하나도 넣지 않고 적용한 연속 횟수. 쌓이면 미리보기에서 제외를 제안한다(자동 제외는 안 한다)
+  repoSkips: Record<string, number>;
   // 아직 보고서 저장으로 확정되지 않은 연결 — 저장 시 최종 표기를 읽어 위 항목에 반영한다
   pendingLinks: Array<CommitImportLink>;
 };

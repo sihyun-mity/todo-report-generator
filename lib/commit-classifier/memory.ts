@@ -3,6 +3,7 @@ import {
   COMMIT_IMPORT_MEMORY_STORAGE_KEY,
   COMMIT_IMPORT_PENDING_LINK_LIMIT,
   COMMIT_IMPORT_PROGRESS_EDIT_LIMIT,
+  COMMIT_IMPORT_REPO_SKIP_SUGGEST_COUNT,
   COMMIT_IMPORT_STYLE_SAMPLE_LIMIT,
 } from '@/constants';
 import type {
@@ -22,18 +23,20 @@ import { commitScopeKey } from '@/utils';
 //    (예: `todo-report-generator` 로 가져온 뒤 "일일 업무 보고 서비스" 로 고쳐 저장했다면 다음부터 그 이름으로)
 // 2) `저장소#scope` → 작업명: 같은 묶음의 커밋을 그 작업에 붙이거나 그 이름으로 새 작업을 만든다.
 // 3) 세부 항목: AI 제안 문구 → 사용자가 고친 문구 쌍을 예시로 넘겨 새 제안을 사용자 표기로 바꾸고,
-//    제안을 지운 / 남긴 횟수로 다음 제안을 얼마나 아낄지 정한다.
+//    제안을 지운 / 남긴 횟수와 사용자가 직접 추가한 줄 수로 다음 제안을 얼마나 아낄지 정한다.
 // 4) 진행률: 새 작업에 제안한 진행률 → 사용자가 고친 진행률 쌍을 예시로 넘겨 다음 유추가 사용자 성향을 따르게 한다.
 // 5) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
+//    매번 작업을 하나도 넣지 않고 적용하는 저장소는 횟수를 세 두었다가 미리보기에서 제외를 제안한다.
 // 보정은 미리보기에서 확정할 때 한 번(사용자가 고친 것만), 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
 
 const emptyMemory = (): CommitImportMemory => ({
   repoProjects: {},
   scopeTasks: {},
   detailEdits: [],
-  detailFeedback: { removed: 0, kept: 0 },
+  detailFeedback: { removed: 0, kept: 0, added: 0 },
   progressEdits: [],
   excludedRepos: [],
+  repoSkips: {},
   pendingLinks: [],
 });
 
@@ -49,9 +52,10 @@ export const readCommitImportMemory = (userId: string | null): CommitImportMemor
       repoProjects: parsed.repoProjects ?? {},
       scopeTasks: parsed.scopeTasks ?? {},
       detailEdits: parsed.detailEdits ?? [],
-      detailFeedback: parsed.detailFeedback ?? { removed: 0, kept: 0 },
+      detailFeedback: { removed: 0, kept: 0, added: 0, ...parsed.detailFeedback },
       progressEdits: parsed.progressEdits ?? [],
       excludedRepos: parsed.excludedRepos ?? [],
+      repoSkips: parsed.repoSkips ?? {},
       pendingLinks: parsed.pendingLinks ?? [],
     };
   } catch {
@@ -139,12 +143,26 @@ export const rememberCommitImport = (
         feedback.kept += 1;
         if (detail.content.trim() !== suggested) edits.push({ original: suggested, edited: detail.content.trim() });
       }
+      // 사용자가 미리보기에서 직접 추가한 세부 항목
+      feedback.added += task.details.filter((d) => d.suggested === null && d.content.trim()).length;
     }
+  }
+  // 이번에 작업을 하나도 넣지 않은 저장소는 횟수를 올리고, 하나라도 넣은 저장소는 처음부터 다시 센다
+  const repoSkips = { ...memory.repoSkips };
+  const includedRepos = new Set(
+    plan.projects.flatMap((p) =>
+      p.tasks.filter((t) => t.included && t.content.trim()).flatMap((t) => t.commits.map((c) => c.repo))
+    )
+  );
+  for (const repo of new Set(plan.projects.flatMap((p) => p.repos))) {
+    if (includedRepos.has(repo)) delete repoSkips[repo];
+    else repoSkips[repo] = (repoSkips[repo] ?? 0) + 1;
   }
   writeMemory(userId, {
     ...memory,
     repoProjects,
     scopeTasks,
+    repoSkips,
     detailEdits: pushDetailEdits(memory.detailEdits, edits),
     detailFeedback: feedback,
     progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
@@ -179,6 +197,13 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
     if (link.kind === 'task') {
       if (task.content.trim()) scopeTasks[link.scopeKey] = task.content.trim();
       alive.push(link);
+      continue;
+    }
+    if (link.kind === 'details') {
+      // 폼에 넣은 뒤 사용자가 직접 추가한 세부 항목. 센 줄은 known 에 더해 다시 저장해도 두 번 세지 않는다.
+      const added = task.details.filter((d) => !link.known.includes(d.id) && d.content.trim()).map((d) => d.id);
+      feedback.added += added.length;
+      alive.push(added.length ? { ...link, known: [...link.known, ...added] } : link);
       continue;
     }
     if (link.kind === 'progress') {
@@ -222,14 +247,23 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
 };
 
 // 저장소를 분류 대상에서 빼거나 다시 넣고, 바뀐 제외 목록을 돌려준다.
+// 건너뛴 횟수는 어느 쪽이든 지운다 — 제외를 해제한 저장소를 곧바로 다시 제외하라고 제안하지 않게.
 export const setRepoExcluded = (userId: string | null, repo: string, excluded: boolean): Array<string> => {
   const memory = readCommitImportMemory(userId);
   const excludedRepos = excluded
     ? [...new Set([...memory.excludedRepos, repo])].sort()
     : memory.excludedRepos.filter((r) => r !== repo);
-  if (userId) writeMemory(userId, { ...memory, excludedRepos });
+  const repoSkips = { ...memory.repoSkips };
+  delete repoSkips[repo];
+  if (userId) writeMemory(userId, { ...memory, excludedRepos, repoSkips });
   return excludedRepos;
 };
+
+// 작업을 하나도 넣지 않고 적용한 일이 연속으로 쌓인 저장소 — 미리보기에서 제외를 제안한다
+export const repoExcludeSuggestions = (memory: CommitImportMemory): Array<string> =>
+  Object.entries(memory.repoSkips)
+    .filter(([, count]) => count >= COMMIT_IMPORT_REPO_SKIP_SUGGEST_COUNT)
+    .map(([repo]) => repo);
 
 // 최근 보고서부터 훑어 작업명 예시를 모은다. 같은 문구는 한 번만 넣는다.
 export const collectStyleSamples = (history: ReadonlyArray<ReportHistoryItem>): Array<StyleSample> => {

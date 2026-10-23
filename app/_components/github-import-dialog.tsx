@@ -53,7 +53,7 @@ import { Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import { useOnClickOutside } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
-import { readCommitImportMemory, setRepoExcluded } from '@/lib/commit-classifier/memory';
+import { readCommitImportMemory, repoExcludeSuggestions, setRepoExcluded } from '@/lib/commit-classifier/memory';
 import { downloadPromptModel } from '@/lib/commit-classifier/prompt-api';
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
@@ -143,6 +143,8 @@ export function GithubImportDialog({
   const [modelDownload, setModelDownload] = useState<number | null>(null);
   // 분류에서 뺀 저장소(회원별 메모리). 다이얼로그는 열 때만 마운트돼 첫 렌더부터 localStorage 를 읽어도 된다.
   const [excludedRepos, setExcludedRepos] = useState(() => readCommitImportMemory(userId).excludedRepos);
+  // 매번 작업을 넣지 않고 적용해 온 저장소 — 미리보기 저장소 칩에서 제외를 권한다(누를 때만 제외)
+  const [suggestedExcludes] = useState(() => repoExcludeSuggestions(readCommitImportMemory(userId)));
   // 커밋 조회에 쓴 제외 목록 — 미리보기에서 제외할 때는 다시 조회하지 않고 그 저장소만 빼고,
   // 제외를 해제할 때만 그 저장소의 커밋을 불러오려고 다시 조회·분류한다.
   const [fetchExcludedRepos, setFetchExcludedRepos] = useState(excludedRepos);
@@ -494,6 +496,7 @@ export function GithubImportDialog({
                   todayProjects={todayProjects}
                   onChange={setDraft}
                   onExcludeRepo={handleExcludeRepo}
+                  suggestedExcludes={suggestedExcludes}
                 />
               </div>
             )}
