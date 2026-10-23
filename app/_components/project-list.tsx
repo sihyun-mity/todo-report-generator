@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarDays, Plus, Sun } from 'lucide-react';
+import { CalendarDays, Github, Plus, Sun } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { Project, Task } from '@/types';
@@ -34,6 +34,7 @@ type ProjectListProps = {
   onUpdateDetail: (projectId: string, taskId: string, detailId: string, content: string) => void;
   onRemoveDetail: (projectId: string, taskId: string, detailId: string, options?: RemoveOptions) => void;
   onImportIncomplete?: () => void;
+  onImportGithub?: () => void;
   focusRequest?: ProjectListFocusRequest | null;
 };
 
@@ -62,6 +63,7 @@ export const ProjectList = ({
   onUpdateDetail,
   onRemoveDetail,
   onImportIncomplete,
+  onImportGithub,
   focusRequest,
 }: Readonly<ProjectListProps>) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
@@ -150,6 +152,14 @@ export const ProjectList = ({
           <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-200">{title}</h2>
         </div>
         <div className="flex gap-2">
+          {onImportGithub && (
+            <button
+              onClick={onImportGithub}
+              className="flex cursor-pointer items-center gap-1 rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+            >
+              <Github size={16} /> GitHub에서 가져오기
+            </button>
+          )}
           {onImportIncomplete && (
             <button
               onClick={onImportIncomplete}

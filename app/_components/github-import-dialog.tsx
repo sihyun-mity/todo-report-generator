@@ -1,0 +1,626 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertCircle,
+  Building2,
+  CalendarClock,
+  Check,
+  Cpu,
+  Download,
+  EyeOff,
+  FolderGit2,
+  Github,
+  Inbox,
+  Info,
+  Loader2,
+  Lock,
+  LogIn,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Unplug,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useScrollLock } from 'usehooks-ts';
+import type {
+  ClassifyProgress,
+  CommitImportPlan,
+  GithubImportIntent,
+  PlannedTask,
+  Project,
+  ReportHistoryItem,
+  ReportHistoryMode,
+} from '@/types';
+import { disconnectGithub } from '@/actions';
+import {
+  GITHUB_IMPORT_INTENT_COOKIE,
+  GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
+  GITHUB_IMPORT_OAUTH_SCOPES,
+} from '@/constants';
+import { Portal, useDismissOnBack } from '@/components';
+import { useOnClickOutside } from '@/hooks';
+import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
+import { readCommitImportMemory, setRepoExcluded } from '@/lib/commit-classifier/memory';
+import { downloadPromptModel } from '@/lib/commit-classifier/prompt-api';
+import { createClient } from '@/lib/supabase/client';
+import { queries } from '@/providers';
+import { cn } from '@/utils';
+import { ExcludedReposMenu, GithubImportPreview } from '.';
+
+type GithubImportDialogProps = {
+  // 커밋 가져오기는 로그인 회원 전용 — 게스트에게는 로그인 안내만 보여주고 조회·분류를 시작하지 않는다
+  viewerMode: ReportHistoryMode;
+  // 보정 메모리 주인(회원 id)
+  userId: string | null;
+  todayProjects: ReadonlyArray<Project>;
+  history: ReadonlyArray<ReportHistoryItem>;
+  // 이 시각 이후 커밋을 가져온다 (마지막 보고서 작성 시각과 오늘 0시 중 이른 쪽)
+  sinceMs: number;
+  onClose: () => void;
+  onApply: (plan: CommitImportPlan) => void;
+};
+
+const sinceLabel = (iso: string) =>
+  new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(
+    new Date(iso)
+  );
+
+// 미리보기에서 저장소를 제외하면 그 저장소 커밋을 빼고, 커밋이 남지 않은 작업·프로젝트는 지운다
+const removeRepoFromPlan = (plan: CommitImportPlan, repo: string): CommitImportPlan => ({
+  ...plan,
+  projects: plan.projects
+    .map((p) => ({
+      ...p,
+      repos: p.repos.filter((r) => r !== repo),
+      tasks: p.tasks
+        .map((t) => ({ ...t, commits: t.commits.filter((c) => c.repo !== repo) }))
+        .filter((t) => t.commits.length > 0),
+    }))
+    .filter((p) => p.tasks.length > 0),
+});
+
+const isApplicable = (task: PlannedTask) => task.included && task.content.trim() !== '';
+
+// 미리보기 상단 요약 — 체크한 작업 기준으로 센다
+const summarize = (plan: CommitImportPlan) => {
+  const tasks = plan.projects.flatMap((p) => p.tasks.filter(isApplicable));
+  return {
+    linkedTasks: tasks.filter((t) => t.existingTaskId !== null).length,
+    newTasks: tasks.filter((t) => t.existingTaskId === null).length,
+    newProjects: plan.projects.filter((p) => p.existingProjectId === null && p.tasks.some(isApplicable)).length,
+    repos: new Set(plan.projects.flatMap((p) => p.repos)).size,
+    // 미리보기에서 저장소를 제외하면 줄어든다
+    commits: plan.projects.reduce((sum, p) => sum + p.tasks.reduce((s, t) => s + t.commits.length, 0), 0),
+  };
+};
+
+const countIncluded = (plan: CommitImportPlan) =>
+  plan.projects.reduce((sum, p) => sum + p.tasks.filter(isApplicable).length, 0);
+
+// 열려 있는 동안만 마운트된다(부모가 조건부 렌더). 닫으면 state 가 통째로 사라져 다음에 새로 조회한다.
+// 흐름: 연결 확인 → (미연결이면 OAuth 안내) → 커밋 조회(Server Action) → 온디바이스 분류 → 미리보기 편집 → 적용
+export function GithubImportDialog({
+  viewerMode,
+  userId,
+  todayProjects,
+  history,
+  sinceMs,
+  onClose,
+  onApply,
+}: Readonly<GithubImportDialogProps>) {
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const queryClient = useQueryClient();
+  const { lock, unlock } = useScrollLock({ autoLock: false });
+  const [progress, setProgress] = useState<ClassifyProgress | null>(null);
+  const [draft, setDraft] = useState<CommitImportPlan | null>(null);
+  const [draftSource, setDraftSource] = useState<CommitImportPlan | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  // 온디바이스 AI 모델 내려받기 진행률(0~1). null 이면 내려받는 중이 아님.
+  const [modelDownload, setModelDownload] = useState<number | null>(null);
+  // 분류에서 뺀 저장소(회원별 메모리). 다이얼로그는 열 때만 마운트돼 첫 렌더부터 localStorage 를 읽어도 된다.
+  const [excludedRepos, setExcludedRepos] = useState(() => readCommitImportMemory(userId).excludedRepos);
+  // 커밋 조회에 쓴 제외 목록 — 미리보기에서 제외할 때는 다시 조회하지 않고 그 저장소만 빼고,
+  // 제외를 해제할 때만 그 저장소의 커밋을 불러오려고 다시 조회·분류한다.
+  const [fetchExcludedRepos, setFetchExcludedRepos] = useState(excludedRepos);
+  // 분류(queryFn)가 실행 시점의 제외 목록을 보도록 ref 로도 들고 있는다
+  const excludedRef = useRef(excludedRepos);
+
+  useOnClickOutside(modalRef, onClose);
+  useDismissOnBack(true, onClose);
+
+  useEffect(() => {
+    lock();
+    return () => unlock();
+  }, [lock, unlock]);
+
+  const isMember = viewerMode === 'user';
+  const connection = useQuery({
+    ...queries.github.connection(),
+    enabled: isMember,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const isConnected = connection.data?.connected === true;
+  const login = connection.data?.connected ? connection.data.login : '';
+
+  const commits = useQuery({
+    ...queries.github.commits(sinceMs, fetchExcludedRepos),
+    enabled: isConnected,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const commitsResult = commits.data;
+  const hasCommits = commitsResult?.ok === true && commitsResult.commits.length > 0;
+
+  // 분류는 같은 커밋 조회 결과(조회 시각)마다 한 번만 돌린다.
+  const plan = useQuery({
+    ...queries.github.plan(commits.dataUpdatedAt),
+    queryFn: () =>
+      classifyCommits({
+        userId,
+        // 이번에 미리보기에서 뺀 저장소는 이미 받아 둔 커밋에도 들어 있어 여기서 거른다
+        commits: commitsResult?.ok ? commitsResult.commits.filter((c) => !excludedRef.current.includes(c.repo)) : [],
+        todayProjects,
+        history,
+        onProgress: setProgress,
+      }),
+    enabled: hasCommits,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  // 분류 결과가 새로 오면 편집용 사본을 만든다 (effect 대신 렌더 중 비교)
+  if (plan.data && plan.data !== draftSource) {
+    setDraftSource(plan.data);
+    setDraft(plan.data);
+  }
+
+  // 로그인에 쓰는 Supabase GitHub OAuth App 을 `repo` 스코프로 다시 거친다. GitHub 계정이 연동돼 있으면
+  // 같은 계정으로 다시 로그인하고, 아니면 계정에 GitHub 를 연동한다. `/auth/callback` 이 provider token 을 받아 둔다.
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('not_member');
+      // 연결을 시작한 회원 id 와 복귀 경로를 단기 쿠키로 넘긴다. 콜백은 교환 결과가 같은 회원일 때만 토큰을 받는다
+      // (브라우저의 다른 GitHub 계정으로 승인해 다른 회원으로 로그인된 경우 제외).
+      const intent: GithubImportIntent = { userId: userData.user.id, next: window.location.pathname };
+      document.cookie = `${GITHUB_IMPORT_INTENT_COOKIE}=${encodeURIComponent(JSON.stringify(intent))}; path=/; max-age=${GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS}; samesite=lax`;
+      const options = { scopes: GITHUB_IMPORT_OAUTH_SCOPES, redirectTo: `${window.location.origin}/auth/callback` };
+      const { data } = await supabase.auth.getUserIdentities();
+      const isLinked = data?.identities.some((identity) => identity.provider === 'github') ?? false;
+      const { error } = isLinked
+        ? await supabase.auth.signInWithOAuth({ provider: 'github', options })
+        : await supabase.auth.linkIdentity({ provider: 'github', options });
+      // 성공하면 GitHub 로 이동하므로 페이지가 떠난다
+      if (error) {
+        toast.error('GitHub 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        setIsConnecting(false);
+      }
+    } catch {
+      toast.error('GitHub 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      setIsConnecting(false);
+    }
+  };
+
+  const handleExcludeRepo = (repo: string) => {
+    const next = setRepoExcluded(userId, repo, true);
+    excludedRef.current = next;
+    setExcludedRepos(next);
+    setDraft((current) => (current ? removeRepoFromPlan(current, repo) : current));
+    toast.success(`${repo} 저장소를 분류에서 뺐어요.`);
+  };
+
+  const handleIncludeRepo = (repo: string) => {
+    const next = setRepoExcluded(userId, repo, false);
+    excludedRef.current = next;
+    setExcludedRepos(next);
+    if (fetchExcludedRepos.includes(repo)) {
+      // 조회 때부터 뺐던 저장소 — 그 저장소 커밋을 받아 오도록 다시 조회한다(새 조회 결과로 다시 분류된다)
+      setFetchExcludedRepos(next);
+    } else {
+      // 이번에 미리보기에서 뺐던 저장소 — 커밋은 이미 있으니 다시 분류만 한다
+      setDraft(null);
+      void plan.refetch();
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await disconnectGithub();
+      await queryClient.invalidateQueries({ queryKey: queries.github.connection().queryKey });
+      toast.success('GitHub 연결을 해제했습니다.');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  // 클릭 핸들러에서만 호출한다 — Chrome 이 모델 다운로드 시작에 사용자 활성화를 요구한다.
+  const handleDownloadModel = async () => {
+    setModelDownload(0);
+    try {
+      await downloadPromptModel(setModelDownload);
+      setDraft(null);
+      await plan.refetch();
+    } catch {
+      toast.error('온디바이스 AI 모델을 내려받지 못했습니다.');
+    } finally {
+      setModelDownload(null);
+    }
+  };
+
+  const included = draft ? countIncluded(draft) : 0;
+  const canDownloadModel = draft?.aiAvailability === 'downloadable' || draft?.aiAvailability === 'downloading';
+
+  const summary = draft ? summarize(draft) : null;
+  const classifyRatio = progress ? Math.min(progress.done, progress.total) / Math.max(progress.total, 1) : 0;
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6">
+        <div
+          ref={modalRef}
+          className="flex max-h-[90%] w-full max-w-2xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
+            <div className="min-w-0">
+              <h2 className="flex items-center gap-2 text-lg font-bold sm:text-xl">
+                <Github className="h-5 w-5 text-blue-500" />
+                GitHub 커밋 가져오기
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                마지막 보고서 이후 작성한 커밋을 금일 업무 진행 현황에 정리해요.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="닫기"
+              className="shrink-0 rounded-full p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+            {viewerMode === 'guest' ? (
+              <MembersOnlyGuide />
+            ) : viewerMode === 'loading' || connection.isPending ? (
+              <StatusPanel icon={Loader2} spin title="GitHub 연결 상태를 확인하고 있어요" />
+            ) : !isConnected ? (
+              <ConnectGuide onConnect={handleConnect} isConnecting={isConnecting} />
+            ) : commits.isPending ? (
+              <StatusPanel
+                icon={Loader2}
+                spin
+                title="커밋을 불러오고 있어요"
+                description={`@${login} 계정에서 활동한 저장소를 살펴보는 중이에요.`}
+              />
+            ) : commitsResult && !commitsResult.ok ? (
+              <StatusPanel
+                icon={AlertCircle}
+                tone="error"
+                title="커밋을 불러오지 못했어요"
+                description={commitsResult.message}
+              >
+                {commitsResult.reason === 'unauthorized' && (
+                  <SecondaryButton icon={RefreshCw} onClick={handleConnect} disabled={isConnecting}>
+                    다시 연결
+                  </SecondaryButton>
+                )}
+              </StatusPanel>
+            ) : commits.isError || !commitsResult?.ok ? (
+              <StatusPanel
+                icon={AlertCircle}
+                tone="error"
+                title="커밋을 불러오지 못했어요"
+                description="잠시 후 다시 시도해 주세요."
+              />
+            ) : !hasCommits ? (
+              <StatusPanel
+                icon={Inbox}
+                title="가져올 커밋이 없어요"
+                description={`${sinceLabel(commitsResult.since)} 이후 @${commitsResult.login} 계정으로 작성한 커밋을 찾지 못했어요. 커밋 작성 이메일이 GitHub 계정에 연결돼 있는지 확인해 주세요.${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
+              />
+            ) : plan.isError ? (
+              <StatusPanel
+                icon={AlertCircle}
+                tone="error"
+                title="커밋을 분류하지 못했어요"
+                description="창을 닫았다가 다시 열어 시도해 주세요."
+              />
+            ) : modelDownload !== null ? (
+              <StatusPanel
+                icon={Download}
+                title="온디바이스 AI 모델을 내려받고 있어요"
+                description="처음 한 번만 내려받아요. 용량이 커서 몇 분 걸릴 수 있어요."
+              >
+                <ProgressBar ratio={modelDownload} />
+              </StatusPanel>
+            ) : !draft ? (
+              <StatusPanel
+                icon={Sparkles}
+                title={`커밋 ${commitsResult.commits.length}건을 분류하고 있어요`}
+                description="이 기기의 AI가 프로젝트와 작업을 하나씩 판단하고 있어요."
+              >
+                <ProgressBar
+                  ratio={classifyRatio}
+                  label={progress ? `${Math.min(progress.done, progress.total)}/${progress.total}` : undefined}
+                />
+              </StatusPanel>
+            ) : draft.projects.length === 0 ? (
+              <StatusPanel
+                icon={EyeOff}
+                title="분류할 커밋이 남지 않았어요"
+                description="모든 저장소를 제외했어요. 아래 '제외한 저장소'에서 해제하면 다시 불러와요."
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800/50 dark:bg-blue-900/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="flex items-center gap-2 font-bold text-blue-600 dark:text-blue-400">
+                      <Check className="h-4 w-4" />
+                      커밋 {summary?.commits ?? 0}건을 분류했어요
+                    </p>
+                    {draft.classifier === 'ai' ? (
+                      <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <Sparkles size={11} /> 온디바이스 AI 분류
+                      </span>
+                    ) : (
+                      <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                        저장소 기준 분류
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <SummaryItem icon={CalendarClock}>{sinceLabel(commitsResult.since)} 이후</SummaryItem>
+                    <SummaryItem icon={Github}>@{commitsResult.login}</SummaryItem>
+                    <SummaryItem icon={FolderGit2}>저장소 {summary?.repos}개</SummaryItem>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <SummaryStat label="기존 작업에 추가" value={summary?.linkedTasks ?? 0} />
+                    <SummaryStat label="새 작업" value={summary?.newTasks ?? 0} />
+                    <SummaryStat label="새 프로젝트" value={summary?.newProjects ?? 0} />
+                  </div>
+                  {draft.classifier === 'rule' && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900/50 dark:text-zinc-300">
+                      <Info size={14} className="shrink-0 text-zinc-400" />
+                      <span className="min-w-0 flex-1">
+                        {canDownloadModel
+                          ? '이 기기에 AI 모델이 아직 없어 저장소 이름으로만 나눴어요.'
+                          : '이 브라우저는 온디바이스 AI를 지원하지 않아 저장소 이름으로만 나눴어요. Chrome 데스크톱에서 더 정확하게 분류돼요.'}
+                      </span>
+                      {canDownloadModel && (
+                        <button
+                          onClick={handleDownloadModel}
+                          className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 font-semibold text-white transition-colors hover:bg-blue-700"
+                        >
+                          <Download size={12} /> AI 모델 받고 다시 분류
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <GithubImportPreview
+                  plan={draft}
+                  todayProjects={todayProjects}
+                  onChange={setDraft}
+                  onExcludeRepo={handleExcludeRepo}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 border-t border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
+            {isConnected && (
+              <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
+                  <Github size={12} className="shrink-0" />
+                  <span className="truncate">@{login} 계정과 연결됨</span>
+                </span>
+                <ExcludedReposMenu repos={excludedRepos} onInclude={handleIncludeRepo} />
+                <button
+                  onClick={handleDisconnect}
+                  disabled={isDisconnecting}
+                  className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 transition-colors hover:bg-zinc-100 hover:text-red-500 disabled:opacity-50 dark:hover:bg-zinc-800"
+                >
+                  <Unplug size={12} /> 연결 해제
+                </button>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                className="flex-1 rounded-xl bg-zinc-100 px-4 py-3 font-medium transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+              >
+                {draft ? '취소' : '닫기'}
+              </button>
+              {draft && (
+                <button
+                  disabled={included === 0}
+                  onClick={() => onApply(draft)}
+                  className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                >
+                  {included > 0 ? '작업 추가' : '추가할 작업을 선택해 주세요'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+type StatusPanelProps = {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  spin?: boolean;
+  tone?: 'default' | 'error';
+  children?: React.ReactNode;
+};
+
+// 텍스트 복원 모달의 빈/오류 상태와 같은 점선 패널
+function StatusPanel({ icon: Icon, title, description, spin, tone = 'default', children }: Readonly<StatusPanelProps>) {
+  const isError = tone === 'error';
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-8 text-center',
+        isError
+          ? 'border-red-200 bg-red-50/50 dark:border-red-900/30 dark:bg-red-900/10'
+          : 'border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/30'
+      )}
+    >
+      <Icon
+        className={cn(
+          'h-8 w-8',
+          spin && 'animate-spin',
+          isError ? 'text-red-400' : spin ? 'text-blue-500' : 'text-zinc-300 dark:text-zinc-600'
+        )}
+      />
+      <p
+        className={cn(
+          'text-sm font-medium',
+          isError ? 'text-red-600 dark:text-red-400' : 'text-zinc-600 dark:text-zinc-300'
+        )}
+      >
+        {title}
+      </p>
+      {description && <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-400">{description}</p>}
+      {children && <div className="mt-2 flex w-full max-w-xs flex-col items-center gap-2">{children}</div>}
+    </div>
+  );
+}
+
+function ProgressBar({ ratio, label }: Readonly<{ ratio: number; label?: string }>) {
+  const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
+  return (
+    <div className="w-full">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <div
+          className="h-full rounded-full bg-blue-500 transition-[width] duration-300"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{label ?? `${percent}%`}</p>
+    </div>
+  );
+}
+
+function SummaryItem({ icon: Icon, children }: Readonly<{ icon: LucideIcon; children: React.ReactNode }>) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <Icon size={13} className="shrink-0 text-blue-500/70" />
+      {children}
+    </span>
+  );
+}
+
+function SummaryStat({ label, value }: Readonly<{ label: string; value: number }>) {
+  return (
+    <div className="rounded-lg bg-white/70 px-3 py-2 dark:bg-zinc-900/50">
+      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="text-lg font-bold text-zinc-800 tabular-nums dark:text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
+type SecondaryButtonProps = {
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+};
+
+function SecondaryButton({ icon: Icon, onClick, disabled, children }: Readonly<SecondaryButtonProps>) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+    >
+      <Icon size={14} />
+      {children}
+    </button>
+  );
+}
+
+const primaryCtaClass =
+  'flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white';
+
+function MembersOnlyGuide() {
+  return (
+    <div className="space-y-4">
+      <StatusPanel
+        icon={Lock}
+        title="로그인한 회원만 사용할 수 있어요"
+        description="로그인하면 GitHub 계정을 연결해 마지막 보고서 이후 작성한 커밋을 금일 업무에 정리할 수 있어요."
+      />
+      <Link href="/login" className={primaryCtaClass}>
+        <LogIn size={16} />
+        로그인하기
+      </Link>
+    </div>
+  );
+}
+
+type GuideItemProps = { icon: LucideIcon; title: string; children: React.ReactNode };
+
+function GuideItem({ icon: Icon, title, children }: Readonly<GuideItemProps>) {
+  return (
+    <li className="flex gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+        <Icon size={16} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{children}</p>
+      </div>
+    </li>
+  );
+}
+
+type ConnectGuideProps = { onConnect: () => void; isConnecting: boolean };
+
+function ConnectGuide({ onConnect, isConnecting }: Readonly<ConnectGuideProps>) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-600 dark:text-zinc-300">
+        GitHub 계정을 연결하면 본인이 작성한 커밋만 골라 프로젝트·작업별로 정리해 드려요.
+      </p>
+      <ul className="space-y-2">
+        <GuideItem icon={ShieldCheck} title="저장소 읽기 권한(repo)을 요청해요">
+          로그인에 쓰는 GitHub 앱으로 연결해요. 조직의 비공개 저장소까지 읽으려면{' '}
+          <span className="font-mono">repo</span> 권한이 필요해요. 저장소에 쓰지는 않아요.
+        </GuideItem>
+        <GuideItem icon={Building2} title="조직 저장소는 조직 접근을 요청하세요">
+          승인 화면의 Organization access 에서 조직 옆 Request(소유자는 Grant)를 눌러 주세요. 승인 화면이 바로
+          넘어갔다면 GitHub Settings → Applications → Authorized OAuth Apps 에서 요청할 수 있어요.
+        </GuideItem>
+        <GuideItem icon={Lock} title="토큰은 서버에 저장하지 않아요">
+          이 브라우저의 보안 쿠키에만 30일간 보관되고, 언제든 연결을 해제할 수 있어요.
+        </GuideItem>
+        <GuideItem icon={Cpu} title="분류는 이 기기 안에서만 이뤄져요">
+          Chrome 내장 온디바이스 AI가 커밋을 프로젝트와 작업에 나눠요. 커밋 내용이 외부 AI로 전송되지 않아요.
+        </GuideItem>
+      </ul>
+      <button onClick={onConnect} disabled={isConnecting} className={primaryCtaClass}>
+        {isConnecting ? <Loader2 size={16} className="animate-spin" /> : <Github size={16} />}
+        {isConnecting ? 'GitHub로 이동하는 중...' : 'GitHub 연결하기'}
+      </button>
+    </div>
+  );
+}

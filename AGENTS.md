@@ -55,7 +55,7 @@ Next.js 기본 파일명이 아니다. 동작:
 
 - `app/(app)/` — 로그인/게스트가 접근 가능한 보호 영역. 공용 `AppTopBar` + 새소식 dialog가 여기 layout에서 마운트된다. 이 그룹 전용 서버 컴포넌트는 `app/(app)/_components/`에 둔다(예: `news-dialog-mount.tsx`).
 - `app/(auth)/` — `/login`, `/signup`. 로그인된 사용자가 접근하면 `/`로 리다이렉트.
-- `app/auth/callback/route.ts` — Supabase OAuth(예: GitHub) code exchange + 게스트 쿠키 정리. `proxy.ts`의 `PUBLIC_PATH_PREFIXES`에 `/auth`가 포함돼 비로그인 상태에서도 통과한다.
+- `app/auth/callback/route.ts` — Supabase OAuth(예: GitHub) code exchange + 게스트 쿠키 정리. 커밋 가져오기 의도 쿠키(`GITHUB_IMPORT_INTENT_COOKIE`)가 있으면 GitHub provider token 도 받아 둔다(아래 GitHub 커밋 가져오기). `proxy.ts`의 `PUBLIC_PATH_PREFIXES`에 `/auth`가 포함돼 비로그인 상태에서도 통과한다.
 - `app/api/` — Passkey 관련 라우트는 `api/auth/passkey/{register,login}/{options,verify}` 구조, passkey CRUD는 `api/passkeys/`. 로그인 기기(세션) 관리는 `api/sessions/`.
 
 ### Supabase 클라이언트 세 종류
@@ -120,6 +120,28 @@ Next.js 기본 파일명이 아니다. 동작:
 - **로그인 사용자**: 월 단위 페이지네이션. `initialize()`에서 ① `report_date` 목록만 lightweight으로 fetch(`allReportDates`), ② 가장 최근 월의 본문을 함께 fetch한 뒤에야 `isLoaded: true`로 set한다. 다른 월은 `loadMonth(year, month)`로 lazy 적재 후 `loadedMonths`에 기록. 동시 호출은 모듈 레벨 `monthFetchPromises` Map으로 합쳐진다. 클라이언트 정렬은 하지 않고 Supabase `.order('report_date', desc)` 결과를 그대로 신뢰한다.
 - **게스트**: localStorage에서 한 번에 로드. `MAX_HISTORY_ITEMS` 제한이 있고 `sortGuestByReportDateDesc`로 클라이언트 정렬한다.
 - **`addHistory`**: 같은 날짜의 기존 본문과 일치하면 I/O를 건너뛴다(복사 연타 시 무의미한 쓰기 방지). 사용자 모드에서는 upsert 후 해당 월을 직접 refetch — `loadingMonths`를 표시하지 않아 사용자 액션 직후 스켈레톤 깜빡임이 없다.
+
+### GitHub 커밋 가져오기
+
+금일 업무 헤더의 **GitHub에서 가져오기** — 커밋을 불러와 Chrome 온디바이스 AI(Prompt API)로 프로젝트·작업에 분류한다. 설정은 `docs/github-import-setup.md`.
+
+- **로그인 회원 전용이다.** 게스트에게도 버튼은 보이지만 다이얼로그는 로그인 안내만 띄우고 조회·분류를 시작하지 않는다. Server Action 도 `getUser()` 로 회원을 확인한다.
+- **로그인용 Supabase GitHub OAuth App 을 그대로 쓴다.** 연결 시 `repo` 스코프로 GitHub OAuth 를 다시 거친다(GitHub 연동돼 있으면 `signInWithOAuth`, 아니면 `linkIdentity`). `/auth/callback` 은 의도 쿠키(`GITHUB_IMPORT_INTENT_COOKIE`, 회원 id + 복귀 경로)가 있을 때만 교환 직후의 `provider_token` 을 받는다. **`redirectTo` 에 쿼리를 붙이지 않는다** — Supabase Redirect URL 허용 목록과 어긋나면 Site URL 로 떨어져 콜백이 아예 돌지 않는다 — Supabase 는 provider token 을 보관·갱신하지 않아 이때뿐이다. 실제 `repo` 스코프가 승인됐고 교환 결과가 같은 회원일 때만 저장한다. 이 흐름에서 OAuth 를 취소·실패해도 세션 쿠키를 지우지 않는다(로그인 실패 처리와 다름).
+- **토큰은 DB 에 저장하지 않는다.** iron-session 봉인 httpOnly 쿠키(`github_token`)에 회원 id 와 함께 두고, Server Action(`actions/github.actions.ts`)이 요청 시점에 꺼내 쓴다. 쿠키의 회원 id 가 현재 회원과 다르면 쓰지 않는다. 연결 해제는 쿠키만 지운다(GitHub 쪽 승인을 철회하면 GitHub 로그인까지 다시 승인해야 한다).
+- 토큰 권한은 저장소 단위다. "본인 커밋만"은 `author` 필터일 뿐이므로 다른 사람 코드·커밋을 응답에 싣지 않도록 커밋 제목만 내보낸다.
+- 분류(`lib/commit-classifier/`)는 브라우저에서만 돈다. Gemini Nano 는 `ko` 를 선언하면 unavailable 이라 `en` 으로 선언하고 한국어를 넣는다.
+  - 결정은 **후보별 0-10 점수 + 임계값**으로 한다(저장소→프로젝트 ≥8, 커밋→작업 ≥7). 선택형 enum 하나로 고르게 하면 기존 항목으로 쏠려 "새 작업"을 못 고른다. 프롬프트를 바꾸면 PoC 세트로 다시 검증한다.
+  - 모델 호출은 직렬로만 한다(`openPromptSession` 큐). 동시에 돌리면 뒤 요청이 수 분간 멈춘다.
+  - 모델이 `available` 일 때만 AI 를 쓴다. `downloadable` 이면 규칙 분류 결과를 먼저 보여주고, 다운로드는 사용자 클릭(`downloadPromptModel`)으로만 시작한다.
+- **보정 메모리**(`lib/commit-classifier/memory.ts`, 회원 id 별 localStorage `COMMIT_IMPORT_MEMORY_STORAGE_KEY:<id>`): 저장소 → 프로젝트명, `저장소#scope` → 작업명, 세부 항목 표기 보정(AI 제안 문구 → 사용자 문구)을 기억해 다음 분류에서 AI 판정보다 먼저 쓴다.
+  - 미리보기 확정 시(`rememberCommitImport`) 한 번, 폼에서 더 고친 뒤 **보고서 저장(복사) 시**(`learnFromSavedReport`) 다시 읽는다. 폼 항목 id 와 원래 커밋의 연결(`applyCommitImportPlan` 의 `links`)로 최종 표기를 찾는다.
+  - 세부 항목은 **사용자가 실제로 고친 경우만** 배운다(`suggestedDetail` / 링크의 `inserted` 와 비교). AI 가 다시 쓴 문구를 사용자 보정으로 배우면 스스로를 강화한다.
+  - 이전 기록의 프로젝트명을 저장소 판정 후보로 넣지 않는다 — 이름만으로는 무관한 저장소에도 높은 점수를 줬다. 과거 연결은 확정 메모리로만 잇는다.
+  - 작업명 문체는 이전 보고서 작업명을 예시로 넘긴다(문체 참고용 — "그대로 재사용"을 허용하면 예시로 작업을 지어냈다).
+- **분류에서 뺄 저장소**(개인 프로젝트 등)는 같은 보정 메모리의 `excludedRepos` 에 둔다. 미리보기의 저장소 칩 "제외"로 빼고 하단 "제외한 저장소" 메뉴에서 해제한다. 제외 목록은 `fetchGithubCommits` 로 넘겨 커밋 조회부터 건너뛴다. 이번 미리보기에서 뺀 저장소를 해제하면 받아 둔 커밋으로 다시 분류만 하고, 조회 때부터 빠져 있던 저장소를 해제하면 다시 조회한다.
+- 저장소 → 프로젝트도 작업 판정처럼 **두 번 채점해 둘 다 임계값을 넘을 때만** 연결한다.
+- 폼 반영(`applyCommitImportPlan`)은 더하기만 한다 — 새 작업·프로젝트는 뒤에 추가하고, 기존 작업은 진행률을 맞춘다.
+- **세부 항목은 AI 가 필요하다고 판단한 작업에만 미리 채운다**(`detailSuggestionPrompt`). 커밋은 분류 근거일 뿐 세부 항목과 1:1 이 아니다. 커밋 하나로 새로 만든 작업은 묻지 않고, 개수 상한을 커밋 수로 둔다(상한이 없으면 커밋 하나에서 여러 줄을 지어냈다). 작업명과 겹치는 줄은 버린다. 세부 항목을 거의 안 쓰는 사용자(최근 작업의 10% 미만)이거나 제안을 지운 횟수가 남긴 횟수보다 많으면 더 아끼라고 알린다. 미리보기에서는 폼처럼 세부 항목을 추가·삭제할 수 있고, 작업 반영 여부는 작업 머리줄의 "가져오기" 체크로 고른다.
 
 ### Hydration-safe 패턴 (보고서 기록 컴포넌트)
 

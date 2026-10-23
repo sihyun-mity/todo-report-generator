@@ -1,5 +1,7 @@
+export * from './commit-import.type';
 export * from './confirm.type';
 export * from './dialog-queue.type';
+export * from './github.type';
 export * from './media.type';
 export * from './mobile.type';
 export * from './news.type';

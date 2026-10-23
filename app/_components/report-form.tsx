@@ -1,10 +1,12 @@
 'use client';
 
-import { Dispatch, MouseEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from 'react';
+import { Dispatch, MouseEvent, SetStateAction, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
-import type { Project, ReportDate, ReportHistoryItem } from '@/types';
+import type { CommitImportPlan, Project, ReportDate, ReportHistoryItem } from '@/types';
 import {
+  GithubImportDialog,
+  GithubOAuthResult,
   ImportLocalDialog,
   ImportModal,
   MobileCopyBar,
@@ -22,7 +24,9 @@ import {
 import { useProjects, useReportHistory, useResetOnHide, type UseProjectsReturn } from '@/hooks';
 import { confirm, useReportFormStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
+import { learnFromSavedReport, rememberCommitImport } from '@/lib/commit-classifier/memory';
 import {
+  applyCommitImportPlan,
   areAllAttemptedProjectsValid,
   cloneProjects,
   generateReportText,
@@ -61,6 +65,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  // GitHub 커밋 가져오기 다이얼로그. 열 때 계산한 기준 시각을 함께 들고 있다 (null = 닫힘).
+  const [githubSinceMs, setGithubSinceMs] = useState<number | null>(null);
   // 토스트 "실행 취소" 클릭 후 복구된 input으로 포커스를 보내기 위한 신호 (today/tomorrow 분리).
   const [todayFocusRequest, setTodayFocusRequest] = useState<ProjectListFocusRequest | null>(null);
   const [tomorrowFocusRequest, setTomorrowFocusRequest] = useState<ProjectListFocusRequest | null>(null);
@@ -162,6 +168,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   useResetOnHide(() => {
     setIsImportModalOpen(false);
     setIsImportDialogOpen(false);
+    setGithubSinceMs(null);
     setImportPromptCheckedUserId(null);
     setCopyError(null);
   });
@@ -429,6 +436,26 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     toast.success('금일 미완료 업무를 모두 가져왔습니다.');
   };
 
+  // GitHub 커밋 가져오기 기준 시각: 마지막 보고서(오늘 이전 날짜) 작성 시각과 오늘 0시 중 이른 쪽.
+  // 마지막 보고 이후 커밋과 오늘 커밋을 모두 포함한다. 너무 오래된 기준은 서버에서 최대 조회 기간으로 자른다.
+  const openGithubImport = () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayKey = todayDateKey();
+    const lastReportAt = history
+      .filter((item) => getItemDateKey(item) < todayKey)
+      .reduce((max, item) => Math.max(max, item.timestamp), 0);
+    setGithubSinceMs(lastReportAt > 0 ? Math.min(lastReportAt, todayStart.getTime()) : todayStart.getTime());
+  };
+
+  const handleGithubApply = (plan: CommitImportPlan) => {
+    const { projects, links } = applyCommitImportPlan(today.projects, plan);
+    today.setProjects(projects);
+    rememberCommitImport(userId, plan, links);
+    setGithubSinceMs(null);
+    toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
+  };
+
   // 보고서를 클립보드에 복사 후 히스토리에 추가
   const handleCopy = async () => {
     setCopyError(null);
@@ -451,6 +478,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       setCopied(true);
       toast.success('내용이 클립보드에 복사되었습니다.');
       void addHistory({ ...reportDate, todayProjects: today.projects, tomorrowProjects: tomorrow.projects });
+      // 가져온 커밋 항목을 폼에서 고쳐 저장했다면 그 최종 표기를 보정 메모리에 기억한다
+      learnFromSavedReport(userId, today.projects);
       requestHistoryFocus(reportDate.month, reportDate.day);
       // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
       refreshBaseline();
@@ -580,6 +609,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
               onAddDetail={today.addDetail}
               onUpdateDetail={today.updateDetail}
               onRemoveDetail={todayRemove.removeDetail}
+              onImportGithub={openGithubImport}
               focusRequest={todayFocusRequest}
             />
             <ProjectList
@@ -638,6 +668,21 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       </div>
 
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
+
+      {githubSinceMs !== null && (
+        <GithubImportDialog
+          viewerMode={historyMode}
+          userId={userId}
+          todayProjects={today.projects}
+          history={history}
+          sinceMs={githubSinceMs}
+          onClose={() => setGithubSinceMs(null)}
+          onApply={handleGithubApply}
+        />
+      )}
+      <Suspense fallback={null}>
+        <GithubOAuthResult onConnected={openGithubImport} />
+      </Suspense>
 
       <ImportLocalDialog isOpen={isImportDialogOpen} onConfirm={handleDialogConfirm} onDismiss={handleDialogDismiss} />
 

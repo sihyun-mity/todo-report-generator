@@ -24,5 +24,7 @@ declare namespace NodeJS {
     CRON_SECRET: string;
     /** 공공데이터포털 한국천문연구원 특일정보 API 서비스 키 (디코딩된 일반 인증키) */
     DATA_GO_KR_SERVICE_KEY: string;
+    /** GitHub 토큰 봉인 쿠키 암호화용 32자 이상 시크릿 (서버 전용) */
+    GITHUB_TOKEN_COOKIE_SECRET: string;
   }
 }
