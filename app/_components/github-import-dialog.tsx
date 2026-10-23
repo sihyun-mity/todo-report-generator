@@ -12,6 +12,7 @@ import {
   CircleDashed,
   CircleMinus,
   Cpu,
+  Database,
   Download,
   EyeOff,
   FolderGit2,
@@ -911,8 +912,12 @@ function ConnectGuide({ onConnect, isConnecting }: Readonly<ConnectGuideProps>) 
         <GuideItem icon={Lock} title="토큰은 서버에 저장하지 않아요">
           이 브라우저의 보안 쿠키에만 30일간 보관되고, 언제든 연결을 해제할 수 있어요.
         </GuideItem>
-        <GuideItem icon={Cpu} title="분류는 이 기기 안에서만 이뤄져요">
-          Chrome 내장 온디바이스 AI가 커밋을 프로젝트와 작업에 나눠요. 커밋 내용이 외부 AI로 전송되지 않아요.
+        <GuideItem icon={Cpu} title="분류는 이 기기 안에서 이뤄져요">
+          Chrome 내장 온디바이스 AI가 커밋을 프로젝트와 작업에 나눠요. 커밋 내용을 외부 AI로 보내지 않아요.
+        </GuideItem>
+        <GuideItem icon={Database} title="고친 내용은 내 계정에 기억해요">
+          다음 분류를 내 방식에 맞추려고 직접 고친 프로젝트·작업명, 세부 항목·진행률 보정(관련 커밋 제목 포함)과 제외한
+          저장소를 회원 계정에 저장해요. 본인만 볼 수 있고, 탈퇴하면 함께 지워져요.
         </GuideItem>
       </ul>
       <button onClick={onConnect} disabled={isConnecting} className={primaryCtaClass}>
