@@ -33,5 +33,7 @@ export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;
 export const COMMIT_IMPORT_STYLE_SAMPLE_LIMIT = 12;
 // 분류 프롬프트 1회 제한 시간. 모델 호출이 드물게 멈추는 경우를 끊어낸다.
 export const COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS = 30_000;
+// AI 분류가 끝난 뒤 모든 단계가 완료된 모습을 보여 주고 결과 화면으로 넘어가기까지의 시간
+export const COMMIT_CLASSIFY_COMPLETE_HOLD_MS = 700;
 // 기존 작업 연결 임계 점수(0-10). PoC 3개 세트에서 일치 ≥7, 불일치 ≤5 로 갈렸다.
 export const COMMIT_TASK_MATCH_THRESHOLD = 7;

@@ -132,6 +132,7 @@ Next.js 기본 파일명이 아니다. 동작:
 - 분류(`lib/commit-classifier/`)는 브라우저에서만 돈다. Gemini Nano 는 `ko` 를 선언하면 unavailable 이라 `en` 으로 선언하고 한국어를 넣는다.
   - 결정은 **후보별 0-10 점수 + 임계값**으로 한다(저장소→프로젝트 ≥8, 커밋→작업 ≥7). 선택형 enum 하나로 고르게 하면 기존 항목으로 쏠려 "새 작업"을 못 고른다. 프롬프트를 바꾸면 PoC 세트로 다시 검증한다.
   - 모델 호출은 직렬로만 한다(`openPromptSession` 큐). 동시에 돌리면 뒤 요청이 수 분간 멈춘다.
+  - 분류 중에는 응답을 `promptStreaming` 으로 받아 "AI가 생각하는 과정"(단계 제목 + 생성 중인 점수·`summary`·`reason`·작업명)을 보여 준다. 스트리밍 JSON 은 `partial-json.ts` 로 키 단위로만 읽는다. 표시를 위해 프롬프트·스키마를 바꾸지 않는다(바꾸면 PoC 재검증 대상). 진행은 단계 목록(`COMMIT_CLASSIFY_STAGE`)으로 보여 준다 — 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없어, 진행 중인 단계 안의 개수만 센다.
   - 모델이 `available` 일 때만 AI 를 쓴다. `downloadable` 이면 규칙 분류 결과를 먼저 보여주고, 다운로드는 사용자 클릭(`downloadPromptModel`)으로만 시작한다.
 - **보정 메모리**(`lib/commit-classifier/memory.ts`, 회원 id 별 localStorage `COMMIT_IMPORT_MEMORY_STORAGE_KEY:<id>`): 저장소 → 프로젝트명, `저장소#scope` → 작업명, 세부 항목 표기 보정(AI 제안 문구 → 사용자 문구)을 기억해 다음 분류에서 AI 판정보다 먼저 쓴다.
   - 미리보기 확정 시(`rememberCommitImport`) 한 번, 폼에서 더 고친 뒤 **보고서 저장(복사) 시**(`learnFromSavedReport`) 다시 읽는다. 폼 항목 id 와 원래 커밋의 연결(`applyCommitImportPlan` 의 `links`)로 최종 표기를 찾는다.

@@ -32,6 +32,8 @@ declare class LanguageModel {
   static availability(options?: LanguageModelCreateOptions): Promise<LanguageModelAvailability>;
   static create(options?: LanguageModelCreateOptions): Promise<LanguageModel>;
   prompt(input: string, options?: LanguageModelPromptOptions): Promise<string>;
+  // 청크는 직전 청크 이후 새로 생성된 부분(delta)이다
+  promptStreaming(input: string, options?: LanguageModelPromptOptions): ReadableStream<string>;
   clone(options?: { signal?: AbortSignal }): Promise<LanguageModel>;
   destroy(): void;
 }

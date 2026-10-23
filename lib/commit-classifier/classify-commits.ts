@@ -1,6 +1,10 @@
 import { COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT, COMMIT_TASK_MATCH_THRESHOLD } from '@/constants';
+import { COMMIT_CLASSIFY_STAGE } from '@/enums';
 import type {
   ClassifyProgress,
+  ClassifyStageProgress,
+  ClassifyThought,
+  CommitClassifyStage,
   CommitImportPlan,
   DetailEdit,
   GithubCommit,
@@ -13,6 +17,7 @@ import type {
 } from '@/types';
 import { commitScope, commitScopeKey, createId, isDiscreteCommit, stripCommitPrefix } from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
+import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
 import { getPromptApiAvailability, openPromptSession, type JsonAsker } from '@/lib/commit-classifier/prompt-api';
 import {
   detailStylePrompt,
@@ -44,7 +49,15 @@ type ClassifyArgs = {
   todayProjects: ReadonlyArray<Project>;
   history: ReadonlyArray<ReportHistoryItem>;
   onProgress: (progress: ClassifyProgress) => void;
+  // AI 판단 과정(분류 중 화면 표시용). AI 를 쓸 때만 불린다.
+  onThinking: (thought: ClassifyThought) => void;
 };
+
+// 판단 과정 한 단계를 띄우고, 모델 응답을 read 로 읽어 갱신(onText)하다가 결과로 마무리(conclude)한다
+type Think = (
+  title: string,
+  read?: (text: string) => Array<string>
+) => { onText: (text: string) => void; conclude: (conclusion: string) => void };
 
 // 저장소가 붙을 대상: 폼의 기존 프로젝트 또는 새 프로젝트(이름만 정해짐)
 type RepoTarget = { kind: 'existing'; project: Project } | { kind: 'new'; name: string };
@@ -78,6 +91,7 @@ export async function classifyCommits({
   todayProjects,
   history,
   onProgress,
+  onThinking,
 }: ClassifyArgs): Promise<CommitImportPlan> {
   const memory = readCommitImportMemory(userId);
   const styleSamples = collectStyleSamples(history);
@@ -85,22 +99,37 @@ export async function classifyCommits({
   const formByName = new Map(formProjects.map((p) => [p.name.trim(), p]));
   const repos = [...new Set(commits.map((c) => c.repo))];
 
+  // 진행률은 단계별로 센다. 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없지만, 단계 안의 개수는
+  // 그 단계를 시작할 때 정해진다(재확인처럼 도중에 늘어나는 호출은 grow 로 더한다).
+  const progress: ClassifyProgress = { current: null, stages: {} };
+  const emit = () => onProgress({ current: progress.current, stages: { ...progress.stages } });
+  const startStage = (stage: CommitClassifyStage, total: number) => {
+    progress.current = stage;
+    progress.stages[stage] = { done: 0, total };
+    emit();
+  };
+  const updateStage = (change: (current: ClassifyStageProgress) => ClassifyStageProgress) => {
+    const stage = progress.current;
+    const current = stage && progress.stages[stage];
+    if (!stage || !current) return;
+    progress.stages[stage] = change(current);
+    emit();
+  };
+  const tick = () => updateStage(({ done, total }) => ({ done: done + 1, total }));
+  const grow = (count: number) => updateStage(({ done, total }) => ({ done, total: total + count }));
+
   // 모델이 이미 받아져 있을 때만 AI 를 쓴다. 'downloadable' 이면 규칙 분류로 먼저 보여주고,
-  // 미리보기에서 사용자가 내려받기를 누르면 다시 분류한다.
+  // 미리보기에서 사용자가 내려받기를 누르면 다시 분류한다. 세션 생성(모델 적재)이 오래 걸릴 수 있어 단계로 보여 준다.
+  startStage(COMMIT_CLASSIFY_STAGE.PREPARE, 0);
   const availability = await getPromptApiAvailability();
   const session = availability === 'available' ? await openPromptSession().catch(() => null) : null;
   const ask: JsonAsker | null = session?.ask ?? null;
-
-  // 진행률: 저장소 판정 → 작업 판정 → 새 작업 이름짓기. 단계를 지날 때마다 남은 호출 수로 total 을 다시 잡는다.
-  let done = 0;
-  let total = repos.length * 2;
-  const tick = () => onProgress({ stage: 'classify', done: ++done, total });
   // 드물게 응답이 멈춰 타임아웃이 나므로 한 번 더 시도한다. 그래도 실패하면 null — 호출부는 "판정 없음"으로 처리한다.
-  const safeAsk = async <T>(prompt: string, schema: object): Promise<T | null> => {
+  const safeAsk = async <T>(prompt: string, schema: object, onText?: (text: string) => void): Promise<T | null> => {
     if (!ask) return null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await ask<T>(prompt, schema);
+        return await ask<T>(prompt, schema, onText);
       } catch {
         // 다음 시도
       }
@@ -108,14 +137,36 @@ export async function classifyCommits({
     return null;
   };
 
+  // 판단 과정 표시: 단계마다 제목을 띄우고, 모델 응답이 생성되는 대로 read 로 읽어 낸 줄을 갱신한다.
+  let thoughtSeq = 0;
+  const think: Think = (title, read = () => []) => {
+    const id = ++thoughtSeq;
+    let lines: Array<string> = [];
+    if (ask) onThinking({ id, title, lines, conclusion: null });
+    return {
+      onText: (text: string) => {
+        lines = read(text);
+        onThinking({ id, title, lines, conclusion: null });
+      },
+      conclude: (conclusion: string) => {
+        if (ask) onThinking({ id, title, lines, conclusion });
+      },
+    };
+  };
+  const scoreLines = (idKey: string, names: ReadonlyMap<string, string>) => (text: string) =>
+    readScores(text, idKey).map(({ id, score }) => `${names.get(id) ?? id} — ${score}점`);
+  const quote = (text: string) => `“${text}”`;
+
   try {
-    // ── 1단계: 저장소 → 프로젝트 ──
+    // ── 1단계: 저장소 → 프로젝트 ── (저장소마다 한 칸 — 재확인 호출이 있어도 저장소 단위)
+    startStage(COMMIT_CLASSIFY_STAGE.REPO, repos.length);
     const repoTargets = new Map<string, RepoTarget>();
     for (const repo of repos) {
       const remembered = memory.repoProjects[repo];
       if (remembered) {
         const existing = formByName.get(remembered);
         repoTargets.set(repo, existing ? { kind: 'existing', project: existing } : { kind: 'new', name: remembered });
+        think(`${repo} 저장소`).conclude(`전에 정한 대로 ${quote(remembered)} 프로젝트에 정리해요`);
         tick();
         continue;
       }
@@ -133,17 +184,28 @@ export async function classifyCommits({
       if (candidates.length) {
         const messages = commits.filter((c) => c.repo === repo).map((c) => c.message);
         const { prompt, schema } = repoScorePrompt(candidates, repo, messages);
-        const result = await safeAsk<RepoScoreResult>(prompt, schema);
+        const names = new Map([...candidates.map((c) => [c.id, c.name] as const), [REPO_NONE_ID, '별도 코드베이스']]);
+        const thought = think(`${repo} 저장소가 어느 프로젝트인지 보고 있어요`, scoreLines('projectId', names));
+        const result = await safeAsk<RepoScoreResult>(prompt, schema, thought.onText);
         const best = result
           ? [...result.scores].filter((s) => s.projectId !== REPO_NONE_ID).sort((a, b) => b.score - a.score)[0]
           : null;
         // 작업 판정과 같이 두 번 독립 채점해 둘 다 임계값을 넘을 때만 연결한다(점수가 실행마다 흔들려
         // 무관한 저장소가 기존 프로젝트에 붙는 일이 있었다).
-        const confirmed =
+        const recheck =
           best && best.score >= REPO_MATCH_THRESHOLD
-            ? ((await safeAsk<RepoScoreResult>(prompt, schema))?.scores.find((s) => s.projectId === best.projectId)
-                ?.score ?? 0) >= REPO_MATCH_THRESHOLD
+            ? think(
+                `${quote(names.get(best.projectId) ?? '')} 프로젝트가 맞는지 한 번 더 채점하고 있어요`,
+                scoreLines('projectId', names)
+              )
+            : null;
+        const confirmed =
+          best && recheck
+            ? ((await safeAsk<RepoScoreResult>(prompt, schema, recheck.onText))?.scores.find(
+                (s) => s.projectId === best.projectId
+              )?.score ?? 0) >= REPO_MATCH_THRESHOLD
             : false;
+        recheck?.conclude(confirmed ? '두 번 모두 높은 점수예요' : '점수가 엇갈려 연결하지 않아요');
         if (best && confirmed) {
           const index = Number(best.projectId.slice(1));
           if (formProjects[index]) target = { kind: 'existing', project: formProjects[index] };
@@ -152,6 +214,11 @@ export async function classifyCommits({
           const sameName = formProjects.find((p) => p.name.trim().toLowerCase() === repoShortName(repo).toLowerCase());
           if (sameName) target = { kind: 'existing', project: sameName };
         }
+        thought.conclude(
+          target.kind === 'existing'
+            ? `${quote(target.project.name)} 프로젝트에 정리해요`
+            : `새 프로젝트 ${quote(target.name)}(으)로 정리해요`
+        );
       }
       repoTargets.set(repo, target);
       tick();
@@ -203,17 +270,25 @@ export async function classifyCommits({
       }
       task.commits.push(commit);
     };
-    const scoreTasks = async (project: Project, messages: ReadonlyArray<string>) => {
+    const scoreTasks = async (project: Project, messages: ReadonlyArray<string>, title: string) => {
       const { prompt, schema } = taskScorePrompt(project, messages);
-      const result = await safeAsk<TaskScoreResult>(prompt, schema);
+      const names = new Map(project.tasks.map((t) => [t.id, t.content.trim()]));
+      // summary 는 모델이 커밋을 어떻게 이해했는지 스스로 적은 문장이라 점수보다 먼저 보여 준다
+      const thought = think(title, (text) => [
+        ...readStringValues(text, 'summary')
+          .map((line) => line.trim())
+          .filter(Boolean),
+        ...scoreLines('taskId', names)(text),
+      ]);
+      const result = await safeAsk<TaskScoreResult>(prompt, schema, thought.onText);
       tick();
-      return result?.scores ?? [];
+      return { scores: result?.scores ?? [], thought, names };
     };
 
     // 같은 `저장소#scope` 묶음을 전에 사용자가 어떤 작업명으로 남겼는지(보정 메모리)
     const rememberedTaskNames = new Map<GithubCommit, string>();
     const groups = groupByScope(commits);
-    total = done + groups.length + repos.length;
+    startStage(COMMIT_CLASSIFY_STAGE.TASK, groups.length);
     for (const group of groups) {
       const plan = planFor(group[0].repo);
       const target = repoTargets.get(group[0].repo)!;
@@ -225,39 +300,58 @@ export async function classifyCommits({
           target.kind === 'existing'
             ? target.project.tasks.find((t) => t.content.trim() === rememberedTask)
             : undefined;
+        think(`${scopeKey} 커밋 ${group.length}건`).conclude(
+          `전에 정한 대로 ${quote(rememberedTask)} 작업으로 정리해요`
+        );
         if (target.kind === 'existing' && sameTask) {
           group.forEach((commit) => attach(plan, target.project, sameTask.id, commit));
         } else {
           group.forEach((commit) => rememberedTaskNames.set(commit, rememberedTask));
           keepUnmatched(plan, group);
         }
+        // AI 에 묻지 않고 넘어가는 묶음도 한 칸으로 센다
+        tick();
         continue;
       }
       if (target.kind !== 'existing' || !target.project.tasks.some((t) => t.content.trim())) {
         keepUnmatched(plan, group);
+        tick();
         continue;
       }
       const project = target.project;
-      const best = [
-        ...(await scoreTasks(
-          project,
-          group.map((c) => c.message)
-        )),
-      ].sort((a, b) => b.score - a.score)[0];
+      const { scores, thought, names } = await scoreTasks(
+        project,
+        group.map((c) => c.message),
+        `${quote(project.name)}의 기존 작업 중 커밋 ${group.length}건에 맞는 작업을 찾고 있어요`
+      );
+      const best = [...scores].sort((a, b) => b.score - a.score)[0];
       if (!best || best.score < COMMIT_TASK_MATCH_THRESHOLD) {
+        thought.conclude('맞는 기존 작업이 없어 새 작업으로 모아요');
         keepUnmatched(plan, group);
         continue;
       }
-      total += group.length;
+      const bestName = quote(names.get(best.taskId) ?? '');
+      thought.conclude(`${bestName} 작업일 가능성이 높아요 — 커밋마다 다시 확인해요`);
+      grow(group.length);
       for (const commit of group) {
-        const score = (await scoreTasks(project, [commit.message])).find((s) => s.taskId === best.taskId)?.score ?? 0;
-        if (score >= COMMIT_TASK_MATCH_THRESHOLD) attach(plan, project, best.taskId, commit);
-        else keepUnmatched(plan, [commit]);
+        const recheck = await scoreTasks(
+          project,
+          [commit.message],
+          `${quote(stripCommitPrefix(commit.message))} 커밋이 ${bestName} 작업인지 확인하고 있어요`
+        );
+        const score = recheck.scores.find((s) => s.taskId === best.taskId)?.score ?? 0;
+        if (score >= COMMIT_TASK_MATCH_THRESHOLD) {
+          recheck.thought.conclude(`${bestName} 작업에 붙여요`);
+          attach(plan, project, best.taskId, commit);
+        } else {
+          recheck.thought.conclude('점수가 낮아 새 작업 쪽으로 돌려요');
+          keepUnmatched(plan, [commit]);
+        }
       }
     }
 
     // ── 3단계: 새 작업 묶기 + 이름짓기 (이전 기록 문체) ──
-    total = done + unmatched.size;
+    startStage(COMMIT_CLASSIFY_STAGE.NAMING, unmatched.size);
     for (const [planKey, pending] of unmatched) {
       const plan = projectPlans.get(planKey)!;
       // 보정 메모리에 작업명이 있는 커밋은 그 이름으로 바로 묶는다
@@ -278,7 +372,14 @@ export async function classifyCommits({
         groups.map((g) => g.map((c) => c.message)),
         samplesFor(styleSamples, plan.name)
       );
-      const result = await safeAsk<NewTaskNamingResult>(prompt, schema);
+      const thought = think(
+        `${quote(plan.name)}의 새 작업 ${groups.length}묶음을 정리하고 이름을 짓고 있어요`,
+        (text) =>
+          readStringValues(text, 'titleKo')
+            .map((title) => title.trim())
+            .filter(Boolean)
+      );
+      const result = await safeAsk<NewTaskNamingResult>(prompt, schema, thought.onText);
       for (const item of result?.items ?? []) {
         // 모델이 같은 번호를 한 항목에 두 번 넣는 경우가 있어 중복을 걷어낸다
         const members = [...new Set(item.groups)].filter((n) => groups[n] && !assigned.has(n));
@@ -291,6 +392,7 @@ export async function classifyCommits({
       groups.forEach((group, n) => {
         if (!assigned.has(n)) plan.tasks.push(newTask(stripCommitPrefix(group[0].message), group));
       });
+      thought.conclude(`새 작업 ${plan.tasks.filter((t) => t.existingTaskId === null).length}개로 정리했어요`);
       tick();
     }
 
@@ -300,7 +402,8 @@ export async function classifyCommits({
     const plans = [...projectPlans.values()];
     const sparse = !usesDetails(history) || memory.detailFeedback.removed > memory.detailFeedback.kept;
     const needsAsk = plans.flatMap((p) => p.tasks).filter((t) => t.existingTaskId !== null || t.commits.length > 1);
-    total = done + needsAsk.length + (memory.detailEdits.length ? 1 : 0);
+    // AI 가 없으면 묻지 않으므로 할 일이 없는 단계(건너뜀)가 된다
+    startStage(COMMIT_CLASSIFY_STAGE.DETAIL, ask ? needsAsk.length + (memory.detailEdits.length ? 1 : 0) : 0);
     if (ask) {
       for (const task of needsAsk) {
         const { prompt, schema } = detailSuggestionPrompt(
@@ -308,7 +411,14 @@ export async function classifyCommits({
           task.commits.map((c) => c.message),
           sparse
         );
-        const result = await safeAsk<DetailSuggestionResult>(prompt, schema);
+        // reason 은 모델이 세부 항목이 필요한지 스스로 적은 판단 근거다
+        const thought = think(`${quote(task.content)}에 세부 항목이 필요한지 보고 있어요`, (text) => [
+          ...readStringValues(text, 'reason')
+            .map((line) => line.trim())
+            .filter(Boolean),
+          ...readStringArray(text, 'details').map((line) => `· ${line}`),
+        ]);
+        const result = await safeAsk<DetailSuggestionResult>(prompt, schema, thought.onText);
         tick();
         // 작업명에 이미 들어 있는 말을 되풀이하는 줄은 버린다(PoC 에서 가끔 커밋 제목을 그대로 옮겼다)
         const lines = [...new Set((result?.details ?? []).map(cleanLine).filter(Boolean))].filter(
@@ -316,9 +426,15 @@ export async function classifyCommits({
         );
         task.details = lines.map((line) => ({ key: createId(), content: line, suggested: line }));
         task.suggestedDetails = lines;
+        thought.conclude(lines.length ? `세부 항목 ${lines.length}개를 제안해요` : '세부 항목 없이 둬요');
       }
-      await applyDetailStyle(plans, memory.detailEdits, safeAsk);
+      await applyDetailStyle(plans, memory.detailEdits, safeAsk, think);
+      // 표기 보정 몫으로 더한 한 칸 — 중간에 끝나(전부 정확히 일치·세부 항목 없음) 호출하지 않았어도 채운다
+      if (memory.detailEdits.length) tick();
     }
+
+    progress.current = null;
+    emit();
 
     return { projects: [...projectPlans.values()], classifier: ask ? 'ai' : 'rule', aiAvailability: availability };
   } finally {
@@ -366,7 +482,8 @@ const cleanLine = (line: string) => line.replace(/^\s*(?:[-*•·]|\d+[.)])\s*/,
 async function applyDetailStyle(
   projects: ReadonlyArray<PlannedProject>,
   edits: ReadonlyArray<DetailEdit>,
-  ask: <T>(prompt: string, schema: object) => Promise<T | null>
+  ask: <T>(prompt: string, schema: object, onText?: (text: string) => void) => Promise<T | null>,
+  think: Think
 ) {
   if (!edits.length) return;
   const details = projects.flatMap((p) => p.tasks.flatMap((t) => t.details));
@@ -386,8 +503,15 @@ async function applyDetailStyle(
     edits.slice(0, COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT),
     rest.map((d) => d.content)
   );
-  const result = await ask<DetailStyleResult>(prompt, schema);
-  if (!result || result.lines.length !== rest.length) return;
+  const thought = think('전에 고친 표기대로 세부 항목 문구를 다듬고 있어요', (text) =>
+    readStringArray(text, 'lines').map((line) => `· ${line}`)
+  );
+  const result = await ask<DetailStyleResult>(prompt, schema, thought.onText);
+  if (!result || result.lines.length !== rest.length) {
+    thought.conclude('원래 문구를 그대로 둬요');
+    return;
+  }
+  thought.conclude(`${rest.length}줄을 다듬었어요`);
   rest.forEach((detail, index) => {
     const line = cleanLine(result.lines[index] ?? '');
     if (!line) return;

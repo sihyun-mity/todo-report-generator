@@ -28,7 +28,8 @@ export const downloadPromptModel = async (onDownloadProgress: (ratio: number) =>
   session.destroy();
 };
 
-export type JsonAsker = <T>(prompt: string, schema: object) => Promise<T>;
+// onText 를 주면 응답을 스트리밍으로 받아 지금까지 생성된 원문(JSON 조각)을 매번 넘긴다 — 분류 중 "AI 생각" 표시용.
+export type JsonAsker = <T>(prompt: string, schema: object, onText?: (text: string) => void) => Promise<T>;
 
 // 세션 하나를 만들고 질문마다 clone 해 쓴다(앞 질문의 문맥이 섞이지 않게).
 // 같은 모델로 프롬프트를 동시에 돌리면 뒤 요청이 수 분간 멈추는 현상이 있어 호출은 반드시 직렬로 한다.
@@ -37,14 +38,17 @@ export const openPromptSession = async (): Promise<{ ask: JsonAsker; close: () =
   const base = await LanguageModel.create(OPTIONS);
 
   let queue: Promise<unknown> = Promise.resolve();
-  const ask: JsonAsker = <T>(prompt: string, schema: object) => {
+  const ask: JsonAsker = <T>(prompt: string, schema: object, onText?: (text: string) => void) => {
     const run = async () => {
       const session = await base.clone();
       try {
-        const raw = await session.prompt(prompt, {
+        const options = {
           responseConstraint: schema,
           signal: AbortSignal.timeout(COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS),
-        });
+        };
+        const raw = onText
+          ? await readStream(session.promptStreaming(prompt, options), onText)
+          : await session.prompt(prompt, options);
         return JSON.parse(raw) as T;
       } finally {
         session.destroy();
@@ -56,4 +60,15 @@ export const openPromptSession = async (): Promise<{ ask: JsonAsker; close: () =
   };
 
   return { ask, close: () => base.destroy() };
+};
+
+const readStream = async (stream: ReadableStream<string>, onText: (text: string) => void) => {
+  const reader = stream.getReader();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text;
+    text += value;
+    onText(text);
+  }
 };

@@ -8,6 +8,9 @@ import {
   Building2,
   CalendarClock,
   Check,
+  CircleCheck,
+  CircleDashed,
+  CircleMinus,
   Cpu,
   Download,
   EyeOff,
@@ -16,6 +19,7 @@ import {
   Inbox,
   Info,
   Loader2,
+  LoaderCircle,
   Lock,
   LogIn,
   RefreshCw,
@@ -29,6 +33,8 @@ import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
 import type {
   ClassifyProgress,
+  ClassifyThought,
+  CommitClassifyStage,
   CommitImportPlan,
   GithubImportIntent,
   PlannedTask,
@@ -38,11 +44,13 @@ import type {
 } from '@/types';
 import { disconnectGithub } from '@/actions';
 import {
+  COMMIT_CLASSIFY_COMPLETE_HOLD_MS,
   GITHUB_IMPORT_INTENT_COOKIE,
   GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
   GITHUB_IMPORT_OAUTH_SCOPES,
 } from '@/constants';
 import { Portal, useDismissOnBack } from '@/components';
+import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import { useOnClickOutside } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
 import { readCommitImportMemory, setRepoExcluded } from '@/lib/commit-classifier/memory';
@@ -99,6 +107,11 @@ const summarize = (plan: CommitImportPlan) => {
   };
 };
 
+// 분류 중 화면에 남겨 둘 판단 단계 수(최신 것부터)
+const VISIBLE_THOUGHTS = 4;
+// AI 생각 로그에서 맨 아래로 간주하는 여유(px) — 이 안에 있으면 새 내용을 따라 스크롤한다
+const FOLLOW_THRESHOLD_PX = 24;
+
 const countIncluded = (plan: CommitImportPlan) =>
   plan.projects.reduce((sum, p) => sum + p.tasks.filter(isApplicable).length, 0);
 
@@ -117,6 +130,10 @@ export function GithubImportDialog({
   const queryClient = useQueryClient();
   const { lock, unlock } = useScrollLock({ autoLock: false });
   const [progress, setProgress] = useState<ClassifyProgress | null>(null);
+  // 분류 중 보여 줄 온디바이스 AI 의 판단 과정(최근 몇 단계)
+  const [thoughts, setThoughts] = useState<ReadonlyArray<ClassifyThought>>([]);
+  // 미리보기를 고친 뒤 "다시 분류"를 한 번 눌러 확인을 기다리는 중
+  const [retryArmed, setRetryArmed] = useState(false);
   const [draft, setDraft] = useState<CommitImportPlan | null>(null);
   const [draftSource, setDraftSource] = useState<CommitImportPlan | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -163,15 +180,28 @@ export function GithubImportDialog({
   // 분류는 같은 커밋 조회 결과(조회 시각)마다 한 번만 돌린다.
   const plan = useQuery({
     ...queries.github.plan(commits.dataUpdatedAt),
-    queryFn: () =>
-      classifyCommits({
+    queryFn: async () => {
+      setProgress(null);
+      setThoughts([]);
+      const result = await classifyCommits({
         userId,
         // 이번에 미리보기에서 뺀 저장소는 이미 받아 둔 커밋에도 들어 있어 여기서 거른다
         commits: commitsResult?.ok ? commitsResult.commits.filter((c) => !excludedRef.current.includes(c.repo)) : [],
         todayProjects,
         history,
         onProgress: setProgress,
-      }),
+        onThinking: (thought) =>
+          setThoughts((current) =>
+            current.some((t) => t.id === thought.id)
+              ? current.map((t) => (t.id === thought.id ? thought : t))
+              : [...current, thought].slice(-VISIBLE_THOUGHTS)
+          ),
+      });
+      // AI 분류는 모든 단계가 완료된 모습을 잠깐 보여 준 뒤 결과로 넘어간다. 규칙 분류는 기다림 없이 바로 끝나 그대로 보여 준다.
+      if (result.classifier === 'ai')
+        await new Promise((resolve) => setTimeout(resolve, COMMIT_CLASSIFY_COMPLETE_HOLD_MS));
+      return result;
+    },
     enabled: hasCommits,
     staleTime: Infinity,
     gcTime: 0,
@@ -236,6 +266,19 @@ export function GithubImportDialog({
     }
   };
 
+  // AI 응답은 실행마다 달라, 결과가 마음에 들지 않으면 같은 커밋으로 다시 분류한다(커밋은 다시 조회하지 않는다).
+  // 미리보기를 고쳤다면 그 편집이 사라지므로 한 번 더 눌러 확인받는다. 공용 confirm 모달은 이 다이얼로그의
+  // 바깥 클릭 닫기에 걸려 함께 닫히므로 버튼 안에서 확인한다.
+  const handleRetry = () => {
+    if (draft !== draftSource && !retryArmed) {
+      setRetryArmed(true);
+      return;
+    }
+    setRetryArmed(false);
+    setDraft(null);
+    void plan.refetch();
+  };
+
   const handleDisconnect = async () => {
     setIsDisconnecting(true);
     try {
@@ -265,7 +308,7 @@ export function GithubImportDialog({
   const canDownloadModel = draft?.aiAvailability === 'downloadable' || draft?.aiAvailability === 'downloading';
 
   const summary = draft ? summarize(draft) : null;
-  const classifyRatio = progress ? Math.min(progress.done, progress.total) / Math.max(progress.total, 1) : 0;
+  const isClassifyDone = progress?.current === null;
 
   return (
     <Portal>
@@ -293,7 +336,8 @@ export function GithubImportDialog({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* flex 열: 자식은 기본적으로 내용 높이를 지키고(넘치면 본문이 스크롤), min-h-0 을 준 자식만 남은 높이에 맞춰 줄어든다 */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
             {viewerMode === 'guest' ? (
               <MembersOnlyGuide />
             ) : viewerMode === 'loading' || connection.isPending ? (
@@ -349,16 +393,27 @@ export function GithubImportDialog({
                 <ProgressBar ratio={modelDownload} />
               </StatusPanel>
             ) : !draft ? (
-              <StatusPanel
-                icon={Sparkles}
-                title={`커밋 ${commitsResult.commits.length}건을 분류하고 있어요`}
-                description="이 기기의 AI가 프로젝트와 작업을 하나씩 판단하고 있어요."
-              >
-                <ProgressBar
-                  ratio={classifyRatio}
-                  label={progress ? `${Math.min(progress.done, progress.total)}/${progress.total}` : undefined}
-                />
-              </StatusPanel>
+              // 대화창이 최대 높이에 닿기 전까지는 내용만큼 커지고, 닿으면 AI 생각 로그만 줄어들어 그 안에서 스크롤된다
+              <div className="flex min-h-0 flex-col gap-3">
+                <StatusPanel
+                  icon={isClassifyDone ? Check : Sparkles}
+                  twinkle={!isClassifyDone}
+                  tone={isClassifyDone ? 'success' : 'default'}
+                  title={
+                    isClassifyDone
+                      ? `커밋 ${commitsResult.commits.length}건을 모두 분류했어요`
+                      : `커밋 ${commitsResult.commits.length}건을 분류하고 있어요`
+                  }
+                  description={
+                    isClassifyDone
+                      ? '정리한 결과를 보여 드릴게요.'
+                      : '이 기기의 AI가 프로젝트와 작업을 하나씩 판단하고 있어요.'
+                  }
+                >
+                  <ClassifyStageList progress={progress} />
+                </StatusPanel>
+                {thoughts.length > 0 && <ThinkingLog thoughts={thoughts} />}
+              </div>
             ) : draft.projects.length === 0 ? (
               <StatusPanel
                 icon={EyeOff}
@@ -374,9 +429,23 @@ export function GithubImportDialog({
                       커밋 {summary?.commits ?? 0}건을 분류했어요
                     </p>
                     {draft.classifier === 'ai' ? (
-                      <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
-                        <Sparkles size={11} /> 온디바이스 AI 분류
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          <Sparkles size={11} /> 온디바이스 AI 분류
+                        </span>
+                        <button
+                          onClick={handleRetry}
+                          className={cn(
+                            'flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition-colors',
+                            retryArmed
+                              ? 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50'
+                              : 'text-zinc-500 hover:bg-white hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'
+                          )}
+                        >
+                          <RefreshCw size={11} />
+                          {retryArmed ? '고친 내용을 버리고 다시 분류' : '다시 분류'}
+                        </button>
+                      </div>
                     ) : (
                       <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                         저장소 기준 분류
@@ -468,17 +537,28 @@ type StatusPanelProps = {
   title: string;
   description?: string;
   spin?: boolean;
-  tone?: 'default' | 'error';
+  // 회전 로더가 어색한 아이콘(Sparkles)을 반짝이게 해 기다리는 중임을 알린다
+  twinkle?: boolean;
+  tone?: 'default' | 'success' | 'error';
   children?: React.ReactNode;
 };
 
 // 텍스트 복원 모달의 빈/오류 상태와 같은 점선 패널
-function StatusPanel({ icon: Icon, title, description, spin, tone = 'default', children }: Readonly<StatusPanelProps>) {
+function StatusPanel({
+  icon: Icon,
+  title,
+  description,
+  spin,
+  twinkle,
+  tone = 'default',
+  children,
+}: Readonly<StatusPanelProps>) {
   const isError = tone === 'error';
+  const isActive = spin || twinkle;
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-8 text-center',
+        'flex shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-8 text-center',
         isError
           ? 'border-red-200 bg-red-50/50 dark:border-red-900/30 dark:bg-red-900/10'
           : 'border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/30'
@@ -488,7 +568,14 @@ function StatusPanel({ icon: Icon, title, description, spin, tone = 'default', c
         className={cn(
           'h-8 w-8',
           spin && 'animate-spin',
-          isError ? 'text-red-400' : spin ? 'text-blue-500' : 'text-zinc-300 dark:text-zinc-600'
+          twinkle && 'animate-twinkle motion-reduce:animate-none',
+          isError
+            ? 'text-red-400'
+            : tone === 'success'
+              ? 'text-emerald-500'
+              : isActive
+                ? 'text-blue-500'
+                : 'text-zinc-300 dark:text-zinc-600'
         )}
       />
       <p
@@ -505,18 +592,191 @@ function StatusPanel({ icon: Icon, title, description, spin, tone = 'default', c
   );
 }
 
+const CLASSIFY_STAGE_LABELS: Record<CommitClassifyStage, string> = {
+  [COMMIT_CLASSIFY_STAGE.PREPARE]: 'AI 모델 준비',
+  [COMMIT_CLASSIFY_STAGE.REPO]: '저장소별 프로젝트 판단',
+  [COMMIT_CLASSIFY_STAGE.TASK]: '기존 작업 연결',
+  [COMMIT_CLASSIFY_STAGE.NAMING]: '새 작업 정리',
+  [COMMIT_CLASSIFY_STAGE.DETAIL]: '세부 항목 제안',
+};
+
+type StageStatus = 'done' | 'skipped' | 'active' | 'pending';
+
+const STAGE_ICONS: Record<StageStatus, { icon: LucideIcon; className: string }> = {
+  done: { icon: CircleCheck, className: 'text-emerald-500' },
+  skipped: { icon: CircleMinus, className: 'text-zinc-300 dark:text-zinc-600' },
+  active: { icon: LoaderCircle, className: 'animate-spin text-blue-500' },
+  pending: { icon: CircleDashed, className: 'text-zinc-300 dark:text-zinc-600' },
+};
+
+// 분류 단계 목록. 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없으므로 단계 단위로 보여 주고,
+// 진행 중인 단계에만 그 단계 안의 개수를 붙인다. 할 일이 없던 단계는 "건너뜀"으로 둔다.
+function ClassifyStageList({ progress }: Readonly<{ progress: ClassifyProgress | null }>) {
+  // 첫 진행 보고 전에는 준비 단계가 진행 중이다. current 가 null 이면 모든 단계가 끝났다.
+  const currentIndex =
+    progress === null
+      ? 0
+      : progress.current === null
+        ? COMMIT_CLASSIFY_STAGE_VALUES.length
+        : COMMIT_CLASSIFY_STAGE_VALUES.indexOf(progress.current);
+  return (
+    <ol className="w-full space-y-2 text-left text-xs">
+      {COMMIT_CLASSIFY_STAGE_VALUES.map((stage, index) => {
+        const stageProgress = progress?.stages[stage];
+        const status: StageStatus =
+          index > currentIndex
+            ? 'pending'
+            : index === currentIndex
+              ? 'active'
+              : stage !== COMMIT_CLASSIFY_STAGE.PREPARE && stageProgress?.total === 0
+                ? 'skipped'
+                : 'done';
+        const { icon: Icon, className } = STAGE_ICONS[status];
+        return (
+          <li key={stage} className="flex items-center gap-2">
+            <Icon size={15} className={cn('shrink-0', className)} />
+            <span
+              className={cn(
+                'flex-1',
+                status === 'active'
+                  ? 'font-semibold text-zinc-800 dark:text-zinc-100'
+                  : status === 'done'
+                    ? 'text-zinc-600 dark:text-zinc-300'
+                    : 'text-zinc-400 dark:text-zinc-500'
+              )}
+            >
+              {CLASSIFY_STAGE_LABELS[stage]}
+            </span>
+            {status === 'active' && stageProgress && stageProgress.total > 0 && (
+              <span className="text-zinc-400 tabular-nums dark:text-zinc-500">
+                {Math.min(stageProgress.done, stageProgress.total)}/{stageProgress.total}
+              </span>
+            )}
+            {status === 'skipped' && <span className="text-zinc-400 dark:text-zinc-500">건너뜀</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// 첫 단계가 끝나기 전(0%)에는 진행률을 알 수 없어 막대 위를 오가는 구간을 보여 주고, 그 뒤로는 채운 부분에
+// 광택을 흘려 단계 사이 대기가 길어도 멈춘 것처럼 보이지 않게 한다.
 function ProgressBar({ ratio, label }: Readonly<{ ratio: number; label?: string }>) {
   const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100);
+  const isIndeterminate = percent === 0;
   return (
     <div className="w-full">
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-        <div
-          className="h-full rounded-full bg-blue-500 transition-[width] duration-300"
-          style={{ width: `${percent}%` }}
-        />
+      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        {isIndeterminate ? (
+          <div className="absolute inset-y-0 left-0 w-2/5 animate-indeterminate rounded-full bg-blue-500 motion-reduce:animate-none" />
+        ) : (
+          <div
+            className="relative h-full overflow-hidden rounded-full bg-blue-500 transition-[width] duration-300"
+            style={{ width: `${percent}%` }}
+          >
+            {percent < 100 && (
+              <div className="absolute inset-0 animate-shimmer bg-linear-to-r from-transparent via-white/45 to-transparent motion-reduce:hidden" />
+            )}
+          </div>
+        )}
       </div>
-      <p className="mt-1.5 text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{label ?? `${percent}%`}</p>
+      <p className="mt-1.5 text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">
+        {isIndeterminate ? '준비하고 있어요…' : (label ?? `${percent}%`)}
+      </p>
     </div>
+  );
+}
+
+// 온디바이스 AI 가 지금 무엇을 판단하는지와, 생성 중인 응답에서 읽어 낸 점수·요약을 실시간으로 보여 준다.
+// 끝난 단계는 결과 한 줄로 접는다. 대화창 높이를 다 쓰면 목록이 스크롤되고, 사용자가 맨 아래를 보고 있을 때만
+// 새로 생성되는 내용을 따라 내려간다.
+function ThinkingLog({ thoughts }: Readonly<{ thoughts: ReadonlyArray<ClassifyThought> }>) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLOListElement | null>(null);
+  // 맨 아래를 보고 있는지 — 처음에는 따라간다. 위로 올려 읽는 중이면 위치를 건드리지 않는다.
+  const followRef = useRef(true);
+
+  const handleScroll = () => {
+    const list = listRef.current;
+    if (!list) return;
+    followRef.current = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
+  };
+
+  // 내용 높이가 바뀌면(줄 추가·줄바꿈 변화·끝난 단계 접힘) 목록 높이를 그 값으로 옮겨 transition 으로 부드럽게 늘고 준다.
+  // 대화창이 최대 높이에 닿으면 flex 가 이 높이보다 작게 줄이고, 그때부터는 목록 안에서 스크롤된다.
+  // 최소 높이는 min(내용, 5rem) — 고정 최소 높이를 두면 내용이 적을 때 아래가 비고, 없으면 좁은 화면에서 0 까지 짓눌린다.
+  // ResizeObserver 콜백은 레이아웃 직후·그리기 전에 돌아 맨 아래 따라가기도 여기서 해야 새 줄이 가려졌다 보이지 않는다.
+  useEffect(() => {
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!list || !content) return;
+    const observer = new ResizeObserver(() => {
+      list.style.height = `${content.offsetHeight}px`;
+      list.style.minHeight = `min(${content.offsetHeight}px, 5rem)`;
+      if (followRef.current) list.scrollTop = list.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section
+      aria-live="polite"
+      className="flex min-h-0 flex-col rounded-xl border border-zinc-200 bg-white py-3 dark:border-zinc-800 dark:bg-zinc-900/50"
+    >
+      <p className="mb-2 flex shrink-0 items-center gap-1.5 px-3 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+        <Cpu size={12} /> AI가 생각하는 과정
+      </p>
+      <div
+        ref={listRef}
+        onScroll={handleScroll}
+        className="scrollbar-hidden min-h-0 overflow-y-auto px-3 transition-[height,min-height] duration-300 ease-out motion-reduce:transition-none"
+      >
+        <ol ref={contentRef} className="space-y-2.5">
+          {thoughts.map((thought) => {
+            const isDone = thought.conclusion !== null;
+            return (
+              <li key={thought.id} className="flex gap-2 text-xs">
+                {isDone ? (
+                  <Check size={14} className="mt-0.5 shrink-0 text-emerald-500" />
+                ) : (
+                  <Sparkles size={14} className="mt-0.5 shrink-0 animate-pulse text-blue-500" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={cn(
+                      'break-words',
+                      isDone ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-zinc-700 dark:text-zinc-200'
+                    )}
+                  >
+                    {thought.title}
+                  </p>
+                  {isDone ? (
+                    <p className="mt-0.5 break-words text-zinc-600 dark:text-zinc-300">→ {thought.conclusion}</p>
+                  ) : (
+                    <div className="mt-1 space-y-0.5 border-l-2 border-blue-100 pl-2 text-zinc-500 dark:border-blue-900/50 dark:text-zinc-400">
+                      {thought.lines.length ? (
+                        thought.lines.map((line, index) => (
+                          <p key={index} className="break-words">
+                            {line}
+                            {index === thought.lines.length - 1 && (
+                              <span className="ml-0.5 inline-block h-3 w-1 translate-y-0.5 animate-pulse bg-blue-400" />
+                            )}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="animate-pulse">생각하는 중…</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
   );
 }
 

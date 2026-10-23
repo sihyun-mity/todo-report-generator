@@ -1,0 +1,41 @@
+/**
+ * 오래 기다리는 진행 표시용 애니메이션 (`animate-*` 유틸리티로 쓴다).
+ * - twinkle: 반짝이는 아이콘 — 회전 로더가 어색한 아이콘(Sparkles 등)에 "작업 중" 신호를 준다.
+ * - indeterminate: 진행률을 아직 모를 때(0%) 막대 위를 오가는 구간.
+ * - shimmer: 진행 중인 막대 위를 지나는 광택 — 단계 사이 대기가 길어도 멈춘 것처럼 보이지 않게 한다.
+ */
+@theme {
+  --animate-twinkle: twinkle 1.6s ease-in-out infinite;
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(0.82) rotate(-14deg);
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(250%);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}

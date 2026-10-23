@@ -1,3 +1,4 @@
+import type { COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import type { GithubCommit } from '.';
 
 // 가져올 세부 항목 1줄. suggested 는 AI 가 만든 원래 문구(사용자가 직접 추가한 줄이면 null)다.
@@ -40,7 +41,16 @@ export type CommitImportPlan = {
   aiAvailability: LanguageModelAvailability;
 };
 
-export type ClassifyProgress = { stage: 'classify'; done: number; total: number };
+export type CommitClassifyStage = (typeof COMMIT_CLASSIFY_STAGE_VALUES)[number];
+
+// 분류 단계 하나의 진행. total 은 그 단계를 시작할 때 정해진다(재확인처럼 도중에 늘 수 있다).
+export type ClassifyStageProgress = { done: number; total: number };
+
+// stages 에 없는 단계는 아직 시작하지 않았다. current 가 null 이면 모든 단계가 끝났다.
+export type ClassifyProgress = {
+  current: CommitClassifyStage | null;
+  stages: Partial<Record<CommitClassifyStage, ClassifyStageProgress>>;
+};
 
 // 폼에 들어간 항목과 원래 커밋의 연결. 보고서를 저장할 때 사용자가 고친 최종 표기를 찾는 데 쓴다.
 export type CommitImportLink =
@@ -71,4 +81,15 @@ export type CommitImportMemory = {
 export type StyleSample = {
   projectName: string;
   taskContent: string;
+};
+
+// 분류 중 화면에 보여 줄 AI 판단 과정의 한 단계. 같은 id 로 다시 오면 그 단계의 갱신이다.
+export type ClassifyThought = {
+  id: number;
+  // 지금 무엇을 판단하는지
+  title: string;
+  // 모델이 생성 중인 응답에서 읽어 낸 내용(점수·요약·작업명 등) — 생성되는 대로 늘어난다
+  lines: Array<string>;
+  // 판단 결과. 있으면 이 단계가 끝난 것이다
+  conclusion: string | null;
 };
