@@ -61,7 +61,14 @@ import {
   setRepoExcluded,
   toggleExcludedRepo,
 } from '@/lib/commit-classifier/memory';
-import { downloadPromptModel } from '@/lib/commit-classifier/prompt-api';
+import {
+  downloadPromptModel,
+  getPromptApiAvailability,
+  hasSeenPromptAiNotice,
+  markPromptAiNoticeSeen,
+  type PromptAiNoticeKind,
+  promptAiNoticeKind,
+} from '@/lib/commit-classifier/prompt-api';
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
 import { cn } from '@/utils';
@@ -192,6 +199,8 @@ export function GithubImportDialog({
   // 커밋 조회에 쓴 제외 목록 — 미리보기에서 제외할 때는 다시 조회하지 않고 그 저장소만 빼고,
   // 제외를 해제할 때만 그 저장소의 커밋을 불러오려고 다시 조회·분류한다.
   const [fetchExcludedRepos, setFetchExcludedRepos] = useState<ReadonlyArray<string>>([]);
+  // 이번에 분류 전 AI 안내를 넘겼는지(모델을 받았거나 저장소 기준 분류로 계속)
+  const [aiNoticeConfirmed, setAiNoticeConfirmed] = useState(false);
   // 분류(queryFn)가 실행 시점의 제외 목록을 보도록 ref 로도 들고 있는다. 조회 때 뺀 저장소는 커밋에 없으므로
   // 이번 미리보기에서 바꾼 것만 담기면 된다(핸들러에서 갱신).
   const excludedRef = useRef<ReadonlyArray<string>>([]);
@@ -242,6 +251,23 @@ export function GithubImportDialog({
   const hasCommits = commitsResult?.ok === true && commitsResult.commits.length > 0;
   const notice = commitsResult?.ok ? omissionNotice(commitsResult) : null;
 
+  // 온디바이스 AI 를 쓸 수 없으면(모델 미설치·미지원 브라우저) 분류 전에 이 기기에서 한 번 안내한다 —
+  // 모델을 받거나 브라우저를 바꿔 AI 로 분류할지, 저장소 기준 분류로 계속할지 알고 고르게 한다.
+  const aiAvailability = useQuery({
+    ...queries.github.aiAvailability(),
+    queryFn: async () => {
+      const kind = promptAiNoticeKind(await getPromptApiAvailability());
+      return { kind, seen: kind !== null && hasSeenPromptAiNotice(kind) };
+    },
+    enabled: isMember,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const aiNotice: PromptAiNoticeKind | null =
+    aiAvailability.data?.kind && !aiAvailability.data.seen && !aiNoticeConfirmed ? aiAvailability.data.kind : null;
+  const isAiChecked = aiAvailability.isSuccess && aiNotice === null;
+
   // 분류는 같은 커밋 조회 결과(조회 시각)마다 한 번만 돌린다.
   const plan = useQuery({
     ...queries.github.plan(commits.dataUpdatedAt),
@@ -268,7 +294,7 @@ export function GithubImportDialog({
         await new Promise((resolve) => setTimeout(resolve, COMMIT_CLASSIFY_COMPLETE_HOLD_MS));
       return result;
     },
-    enabled: hasCommits,
+    enabled: hasCommits && isAiChecked,
     staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,
@@ -363,11 +389,23 @@ export function GithubImportDialog({
     }
   };
 
+  // 분류 전 안내에서 AI 없이 계속한다. 이 기기에서는 같은 상태로 다시 묻지 않는다.
+  const handleContinueWithoutAi = (kind: PromptAiNoticeKind) => {
+    markPromptAiNoticeSeen(kind);
+    setAiNoticeConfirmed(true);
+  };
+
   // 클릭 핸들러에서만 호출한다 — Chrome 이 모델 다운로드 시작에 사용자 활성화를 요구한다.
+  // 분류 전 안내에서 받았으면 안내를 넘겨 분류를 시작하고, 미리보기(규칙 분류)에서 받았으면 다시 분류한다.
   const handleDownloadModel = async () => {
+    const isBeforeClassify = aiNotice !== null;
     setModelDownload(0);
     try {
       await downloadPromptModel(setModelDownload);
+      if (isBeforeClassify) {
+        setAiNoticeConfirmed(true);
+        return;
+      }
       setDraft(null);
       await plan.refetch();
     } catch {
@@ -467,6 +505,12 @@ export function GithubImportDialog({
               >
                 <ProgressBar ratio={modelDownload} />
               </StatusPanel>
+            ) : aiNotice ? (
+              <AiUnavailableNotice
+                kind={aiNotice}
+                onDownload={handleDownloadModel}
+                onContinue={() => handleContinueWithoutAi(aiNotice)}
+              />
             ) : !draft ? (
               // 대화창이 최대 높이에 닿기 전까지는 내용만큼 커지고, 닿으면 AI 생각 로그만 줄어들어 그 안에서 스크롤된다
               <div className="flex min-h-0 flex-col gap-3">
@@ -916,6 +960,65 @@ function MembersOnlyGuide() {
         <LogIn size={16} />
         로그인하기
       </Link>
+    </div>
+  );
+}
+
+type AiUnavailableNoticeProps = {
+  kind: PromptAiNoticeKind;
+  onDownload: () => void;
+  onContinue: () => void;
+};
+
+// 분류 전 한 번만 보여 주는 안내. AI 를 쓰는 방법(모델 내려받기·지원 브라우저)과, 그대로 계속하면 저장소 기준으로만
+// 나눈다는 점을 알리고 고르게 한다.
+function AiUnavailableNotice({ kind, onDownload, onContinue }: Readonly<AiUnavailableNoticeProps>) {
+  const canDownload = kind === 'downloadable';
+  return (
+    <div className="space-y-4">
+      <StatusPanel
+        icon={Cpu}
+        title={
+          canDownload ? '이 기기에 온디바이스 AI 모델이 아직 없어요' : '이 브라우저에서는 온디바이스 AI를 쓸 수 없어요'
+        }
+        description={
+          canDownload
+            ? 'AI 모델을 내려받으면 커밋 내용을 읽고 프로젝트·작업·진행률까지 정리해 드려요. 처음 한 번만 받으며, 용량이 커서 몇 분 걸릴 수 있어요.'
+            : 'Chrome 데스크톱 최신 버전에서 열면 이 기기의 AI가 커밋 내용을 읽고 프로젝트·작업·진행률까지 정리해 드려요. 기기 사양에 따라 쓸 수 없을 수도 있어요.'
+        }
+      />
+      <ul className="space-y-2">
+        <GuideItem icon={Sparkles} title="온디바이스 AI 분류">
+          커밋 제목으로 기존 작업에 이어 붙일지, 새 작업으로 만들지 판단하고 작업명·세부 항목을 제안해요.
+        </GuideItem>
+        <GuideItem icon={FolderGit2} title="저장소 기준 분류">
+          AI 없이 저장소 이름으로 프로젝트를 나누고, 커밋 제목을 작업으로 옮겨요. 미리보기에서 직접 다듬을 수 있어요.
+        </GuideItem>
+      </ul>
+      <div className="space-y-2">
+        {canDownload && (
+          <button onClick={onDownload} className={primaryCtaClass}>
+            <Download size={16} />
+            AI 모델 받고 분류하기
+          </button>
+        )}
+        <button
+          onClick={onContinue}
+          className={cn(
+            canDownload
+              ? 'flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+              : primaryCtaClass
+          )}
+        >
+          <FolderGit2 size={16} />
+          저장소 기준으로 분류하기
+        </button>
+        <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+          {canDownload
+            ? '이 안내는 한 번만 보여 드려요. 나중에 미리보기에서도 AI 모델을 받을 수 있어요.'
+            : '이 안내는 한 번만 보여 드려요.'}
+        </p>
+      </div>
     </div>
   );
 }
