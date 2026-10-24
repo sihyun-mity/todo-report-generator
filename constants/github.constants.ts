@@ -27,6 +27,8 @@ export const GITHUB_MAX_BRANCHES_PER_REPO = 10;
 
 /** 예전 커밋 가져오기 보정 메모리 localStorage 키 접두어(`${접두어}:${회원 id}`). 지금은 DB 에 두고, 남은 기록을 옮길 때만 읽는다. */
 export const COMMIT_IMPORT_MEMORY_STORAGE_KEY = 'commit-import-memory';
+/** 온디바이스 AI 를 쓸 수 없을 때(모델 미설치·미지원 브라우저) 분류 전 안내를 이 기기에서 이미 확인했는지. 값은 확인한 상태('downloadable' | 'unavailable'). */
+export const COMMIT_IMPORT_AI_NOTICE_STORAGE_KEY = 'trg:commit-import-ai-notice';
 // 기억할 세부 항목 표기 보정 / 저장 대기 연결 최대 개수
 export const COMMIT_IMPORT_DETAIL_EDIT_LIMIT = 20;
 export const COMMIT_IMPORT_PENDING_LINK_LIMIT = 300;
