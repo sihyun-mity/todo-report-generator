@@ -58,10 +58,14 @@ export const areAllAttemptedProjectsValid = (projects: ReadonlyArray<Project>) =
 // - 이미 동일한 프로젝트명이 존재하면 태스크만 추가
 // - 동일한 프로젝트 내 동일한 작업 내용이 이미 있으면 중복으로 간주하여 제외
 // - includeCompleted 면 완료한 작업까지 옮긴다(내일도 반복하는 업무). 완료한 작업은 익일 예정이므로 진행률 0 으로 시작한다
+//   (keepProgress 면 금일 진행률 그대로 — "진행률도 똑같이")
 export const mergeIncompleteTasks = (
   todayProjects: ReadonlyArray<Project>,
   tomorrowProjects: ReadonlyArray<Project>,
-  { includeCompleted = false }: Readonly<{ includeCompleted?: boolean }> = {}
+  {
+    includeCompleted = false,
+    keepProgress = false,
+  }: Readonly<{ includeCompleted?: boolean; keepProgress?: boolean }> = {}
 ): Array<Project> | null => {
   const incomplete: Array<Project> = todayProjects
     .map((p): Project | null => {
@@ -76,7 +80,7 @@ export const mergeIncompleteTasks = (
         .map((t) => ({
           ...t,
           id: createId(),
-          progress: t.progress >= 100 ? 0 : t.progress,
+          progress: t.progress >= 100 && !keepProgress ? 0 : t.progress,
           details: (t.details ?? []).map((d) => ({ ...d, id: createId() })),
         }));
 

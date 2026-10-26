@@ -6,6 +6,8 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { TaskDetail } from '@/types';
 import { useSignalEffect } from '@/hooks';
+import { useAgentHighlightStore } from '@/stores';
+import { cn } from '@/utils';
 
 type TaskDetailItemProps = {
   detail: TaskDetail;
@@ -64,8 +66,15 @@ export const TaskDetailItem = ({
     }
   };
 
+  // Nano가 넣거나 고친 세부 항목 줄을 잠깐 강조한다(작업·프로젝트 줄과 같은 효과)
+  const isAgentChanged = useAgentHighlightStore((s) => s.ids.has(detail.id));
+
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-1 sm:gap-1.5">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn('flex items-center gap-1 rounded-md sm:gap-1.5', isAgentChanged && 'animate-agent-flash')}
+    >
       <button
         type="button"
         {...attributes}

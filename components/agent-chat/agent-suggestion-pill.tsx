@@ -9,7 +9,8 @@ import { cn } from '@/utils';
 import { useAgentSuggestions } from '.';
 
 // 어느 화면에서나 지금 할 만한 일을 하나 알려 주는 알약(삼성 One UI 의 상황 제안처럼).
-// Nano가 이미 펼쳐져 있으면(데스크톱 패널·모바일 시트) 그 안에 같은 제안이 있으므로 숨긴다.
+// 데스크톱 패널을 펼쳐 두어도 띄운다 — 패널 안 제안 줄은 눈에 잘 띄지 않는다는 피드백. 펼친 패널(400px)을 비켜 본문 가운데에 둔다.
+// 모바일 시트는 화면 전체를 덮으므로 열려 있으면 숨긴다.
 // 상태가 출렁일 때마다 떴다 사라지지 않게 같은 제안이 잠시 유지된 뒤에 띄운다. 실행하거나 X 로 넘기면 이번 세션에서는 다시 띄우지 않는다.
 // 토스트(ToasterProvider)는 이 알약을 하단 차단 요소로 보고 그 위로 비켜 뜬다(AGENT_SUGGESTION_PILL_ID).
 // 도구를 바로 실행하는 제안은 Nano를 열지 않고 화면에서 결과를 보게 하고(도구가 토스트로 알린다), AI 에게 묻는 일만 Nano를 연다.
@@ -70,7 +71,7 @@ export function AgentSuggestionPill() {
         'pointer-events-none fixed inset-x-0 z-35 flex justify-center px-4',
         // 모바일은 하단 복사 바 위, 데스크톱은 본문 가운데 아래
         'bottom-[calc(env(safe-area-inset-bottom)+5rem)] lg:bottom-6',
-        expanded && 'lg:hidden'
+        expanded && 'lg:pr-[400px]'
       )}
     >
       {/* 잘 안 보인다는 피드백으로 강조한다 — 나타날 때 바깥으로 퍼지는 링 두 번(제안이 바뀔 때마다 key 로 다시 재생),
@@ -98,7 +99,7 @@ export function AgentSuggestionPill() {
           className={cn(
             'relative flex min-w-0 items-center gap-2.5 rounded-full py-2 pr-10 pl-2 transition-colors',
             top.emphasis
-              ? 'bg-white/75 backdrop-blur-sm hover:bg-white/60 dark:bg-zinc-900/65 dark:hover:bg-zinc-900/50'
+              ? 'bg-white/85 backdrop-blur-sm hover:bg-white/70 dark:bg-zinc-900/80 dark:hover:bg-zinc-900/65'
               : 'border border-blue-300 bg-white/95 backdrop-blur-md hover:bg-blue-50 dark:border-blue-700 dark:bg-zinc-900/95 dark:hover:bg-blue-950/40'
           )}
         >

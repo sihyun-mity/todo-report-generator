@@ -2,7 +2,8 @@ import type { AgentTool, ConfirmOptions } from '@/types';
 
 // 채팅 대화에 쌓이는 항목. 사용자·Nano 말풍선 외에 도구 실행 단계와 실행 전 확인 카드도 같은 목록에 끼워 보여 준다.
 export type AgentChatMessage =
-  | { id: string; role: 'user'; text: string }
+  // cancelled — 사용자가 멈춘 요청. 대화 기록(모델에게 넘기는 것)에서는 빠진다
+  | { id: string; role: 'user'; text: string; cancelled?: boolean }
   | { id: string; role: 'assistant'; text: string; streaming: boolean }
   | {
       id: string;
@@ -20,6 +21,8 @@ export type AgentChatMessage =
       status: 'pending' | 'approved' | 'rejected';
     }
   | { id: string; role: 'error'; text: string }
+  // Nano가 요청을 처리하며 거친 단계(생각 과정) — 처리 중에는 펼쳐 두고, 끝나면 접는다
+  | { id: string; role: 'thinking'; steps: ReadonlyArray<AgentThinkingStep>; done: boolean }
   | { id: string; role: 'draft'; draft: AgentNotesDraft; status: 'pending' | 'applied' | 'discarded' };
 
 // 모델에게 다시 넘기는 대화 기록 — 화면 표시용 항목과 달리 도구 결과 원문까지 담는다
@@ -33,6 +36,8 @@ export type AgentChatTurn =
       result: string;
       isError: boolean;
       untrusted: boolean;
+      // 쓰기 도구가 실제로 바꾼 줄(변경 카드와 같은 내용). 있으면 결과 원문(그때의 폼 전체) 대신 이것만 모델에 넘긴다
+      changes?: ReadonlyArray<string>;
     };
 
 // 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 Nano에 넘긴다.
@@ -87,9 +92,13 @@ export type AgentChatStore = {
   setFollowUp: (count: number, id: string | null) => void;
   // Nano를 보여 주고 기다리는 후속 동작 카드로 눈을 끈다
   showFollowUp: () => void;
-  // 채팅이 요청을 처리하는 중 — 그동안 페이지 본문 조작을 막는다(AgentBusyGuard)
+  // 채팅이 요청을 처리하는 중
   isRunning: boolean;
   setRunning: (isRunning: boolean) => void;
+  // 처리 중인 요청이 작성 중인 폼을 바꿀 수 있다 — 그동안만 페이지 본문 조작을 막는다(AgentBusyGuard).
+  // 조회·요약·대화·저장·이동은 폼과 관계가 없어 잠그지 않는다
+  formLocked: boolean;
+  setFormLocked: (formLocked: boolean) => void;
   // 온디바이스 모델 가용성(null = 확인 전). 홈 입력창·제안이 AI 필요 여부를 가른다.
   availability: LanguageModelAvailability | null;
   setAvailability: (availability: LanguageModelAvailability) => void;
@@ -131,3 +140,12 @@ export type AgentNotesDraft = {
 export type AgentRecommendation = { action: 'send' | 'notes'; text: string; reason: string };
 
 export type AgentAttention = { nonce: number; target: 'panel' | 'input' | 'message'; messageId?: string };
+
+// 생각 과정의 한 단계. 같은 key 로 다시 알리면 그 단계를 고친다(진행 중 → 끝남, 생성 중인 입력 갱신)
+export type AgentThinkingStep = {
+  key: string;
+  label: string;
+  // 그 단계에서 정한 것·생성 중인 내용(한 줄)
+  detail?: string;
+  status: 'running' | 'done';
+};

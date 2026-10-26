@@ -165,7 +165,7 @@ export const ProjectList = ({
             <span className="rainbow-glow rounded-md">
               <button
                 onClick={onImportGithub}
-                className="flex cursor-pointer items-center gap-1 rounded-[5px] bg-white/60 px-[11px] py-[3px] text-sm font-semibold text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/45 dark:bg-zinc-900/50 dark:text-white dark:hover:bg-zinc-900/35"
+                className="flex cursor-pointer items-center gap-1 rounded-[5px] bg-white/80 px-[11px] py-[3px] text-sm font-semibold text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/65 dark:bg-zinc-900/75 dark:text-white dark:hover:bg-zinc-900/60"
               >
                 <Github size={16} /> GitHub에서 가져오기
               </button>

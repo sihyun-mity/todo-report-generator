@@ -85,6 +85,8 @@ export function useGlobalAgentTools() {
         name: 'navigate',
         title: '화면 이동',
         kind: 'navigate',
+        // 지금 화면을 알아야 "이미 이 화면"·"뒤로" 같은 요청을 판단한다
+        inputContext: () => ({ currentPath: window.location.pathname }),
         description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news). settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
         inputSchema: {
           type: 'object',
@@ -125,6 +127,8 @@ export function useGlobalAgentTools() {
         title: '화면 모드 바꾸기',
         kind: 'setting',
         description: 'Change the color theme: light, dark, or system (follow the device). Saved on this device.',
+        // "반대로 바꿔줘"·"원래대로" 같은 요청은 지금 모드를 알아야 채울 수 있다
+        inputContext: () => ({ currentTheme: latest.current.theme }),
         inputSchema: {
           type: 'object',
           properties: { theme: { type: 'string', enum: ['light', 'dark', 'system'], description: 'Color theme' } },
@@ -174,7 +178,13 @@ export function useGlobalAgentTools() {
         name: 'get_news',
         title: '새소식 읽기',
         kind: 'read',
-        description: 'Return the body (markdown) of one news item. id comes from list_news.',
+        description:
+          'Return the body (markdown) of one news item. id comes from list_news, or currentNewsId when the user is reading one (이 소식).',
+        // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다
+        inputContext: () => {
+          const id = /^\/whats-new\/([^/]+)$/.exec(window.location.pathname)?.[1];
+          return id && NEWS_ID_REGEX.test(id) ? { currentNewsId: id } : { currentPath: window.location.pathname };
+        },
         inputSchema: {
           type: 'object',
           properties: { id: { type: 'string', description: 'News id' } },

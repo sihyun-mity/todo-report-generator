@@ -30,8 +30,17 @@ export const AGENT_CHAT_OUTPUT_RESERVE_TOKENS = { structured: 768, answer: 1_024
 export const AGENT_CHAT_TOOL_RESULT_MAX_CHARS = 6_000;
 export const AGENT_CHAT_TOOL_RESULT_MIN_CHARS = 400;
 
+/** 다른 화면에서 보고서 요청을 받아 홈으로 옮겨 간 뒤 보고서 도구가 등록되기를 기다리는 최대 시간 */
+export const AGENT_CHAT_TOOL_WAIT_MS = 8_000;
+
 /** 모델 응답 한 번을 기다리는 최대 시간 — 넘기면 중단하고 오류로 알린다 */
 export const AGENT_CHAT_PROMPT_TIMEOUT_MS = 90_000;
+
+/** 확인 카드에 미리 보여 주는 변경 줄 수 — 넘치면 "…외 N건" */
+export const AGENT_CHANGE_PREVIEW_MAX_LINES = 12;
+
+/** 쓰기 요청 답변에 문장으로 옮기는 변경 줄 수 — 나머지는 "그 밖에 N건"으로 변경 카드에 맡긴다 */
+export const AGENT_CHAT_ANSWER_CHANGE_SENTENCES = 3;
 
 /** `list_news` 가 돌려주는 최대 소식 수 */
 export const AGENT_NEWS_LIST_LIMIT = 10;
@@ -50,6 +59,13 @@ export const AGENT_CHAT_EXAMPLES: ReadonlyArray<{ text: string; tool: string }> 
   { text: '오늘 미완료 업무를 내일 할 일로 옮겨줘', tool: 'carry_over_incomplete_tasks' },
   { text: '오늘 한 업무를 내일도 그대로 넣어줘', tool: 'copy_today_to_tomorrow' },
   { text: '익일 업무를 "배포 준비" 작업 하나로 바꿔줘', tool: 'replace_report_section' },
+  { text: '금일 업무에서 "코드 리뷰" 작업 빼줘', tool: 'remove_report_task' },
+  { text: '익일 "회귀 테스트" 작업 진행률을 50%로 바꿔줘', tool: 'set_task_progress' },
+  { text: '중복된 작업 정리해줘', tool: 'remove_duplicate_tasks' },
+  { text: '"코드 리뷰" 작업은 내일로 옮겨줘', tool: 'move_report_task' },
+  { text: '"QA" 프로젝트 이름을 "QA 자동화"로 바꿔줘', tool: 'rename_report_project' },
+  { text: '"API 연동" 작업 아래에 "토큰 갱신 처리" 세부 항목 추가해줘', tool: 'add_task_details' },
+  { text: '보고서 복사해줘', tool: 'copy_report' },
   { text: '보고서 날짜를 어제로 바꿔줘', tool: 'set_report_date' },
   { text: '지난주에 쓴 보고서를 요약해줘', tool: 'search_reports' },
   { text: '이번 달 보고서에서 "로그인" 관련 작업 찾아줘', tool: 'search_reports' },

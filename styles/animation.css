@@ -117,6 +117,7 @@
 /**
  * rainbow-glow: AI 기능 버튼(iOS·Gemini 풍)을 감싸는 무지개 빛 — 배경 전체가 무지개로 빛나고 바깥으로 번진다.
  * 감싼 요소(버튼)를 반투명 배경으로 두면 그 아래 무지개가 비친다. padding 만큼은 무지개가 그대로 드러나 테두리가 된다.
+ * 너무 쨍하다는 피드백으로 채도를 낮추고(saturate) 바깥 번짐을 옅게 했다 — 버튼 배경도 80% 안팎으로 가려 비치는 색을 줄인다.
  * 의사 요소는 isolate 로 만든 쌓임 맥락 안의 z-index:-1 이라 감싼 요소 뒤, 바깥 배경 위에 그려진다.
  */
 @property --rainbow-glow-angle {
@@ -156,16 +157,17 @@
       #ff5f6d
     );
     animation: rainbow-glow-spin 4s linear infinite;
+    filter: saturate(0.8);
   }
 
   &::after {
-    filter: blur(10px);
-    opacity: 0.6;
+    filter: blur(10px) saturate(0.8);
+    opacity: 0.35;
     transition: opacity 200ms ease;
   }
 
   &:hover::after {
-    opacity: 0.9;
+    opacity: 0.55;
   }
 
   @media (prefers-reduced-motion: reduce) {

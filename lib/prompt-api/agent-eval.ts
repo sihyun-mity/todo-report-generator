@@ -1,0 +1,363 @@
+import type { AgentChange, AgentChatTurn, AgentTool, Project } from '@/types';
+import { useReportFormStore } from '@/stores';
+import { createEmptyProject, createId } from '@/utils';
+import { runAgentChatTurn } from '.';
+
+// Nano 회귀 시나리오 — 프롬프트·도구 설명·kind 를 바꾸면 실제 모델(Chrome, available)로 다시 돌린다.
+// 개발 모드에서 `await window.__nanoEval({ runs: 3 })` (콘솔 또는 chrome-devtools-mcp 의 evaluate_script).
+// 확인 카드는 모두 승인한 것으로 보고, 시나리오가 끝나면 바꾼 것을 되돌리고 폼을 원래대로 둔다.
+// 결과가 실행마다 흔들리므로 여러 번 돌려 통과 비율을 본다.
+
+type EvalTask = { content: string; progress: number; details?: ReadonlyArray<string> };
+type EvalProject = { name: string; tasks: ReadonlyArray<EvalTask> };
+type EvalForm = { today: ReadonlyArray<EvalProject>; tomorrow: ReadonlyArray<EvalProject> };
+
+type EvalTurn = {
+  say: string;
+  // 이 중 하나 이상을 실행해야 하고, 쓰기 도구는 이 밖의 것을 실행하면 안 된다(빈 배열 = 아무 쓰기 도구도 실행하지 않음)
+  expect?: ReadonlyArray<string>;
+  // 실행하면 실패
+  forbid?: ReadonlyArray<string>;
+};
+
+export type AgentEvalScenario = {
+  name: string;
+  form?: EvalForm;
+  turns: ReadonlyArray<EvalTurn>;
+  // 마지막 폼을 검사한다 — 문제가 있으면 이유를 돌려준다
+  check?: (form: EvalForm) => string | null;
+};
+
+const MONITOR = '서비스 트래픽, 방화벽 모니터링(24시간)';
+const TOKEN = '토큰 로그인 안정성 검증';
+
+const BASE_FORM: EvalForm = {
+  today: [
+    {
+      name: '먹깨비 React 개발',
+      tasks: [
+        { content: MONITOR, progress: 100 },
+        { content: TOKEN, progress: 30, details: ['구앱 토큰 만료 확인'] },
+      ],
+    },
+  ],
+  tomorrow: [],
+};
+
+const tasksOf = (projects: ReadonlyArray<EvalProject>) => projects.flatMap((p) => p.tasks.map((t) => t.content));
+const has = (projects: ReadonlyArray<EvalProject>, content: string) => tasksOf(projects).includes(content);
+
+export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
+  { name: '인사', turns: [{ say: '안녕! 뭐 할 수 있어?', expect: [] }] },
+  {
+    // 실제로 실패했던 대화 — 중복이 생기고, 중복 삭제가 폼 초기화로 갔다
+    name: '반복 업무 복사 → 진행률 → 중복 정리',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '토큰 로그인 관련 작업 삭제해줘. 오늘 안했어',
+        expect: ['remove_report_task'],
+        forbid: ['reset_report_form'],
+      },
+      // 덧붙이기로 같은 작업을 넣어도 결과는 같다(같은 작업은 둘이 되지 않는다)
+      {
+        say: '오늘 한 작업은 매일 반복하는 작업이야. 내일 할 일에도 넣어줘.',
+        expect: ['copy_today_to_tomorrow', 'add_report_tasks'],
+      },
+      { say: '진행률도 똑같이 해줘', expect: ['set_task_progress', 'copy_today_to_tomorrow', 'add_report_tasks'] },
+      { say: '중복 작업 삭제해줘', forbid: ['reset_report_form'] },
+    ],
+    check: (form) => {
+      if (has(form.today, TOKEN)) return '토큰 작업이 남아 있다';
+      if (!has(form.today, MONITOR)) return '금일 모니터링 작업이 사라졌다';
+      const tomorrow = form.tomorrow.flatMap((p) => p.tasks).filter((t) => t.content === MONITOR);
+      if (tomorrow.length !== 1) return `익일 모니터링 작업이 ${tomorrow.length}개`;
+      if (tomorrow[0].progress !== 100) return `익일 진행률 ${tomorrow[0].progress}%`;
+      return null;
+    },
+  },
+  {
+    name: '작업 추가(금일)',
+    form: BASE_FORM,
+    turns: [{ say: '금일 업무에 "API 연동" 작업을 진행률 70%로 추가해줘', expect: ['add_report_tasks'] }],
+    check: (form) =>
+      form.today.flatMap((p) => p.tasks).some((t) => t.content.includes('API 연동') && t.progress === 70)
+        ? null
+        : 'API 연동 70% 가 없다',
+  },
+  {
+    name: '작업 추가(익일)',
+    form: BASE_FORM,
+    turns: [{ say: '내일 할 일에 "QA" 프로젝트 "회귀 테스트" 넣어줘', expect: ['add_report_tasks'] }],
+    check: (form) =>
+      form.tomorrow.some((p) => p.name === 'QA' && p.tasks.some((t) => t.content.includes('회귀 테스트')))
+        ? null
+        : '익일 QA · 회귀 테스트가 없다',
+  },
+  {
+    name: '진행률 바꾸기',
+    form: BASE_FORM,
+    turns: [{ say: '토큰 로그인 작업 진행률 80%로 바꿔줘', expect: ['set_task_progress'] }],
+    check: (form) =>
+      form.today.flatMap((p) => p.tasks).find((t) => t.content === TOKEN)?.progress === 80 ? null : '80% 가 아니다',
+  },
+  {
+    name: '작업 익일로 옮기기',
+    form: BASE_FORM,
+    turns: [{ say: '토큰 로그인 작업은 내일로 옮겨줘', expect: ['move_report_task'] }],
+    check: (form) => (has(form.tomorrow, TOKEN) && !has(form.today, TOKEN) ? null : '옮겨지지 않았다'),
+  },
+  {
+    name: '프로젝트 이름 바꾸기',
+    form: BASE_FORM,
+    turns: [{ say: '먹깨비 React 개발 프로젝트 이름을 먹깨비 웹으로 바꿔줘', expect: ['rename_report_project'] }],
+    check: (form) => (form.today.some((p) => p.name === '먹깨비 웹') ? null : '이름이 그대로다'),
+  },
+  {
+    name: '세부 항목 추가',
+    form: BASE_FORM,
+    turns: [{ say: '토큰 로그인 작업 아래에 "신앱 재현 테스트" 세부 항목 추가해줘', expect: ['add_task_details'] }],
+    check: (form) =>
+      form.today
+        .flatMap((p) => p.tasks)
+        .find((t) => t.content === TOKEN)
+        ?.details?.some((d) => d.includes('신앱 재현'))
+        ? null
+        : '세부 항목이 없다',
+  },
+  {
+    name: '작업 내용 고치기',
+    form: BASE_FORM,
+    turns: [
+      { say: '토큰 로그인 안정성 검증 작업을 "토큰 로그인 재현 테스트"로 고쳐줘', expect: ['rename_report_task'] },
+    ],
+    check: (form) =>
+      has(form.today, '토큰 로그인 재현 테스트') && !has(form.today, TOKEN) ? null : '작업 내용이 그대로다',
+  },
+  {
+    name: '세부 항목 고치기·삭제',
+    form: BASE_FORM,
+    turns: [
+      { say: '"구앱 토큰 만료 확인" 세부 항목을 "구앱 토큰 만료 재현"으로 고쳐줘', expect: ['edit_task_detail'] },
+      { say: '방금 고친 세부 항목 지워줘', expect: ['remove_task_detail'] },
+    ],
+    check: (form) =>
+      form.today.flatMap((p) => p.tasks).find((t) => t.content === TOKEN)?.details?.length === 0
+        ? has(form.today, TOKEN)
+          ? null
+          : '작업까지 지웠다'
+        : '세부 항목이 남아 있다',
+  },
+  {
+    name: '프로젝트 옮기기·삭제',
+    form: {
+      today: [...BASE_FORM.today, { name: '사내 위키', tasks: [{ content: '온보딩 문서 정리', progress: 40 }] }],
+      tomorrow: [],
+    },
+    turns: [
+      { say: '사내 위키 프로젝트는 통째로 내일로 옮겨줘', expect: ['move_report_project'] },
+      { say: '먹깨비 React 개발 프로젝트는 삭제해줘', expect: ['remove_report_project'] },
+    ],
+    check: (form) =>
+      form.tomorrow.some((p) => p.name === '사내 위키') && form.today.length === 0 ? null : '옮기거나 지우지 못했다',
+  },
+  {
+    name: '중복 정리',
+    form: {
+      today: [],
+      tomorrow: [
+        {
+          name: '먹깨비 React 개발',
+          tasks: [
+            { content: MONITOR, progress: 0 },
+            { content: MONITOR, progress: 100 },
+          ],
+        },
+      ],
+    },
+    turns: [
+      {
+        say: '중복 작업 삭제해줘. 지금 익일 업무에 두 개가 있잖아',
+        expect: ['remove_duplicate_tasks'],
+        forbid: ['reset_report_form'],
+      },
+    ],
+    check: (form) => {
+      const left = form.tomorrow.flatMap((p) => p.tasks).filter((t) => t.content === MONITOR);
+      return left.length === 1 && left[0].progress === 100 ? null : `익일 모니터링 ${left.length}개`;
+    },
+  },
+  {
+    name: '구역 교체',
+    form: BASE_FORM,
+    turns: [
+      { say: '익일 업무를 "배포 준비" 작업 하나로 바꿔줘', expect: ['replace_report_section', 'add_report_tasks'] },
+    ],
+    check: (form) => (tasksOf(form.tomorrow).some((t) => t.includes('배포 준비')) ? null : '배포 준비가 없다'),
+  },
+  {
+    name: '날짜 바꾸기',
+    form: BASE_FORM,
+    turns: [{ say: '보고서 날짜를 어제로 바꿔줘', expect: ['set_report_date'] }],
+  },
+  {
+    name: '초기화(명시)',
+    form: BASE_FORM,
+    turns: [{ say: '작성 중인 거 전부 비워줘', expect: ['reset_report_form'] }],
+    check: (form) => (tasksOf(form.today).length === 0 ? null : '비워지지 않았다'),
+  },
+  {
+    name: '할 수 없는 일',
+    form: BASE_FORM,
+    turns: [{ say: '지난주 저장된 보고서 기록 삭제해줘', expect: [], forbid: ['reset_report_form'] }],
+    check: (form) => (has(form.today, MONITOR) ? null : '폼이 바뀌었다'),
+  },
+  {
+    name: '작성 중 보고서 요약',
+    form: BASE_FORM,
+    turns: [{ say: '지금 작성 중인 보고서 요약해줘', expect: ['get_current_report'] }],
+  },
+  { name: '이번 주 기록 정리', turns: [{ say: '이번 주에 쓴 보고서 정리해줘', expect: ['search_reports'] }] },
+  { name: '화면 모드', turns: [{ say: '다크 모드로 바꿔줘', expect: ['set_theme'] }] },
+  { name: '새소식', turns: [{ say: '최근 새소식 알려줘', expect: ['list_news'] }] },
+];
+
+const toProjects = (projects: ReadonlyArray<EvalProject>): Array<Project> =>
+  projects.length === 0
+    ? [createEmptyProject()]
+    : projects.map((p) => ({
+        id: createId(),
+        name: p.name,
+        tasks: p.tasks.map((t) => ({
+          id: createId(),
+          content: t.content,
+          progress: t.progress,
+          details: (t.details ?? []).map((content) => ({ id: createId(), content })),
+        })),
+      }));
+
+const fromProjects = (projects: ReadonlyArray<Project>): Array<EvalProject> =>
+  projects
+    .filter((p) => p.name.trim() !== '' || p.tasks.some((t) => t.content.trim() !== ''))
+    .map((p) => ({
+      name: p.name,
+      tasks: p.tasks.map((t) => ({
+        content: t.content,
+        progress: t.progress,
+        details: t.details.map((d) => d.content),
+      })),
+    }));
+
+type TurnLog = { say: string; tools: Array<string>; answer: string; problem: string | null };
+export type AgentEvalResult = {
+  scenario: string;
+  run: number;
+  pass: boolean;
+  problems: Array<string>;
+  turns: Array<TurnLog>;
+};
+
+export async function runAgentEval({
+  getTools,
+  runs = 1,
+  only,
+}: Readonly<{ getTools: () => ReadonlyArray<AgentTool>; runs?: number; only?: ReadonlyArray<string> }>) {
+  const scenarios = AGENT_EVAL_SCENARIOS.filter((s) => !only || only.some((name) => s.name.includes(name)));
+  const original = useReportFormStore.getState();
+  const saved = { reportDate: original.reportDate, today: original.today, tomorrow: original.tomorrow };
+  const results: Array<AgentEvalResult> = [];
+
+  try {
+    for (const scenario of scenarios) {
+      for (let run = 1; run <= runs; run++) {
+        const store = useReportFormStore.getState();
+        if (scenario.form) {
+          store.setBucket('today', toProjects(scenario.form.today));
+          store.setBucket('tomorrow', toProjects(scenario.form.tomorrow));
+        }
+        const undos: Array<NonNullable<AgentChange['undo']>> = [];
+        const history: Array<AgentChatTurn> = [];
+        const logs: Array<TurnLog> = [];
+        try {
+          for (const turn of scenario.turns) {
+            history.push({ role: 'user', text: turn.say });
+            const tools: Array<string> = [];
+            const failed: Array<string> = [];
+            let answer = '';
+            const { turns } = await runAgentChatTurn({
+              history,
+              getTools,
+              canWriteFromNotes: false,
+              signal: new AbortController().signal,
+              context: {
+                confirm: async () => true,
+                reportChange: (change) => {
+                  if (change.undo) undos.push(change.undo);
+                },
+              },
+              onToolStart: (tool) => tools.push(tool.name),
+              // 실패한 시도(빈 구역에서 이름 바꾸기 등)는 쓰기로 세지 않는다 — 다른 도구로 다시 골라 해내면 통과다
+              onToolEnd: (tool, result) => {
+                if (result.isError) failed.push(tool.name);
+              },
+              onAnswer: (text) => {
+                answer = text;
+              },
+            });
+            history.push(...turns);
+            const all = getTools();
+            const writes = tools.filter(
+              (name) => all.find((t) => t.name === name)?.kind !== 'read' && !failed.includes(name)
+            );
+            let problem: string | null = null;
+            const forbidden = tools.filter((name) => turn.forbid?.includes(name));
+            if (forbidden.length > 0) problem = `금지 도구 실행: ${forbidden.join(', ')}`;
+            else if (turn.expect && turn.expect.length === 0 && writes.length > 0)
+              problem = `쓰기 도구를 실행하면 안 됨: ${writes.join(', ')}`;
+            else if (turn.expect && turn.expect.length > 0) {
+              if (!tools.some((name) => turn.expect!.includes(name)))
+                problem = `기대 도구 없음 (${turn.expect.join('|')}), 실행: ${tools.join(', ') || '없음'}`;
+              else if (writes.some((name) => !turn.expect!.includes(name)))
+                problem = `다른 쓰기 도구 실행: ${writes.join(', ')}`;
+            }
+            logs.push({ say: turn.say, tools, answer, problem });
+          }
+          const state = useReportFormStore.getState();
+          const formProblem =
+            scenario.check?.({ today: fromProjects(state.today), tomorrow: fromProjects(state.tomorrow) }) ?? null;
+          const problems = [
+            ...logs.flatMap((l) => (l.problem ? [l.problem] : [])),
+            ...(formProblem ? [formProblem] : []),
+          ];
+          results.push({ scenario: scenario.name, run, pass: problems.length === 0, problems, turns: logs });
+        } catch (error) {
+          results.push({
+            scenario: scenario.name,
+            run,
+            pass: false,
+            problems: [`오류: ${String(error)}`],
+            turns: logs,
+          });
+        } finally {
+          // 화면 모드 등 폼 밖의 변경도 되돌린다(늦게 바뀐 것부터)
+          for (const undo of undos.reverse()) undo();
+        }
+        console.info(
+          `[nano-eval] ${scenario.name} #${run}: ${results.at(-1)!.pass ? '통과' : results.at(-1)!.problems.join(' / ')}`
+        );
+      }
+    }
+  } finally {
+    const store = useReportFormStore.getState();
+    store.setReportDate(saved.reportDate);
+    store.setBucket('today', saved.today);
+    store.setBucket('tomorrow', saved.tomorrow);
+  }
+
+  const summary = scenarios.map((s) => {
+    const mine = results.filter((r) => r.scenario === s.name);
+    return { scenario: s.name, passed: `${mine.filter((r) => r.pass).length}/${mine.length}` };
+  });
+  console.table(summary);
+  return { summary, results };
+}

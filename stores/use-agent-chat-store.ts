@@ -44,6 +44,8 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   },
   isRunning: false,
   setRunning: (isRunning) => set({ isRunning }),
+  formLocked: false,
+  setFormLocked: (formLocked) => set({ formLocked }),
   availability: null,
   setAvailability: (availability) => set({ availability }),
   pathname: '/',

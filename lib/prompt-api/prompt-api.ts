@@ -30,13 +30,26 @@ export const downloadPromptModel = async (onDownloadProgress: (ratio: number) =>
 
 // 같은 모델로 프롬프트를 동시에 돌리면 뒤 요청이 수 분간 멈추는 현상이 있다. 세션이 달라도(커밋 분류 중 채팅 등) 겹치지 않게
 // 탭 전체에서 모델 호출을 한 줄로 세운다. 앞 호출이 실패해도 다음 호출은 돈다.
+// 커밋 분류는 호출을 하나씩 기다리며 넣어 큐에 늘 한 건만 있다 — 채팅이 끼어들면 지금 호출 하나만 기다리고 그 뒤로는 번갈아 돈다.
+// 둘 다 느려지므로 누가 모델을 쓰고 있는지(owner) 세어 두고, 채팅은 다른 작업과 나눠 쓰는 중이면 생각 과정에 알린다.
 let modelQueue: Promise<unknown> = Promise.resolve();
 
-export const withModelLock = <T>(run: () => Promise<T>): Promise<T> => {
-  const next = modelQueue.then(run, run);
+export type ModelOwner = 'chat' | 'notes' | 'commit-import';
+
+// 주인별 대기·실행 중 호출 수
+const modelHolders = new Map<ModelOwner, number>();
+
+export const withModelLock = <T>(run: () => Promise<T>, owner: ModelOwner = 'chat'): Promise<T> => {
+  modelHolders.set(owner, (modelHolders.get(owner) ?? 0) + 1);
+  const release = () => modelHolders.set(owner, (modelHolders.get(owner) ?? 1) - 1);
+  const next = modelQueue.then(run, run).finally(release);
   modelQueue = next.catch(() => undefined);
   return next;
 };
+
+// 지금 모델을 쓰고 있거나 기다리는 다른 작업 — 없으면 null
+export const otherModelOwner = (self: ModelOwner): ModelOwner | null =>
+  [...modelHolders].find(([owner, count]) => owner !== self && count > 0)?.[0] ?? null;
 
 // 스트리밍 응답을 끝까지 읽는다. 청크는 직전 청크 이후 새로 생성된 부분(delta)이라 이어 붙이고, 지금까지의 원문을 매번 넘긴다.
 export const readPromptStream = async (stream: ReadableStream<string>, onText: (text: string) => void) => {
@@ -59,7 +72,11 @@ export type JsonAsker = <T>(prompt: string, schema: object, onText?: (text: stri
 export const openPromptSession = async ({
   signal,
   timeoutMs,
-}: Readonly<{ signal?: AbortSignal; timeoutMs: number }>): Promise<{ ask: JsonAsker; close: () => void }> => {
+  owner = 'commit-import',
+}: Readonly<{ signal?: AbortSignal; timeoutMs: number; owner?: ModelOwner }>): Promise<{
+  ask: JsonAsker;
+  close: () => void;
+}> => {
   const base = await LanguageModel.create({ ...PROMPT_API_OPTIONS, signal });
 
   const ask: JsonAsker = <T>(prompt: string, schema: object, onText?: (text: string) => void) =>
@@ -79,7 +96,7 @@ export const openPromptSession = async ({
       } finally {
         session.destroy();
       }
-    });
+    }, owner);
 
   return { ask, close: () => base.destroy() };
 };

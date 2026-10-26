@@ -54,6 +54,11 @@ export function useAgentSuggestions(): {
     clock !== null &&
     allReportDates.includes(toDateKey(clock.year, parseInt(reportDate.month, 10), parseInt(reportDate.day, 10)));
   const isNight = clock !== null && (clock.hour >= 19 || clock.hour < 6);
+  // 같은 프로젝트 안에 같은 내용 작업이 둘 이상 — 덧붙이기를 여러 번 하면 생긴다
+  const duplicates = [...today, ...tomorrow].reduce((count, p) => {
+    const contents = p.tasks.map((t) => t.content.trim()).filter((c) => c !== '');
+    return count + contents.length - new Set(contents).size;
+  }, 0);
 
   const all: Array<AgentSuggestion> = [];
   if (onReport) {
@@ -76,6 +81,14 @@ export function useAgentSuggestions(): {
         title: '미완료 업무를 내일 할 일로 옮기기',
         reason: `진행 중인 작업이 ${incomplete}개 있어요`,
         action: { type: 'tool', tool: 'carry_over_incomplete_tasks', title: '미완료 업무 익일로 가져오기' },
+        needsAi: false,
+      });
+    if (has('remove_duplicate_tasks') && duplicates > 0)
+      all.push({
+        id: 'duplicates',
+        title: '중복된 작업 정리하기',
+        reason: `같은 작업이 ${duplicates}개 더 있어요 — 하나로 합쳐 드려요`,
+        action: { type: 'tool', tool: 'remove_duplicate_tasks', title: '중복 작업 정리' },
         needsAi: false,
       });
     if (has('fill_report') && !todayFilled)

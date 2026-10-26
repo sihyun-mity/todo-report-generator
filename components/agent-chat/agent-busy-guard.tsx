@@ -5,12 +5,14 @@ import { Loader2 } from 'lucide-react';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 
-// Nano가 요청을 처리하는 동안 페이지 본문을 조작하지 못하게 막는다.
+// Nano가 **작성 중인 폼을 바꾸는 요청**을 처리하는 동안만 페이지 본문을 조작하지 못하게 막는다(formLocked).
 // 도구는 실행 시점의 store 를 읽고 쓰지만, 모델이 판단에 쓴 폼 스냅샷은 몇 초 전 것이라 그사이 사용자가 고친 내용을
 // 교체 도구(구역 바꾸기·기록 불러오기 등)가 덮을 수 있다. inert 로 클릭·입력·포커스를 막고(스크롤은 된다),
 // 상단바와 채팅 패널(멈추기·확인 카드)은 이 바깥이라 그대로 쓸 수 있다.
+// 조회·요약("지난주 보고서 요약해줘")·대화·저장·이동은 폼과 관계가 없어 잠그지 않는다 — 모든 응답에 잠그던 때는 기다리는 동안
+// 보고서를 쓸 수 없었다. 잠글지는 의도 분류가 끝난 뒤 정해진다(runAgentChatTurn 의 onFormLock).
 export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) {
-  const isRunning = useAgentChatStore((s) => s.isRunning);
+  const locked = useAgentChatStore((s) => s.formLocked);
   const expanded = useAgentChatStore((s) => s.expanded);
   // 확인 카드처럼 사용자가 눌러야 진행되는 단계면, 기다리는 이유와 그 카드로 가는 길을 알린다
   // (모바일에서 시트를 닫아 두면 잠긴 이유를 모를 수 있다)
@@ -18,10 +20,10 @@ export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) 
 
   return (
     <>
-      <div inert={isRunning} aria-busy={isRunning} className={cn('transition-opacity', isRunning && 'opacity-60')}>
+      <div inert={locked} aria-busy={locked} className={cn('transition-opacity', locked && 'opacity-60')}>
         {children}
       </div>
-      {isRunning && (
+      {locked && (
         // 상단바(h-14 = 56px)에서 16px 띄운다(top-18 = 72px) — 붙어 있으면 상단바 일부처럼 보였다
         <div
           role="status"

@@ -35,7 +35,7 @@ export function AgentActionChip({ action, disabled, glow = 'full', onRun }: Read
           type="button"
           onClick={() => onRun(action.action)}
           disabled={disabled}
-          className="flex items-center gap-1.5 rounded-full bg-white/60 px-3 py-1.5 text-xs font-semibold text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/45 disabled:opacity-50 dark:bg-zinc-900/50 dark:text-white dark:hover:bg-zinc-900/35"
+          className="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/65 disabled:opacity-50 dark:bg-zinc-900/75 dark:text-white dark:hover:bg-zinc-900/60"
         >
           <ActionIcon action={action.action} id={action.id} size={13} />
           {action.label}
@@ -72,7 +72,7 @@ export function AgentSuggestionCard({ suggestion, disabled, onRun, onDismiss }: 
       className={cn(
         'flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors disabled:opacity-50',
         suggestion.emphasis
-          ? 'bg-white/70 backdrop-blur-sm hover:bg-white/55 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/45'
+          ? 'bg-white/85 backdrop-blur-sm hover:bg-white/70 dark:bg-zinc-900/80 dark:hover:bg-zinc-900/65'
           : 'border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700/70 dark:bg-zinc-900 dark:hover:bg-zinc-800'
       )}
     >

@@ -9,24 +9,43 @@ import type {
   ReportFormSnapshot,
   ReportHistoryItem,
   WebMcpJsonSchema,
+  WebMcpToolResult,
 } from '@/types';
 import { useAgentHighlightStore, useReportFormStore, useReportHistoryStore } from '@/stores';
-import { AGENT_HIGHLIGHT_DATE_ID } from '@/constants';
+import {
+  AGENT_CHANGE_PREVIEW_MAX_LINES,
+  AGENT_HIGHLIGHT_DATE_ID,
+  REPORT_FORM_ACTION_TOOLS,
+  REPORT_SCREEN_FEATURE_TOOLS,
+} from '@/constants';
 import { toolError, toolText } from '@/lib/webmcp';
 import { useAgentTools } from '.';
 import {
+  appendProjects,
   areAllAttemptedProjectsValid,
   createEmptyProject,
   createId,
+  dedupeTasks,
   diffReportForm,
   downloadReportHistory,
-  isSameReportForm,
+  euro,
+  findDetail,
+  findProject,
+  findTasks,
   generateReportText,
   hasProjectContent,
-  isProjectEmpty,
+  isSameReportForm,
   mergeIncompleteTasks,
+  moveProject,
+  moveTask,
+  orInitialProjects,
   parseReportText,
+  removeProject,
+  removeTasks,
+  renameProject,
   reportItemDateKey,
+  syncProgressFrom,
+  updateTasks,
 } from '@/utils';
 
 // 검색 결과로 돌려줄 최대 보고서 수 — 에이전트 컨텍스트를 한 번에 넘치게 하지 않을 정도.
@@ -39,9 +58,25 @@ const QUERY_STOP_WORDS_REGEX =
   /^(지난\s?주|이번\s?주|저번\s?주|지난\s?달|이번\s?달|저번\s?달|오늘|어제|최근|전체|모두|보고서|기록|업무|요약|정리)(\s*(보고서|기록|업무|요약|정리))*$/;
 
 const BUCKET_LABEL: Record<ProjectsBucket, string> = { today: '금일 업무 구역', tomorrow: '익일 업무 구역' };
+const BUCKET_SHORT: Record<ProjectsBucket, string> = { today: '금일', tomorrow: '익일' };
+
+// 채팅 답변 한 문장(AgentTool.summarize)에 넣는 값 — 모델이 준 입력이라 문자열이 아니면 비운다
+const quoted = (value: unknown) => (typeof value === 'string' ? `'${value.trim()}'` : '');
+
+// 채팅 후보로 둘 요청 표현(AgentTool.requires) — 요청에 그 대상이 없는데 비슷한 도구를 골랐다
+// ("토큰 로그인 작업 삭제해줘"에 그 아래 세부 항목을 지웠고, "이 작업 내일로 옮겨줘"에 금일 전체를 복사했다)
+const DETAIL_REQUEST = /세부|하위|소분류|아래에|밑에/;
+const INCOMPLETE_REQUEST = /미완료|진행\s*중|안\s*끝|못\s*끝|남은|덜\s*한/;
+// 옮기기는 추가 의도에도 후보로 두므로(extraKinds) 옮기라는 말이 있을 때만 — "내일 할 일에도 넣어줘"에 복사 대신 옮겼다
+const MOVE_REQUEST = /옮겨|옮기|이동|순서|보내|위로|아래로|맨\s*(앞|위|뒤|아래)|\d+\s*번째/;
+// "프로젝트"만 말하고 "작업"은 말하지 않았으면 프로젝트 단위 요청이다 — "사내 위키 프로젝트는 통째로 내일로 옮겨줘"에
+// 작업 하나만 옮겼고, "프로젝트는 삭제해줘"에 작업을 지웠다
+const PROJECT_REQUEST = /프로젝트/;
+const isProjectOnly = (request: string) => PROJECT_REQUEST.test(request) && !/작업|업무/.test(request);
+const ALL_TODAY_REQUEST = /오늘\s*(한|했던|의)?\s*(업무|작업|일)|금일\s*(업무|작업)|전부|모두|그대로|반복|매일|똑같이/;
 
 // ───────────── 에이전트에게 보여주는 형태 ─────────────
-// 내부 id 는 빼고 내용만 넘긴다. 쓰기 도구는 버킷 단위로 통째로 받으므로 id 로 항목을 가리킬 일이 없다.
+// 내부 id 는 빼고 내용만 넘긴다. 쓰기 도구는 항목을 이름으로 가리키므로 id 로 항목을 가리킬 일이 없다.
 
 type AgentTask = { content: string; progress: number; details: Array<string> };
 type AgentProject = { name: string; tasks: Array<AgentTask> };
@@ -81,10 +116,19 @@ const currentFormSnapshot = () => {
   };
 };
 
-// 채팅이 쓰기 도구의 입력을 만들 때 보는 지금 폼(AgentTool.inputContext) — 완성 텍스트 등은 빼 토큰을 아낀다
+// 채팅이 쓰기 도구의 입력을 만들 때 보는 지금 폼(AgentTool.inputContext) — 완성 텍스트 등은 빼 토큰을 아낀다.
+// 중복 작업이 있으면 따로 짚어 준다 — 작은 모델은 목록에서 같은 줄 둘을 잘 알아보지 못한다.
 const currentFormState = () => {
   const { month, day, today, tomorrow } = currentFormSnapshot();
-  return { report: { month, day, today, tomorrow } };
+  const duplicates = (['today', 'tomorrow'] as const).flatMap((section) =>
+    useReportFormStore.getState()[section].flatMap((p) =>
+      p.tasks
+        .map((t) => t.content.trim())
+        .filter((c, i, all) => c !== '' && all.indexOf(c) !== i)
+        .map((task) => ({ section, project: p.name, task }))
+    )
+  );
+  return { report: { month, day, today, tomorrow }, ...(duplicates.length > 0 ? { duplicates } : {}) };
 };
 
 // ───────────── 입력 검증 ─────────────
@@ -111,8 +155,7 @@ const parseProjectsInput = (value: unknown, field: string): Array<Project> | str
       if (typeof task.content !== 'string' || task.content.trim() === '')
         return `${tat}.content 는 비어 있지 않은 문자열이어야 합니다.`;
       const progress = task.progress ?? 0;
-      if (typeof progress !== 'number' || !Number.isInteger(progress) || progress < 0 || progress > 100)
-        return `${tat}.progress 는 0~100 정수여야 합니다.`;
+      if (!isProgress(progress)) return `${tat}.progress 는 0~100 정수여야 합니다.`;
       const details = task.details ?? [];
       if (!Array.isArray(details) || details.some((d) => typeof d !== 'string'))
         return `${tat}.details 는 문자열 배열이어야 합니다.`;
@@ -120,16 +163,22 @@ const parseProjectsInput = (value: unknown, field: string): Array<Project> | str
         id: createId(),
         content: task.content.trim(),
         progress,
-        details: (details as Array<string>)
-          .map((d) => d.trim())
-          .filter((d) => d !== '')
-          .map((content) => ({ id: createId(), content })),
+        details: toDetails(details as Array<string>),
       });
     }
     projects.push({ id: createId(), name: raw.name.trim(), tasks });
   }
   return projects;
 };
+
+const isProgress = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100;
+
+const toDetails = (lines: ReadonlyArray<string>) =>
+  lines
+    .map((d) => d.trim())
+    .filter((d) => d !== '')
+    .map((content) => ({ id: createId(), content }));
 
 const parseDateKeyInput = (value: unknown, field: string): string | { error: string } => {
   if (typeof value !== 'string' || !DATE_KEY_REGEX.test(value))
@@ -147,6 +196,22 @@ const parseMonthDayInput = (input: Record<string, unknown>): ReportDate | string
   return { month: String(month), day: String(day) };
 };
 
+const parseSectionInput = (value: unknown): ProjectsBucket | null =>
+  value === 'today' || value === 'tomorrow' ? value : null;
+
+const parseTextInput = (value: unknown, field: string): string | { error: string } =>
+  typeof value === 'string' && value.trim() !== ''
+    ? value.trim()
+    : { error: `${field} 는 비어 있지 않은 문자열이어야 합니다.` };
+
+// position 은 1부터 센다. 없으면 맨 뒤.
+const parsePositionInput = (value: unknown): number | undefined | { error: string } => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
+    return { error: 'position 은 1 이상의 정수여야 합니다.' };
+  return value;
+};
+
 // 저장된 보고서 한 건을 찾는다. 로그인 사용자는 월 단위로 lazy 적재하므로 해당 월을 먼저 불러온다 (게스트는 no-op).
 const findSavedReport = async (date: string): Promise<ReportHistoryItem | string> => {
   const store = useReportHistoryStore.getState();
@@ -156,18 +221,135 @@ const findSavedReport = async (date: string): Promise<ReportHistoryItem | string
   return item ?? `${date} 보고서를 불러오지 못했습니다.`;
 };
 
-// 구역을 통째로 바꿀 때 지금 적힌 내용이 사라지면 확인을 받는다. 지울 내용이 없으면 묻지 않는다.
-const confirmReplace = async (buckets: ReadonlyArray<ProjectsBucket>, confirm: AgentToolContext['confirm']) => {
-  const current = useReportFormStore.getState();
-  const dropped = buckets.filter((bucket) => current[bucket].some(hasProjectContent));
-  if (dropped.length === 0) return true;
-  return confirm({
-    title: '작성 중인 내용 교체',
-    description: `에이전트가 ${dropped.map((bucket) => BUCKET_LABEL[bucket]).join('·')}을 새 내용으로 교체하려고 합니다.\n지금 적혀 있는 프로젝트·작업은 사라집니다.`,
-    confirmText: '교체',
-    variant: 'danger',
-  });
+// 한 작업을 가리키는 입력(section · task · project?)을 풀어 찾는다
+const resolveTaskInput = (input: Record<string, unknown>) => {
+  const section = parseSectionInput(input.section);
+  if (!section) return '"section" 은 "today" 또는 "tomorrow" 여야 합니다.';
+  const task = parseTextInput(input.task, 'task');
+  if (typeof task !== 'string') return task.error;
+  const store = useReportFormStore.getState();
+  const projects = store[section];
+  const refs = findTasks(projects, input.project, task);
+  if (typeof refs !== 'string') return { section, projects, refs };
+  // 그 구역에 없고 다른 구역에만 있으면 그쪽 작업이다 — "이 작업 내일로 옮겨줘"에 지금 구역 대신 옮길 구역(tomorrow)을 넣었다
+  const other: ProjectsBucket = section === 'today' ? 'tomorrow' : 'today';
+  const otherRefs = findTasks(store[other], input.project, task);
+  if (typeof otherRefs !== 'string') return { section: other, projects: store[other], refs: otherRefs };
+  // 빈 구역을 고치려 했다면 새로 넣는 요청이다 — "익일 업무를 '배포 준비' 하나로 바꿔줘"에 빈 익일에서 작업 이름 바꾸기를 골랐다
+  if (!projects.some(hasProjectContent))
+    return `${BUCKET_LABEL[section]}이 비어 있어 고칠 작업이 없습니다. 이 구역에 새로 넣으려면 replace_report_section 이나 add_report_tasks 를 쓰세요.`;
+  return refs;
 };
+
+// ───────────── 폼 변경 ─────────────
+
+const formSnapshot = (): ReportFormSnapshot => {
+  const { reportDate, today, tomorrow } = useReportFormStore.getState();
+  return { reportDate, today, tomorrow };
+};
+
+type FormPatch = Partial<ReportFormSnapshot>;
+
+type ChangeConfirm = {
+  // removal — 지금 적힌 항목이 사라질 때만 묻는다 · always — 늘 묻는다
+  when: 'removal' | 'always';
+  title: string;
+  intro: string;
+  confirmText: string;
+  danger?: boolean;
+};
+
+type ApplyResult =
+  | { status: 'applied'; lines: ReadonlyArray<string> }
+  | { status: 'unchanged' | 'cancelled' | 'stale' };
+
+const previewLines = (lines: ReadonlyArray<string>) =>
+  [
+    ...lines.slice(0, AGENT_CHANGE_PREVIEW_MAX_LINES),
+    ...(lines.length > AGENT_CHANGE_PREVIEW_MAX_LINES
+      ? [`…외 ${lines.length - AGENT_CHANGE_PREVIEW_MAX_LINES}건`]
+      : []),
+  ].join('\n');
+
+// 모든 폼 변경이 지나는 한 경로 — 바꾼 결과를 먼저 만들어 실제 변경 줄을 계산하고, 필요하면 **그 줄을 보여 주며** 확인을 받은 뒤
+// 적용한다. 확인 카드가 "내용이 모두 초기화됩니다" 같은 고정 문구뿐이라, 중복 삭제 요청에 폼 전체가 지워지는 걸 보고도 승인했다.
+// 적용하면 바뀐 칸을 강조하고(WebMCP 로 불러도) 채팅에는 변경 카드용 줄과 되돌리기를 넘긴다.
+// 되돌리기는 바꾼 뒤 그대로일 때만 한다(그사이 사용자가 고쳤으면 덮어쓰지 않는다).
+const applyFormChange = async (
+  context: AgentToolContext,
+  patch: FormPatch,
+  {
+    confirm,
+    success,
+    moved,
+  }: Readonly<{
+    confirm?: ChangeConfirm;
+    success: string;
+    // 순서만 바꾼 항목의 id — 순서 비교만으로는 맞바꾼 둘 중 어느 쪽을 옮겼는지 알 수 없어 옮긴 도구가 알려 준다
+    moved?: string;
+  }>
+): Promise<ApplyResult> => {
+  const before = formSnapshot();
+  const after: ReportFormSnapshot = { ...before, ...patch };
+  const diff = diffReportForm(before, after);
+  const { lines, dateChanged } = diff;
+  const orderOnly = lines.length > 0 && lines.every((line) => line.startsWith('↕'));
+  const changedIds = orderOnly && moved ? [moved] : diff.changedIds;
+  if (lines.length === 0) return { status: 'unchanged' };
+
+  if (confirm && (confirm.when === 'always' || lines.some((line) => line.startsWith('－')))) {
+    const ok = await context.confirm({
+      title: confirm.title,
+      description: `${confirm.intro}\n\n${previewLines(lines)}`,
+      confirmText: confirm.confirmText,
+      variant: confirm.danger ? 'danger' : 'default',
+    });
+    if (!ok) return { status: 'cancelled' };
+    // 확인을 기다리는 사이 폼이 바뀌었으면(WebMCP 로 부르면 본문이 잠기지 않는다) 계산해 둔 결과로 덮어쓰지 않는다
+    if (!isSameReportForm(formSnapshot(), before)) return { status: 'stale' };
+  }
+
+  const store = useReportFormStore.getState();
+  if (patch.reportDate) store.setReportDate(patch.reportDate);
+  if (patch.today) store.setBucket('today', [...patch.today]);
+  if (patch.tomorrow) store.setBucket('tomorrow', [...patch.tomorrow]);
+
+  const { flash } = useAgentHighlightStore.getState();
+  flash([...changedIds, ...(dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
+  const applied = formSnapshot();
+  context.reportChange?.({
+    lines,
+    undo: () => {
+      if (!isSameReportForm(formSnapshot(), applied)) return false;
+      const current = useReportFormStore.getState();
+      current.setReportDate(before.reportDate);
+      current.setBucket('today', [...before.today]);
+      current.setBucket('tomorrow', [...before.tomorrow]);
+      const restored = diffReportForm(applied, before);
+      const restoredIds = orderOnly && moved ? [moved] : restored.changedIds;
+      flash([...restoredIds, ...(restored.dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
+      return true;
+    },
+  });
+  toast.success(success);
+  return { status: 'applied', lines };
+};
+
+// 변경 결과를 도구 결과로. 바뀐 줄(changes)을 함께 돌려줘 채팅·외부 에이전트가 실제로 바뀐 것을 알 수 있게 한다.
+const changeResult = (result: ApplyResult, unchanged: string): WebMcpToolResult => {
+  switch (result.status) {
+    case 'applied':
+      return toolText({ changed: true, changes: result.lines, ...currentFormSnapshot() });
+    case 'unchanged':
+      return toolText({ changed: false, message: unchanged });
+    case 'cancelled':
+      return toolError('사용자가 취소했습니다.');
+    case 'stale':
+      return toolError('확인하는 사이 폼 내용이 바뀌어 적용하지 않았습니다. 지금 상태를 보고 다시 시도하세요.');
+  }
+};
+
+// ───────────── 스키마 ─────────────
 
 const SECTION_SCHEMA: WebMcpJsonSchema = {
   type: 'string',
@@ -176,62 +358,16 @@ const SECTION_SCHEMA: WebMcpJsonSchema = {
     'today = 금일 업무 진행 현황 (work done today), tomorrow = 익일 업무 진행 예정 (work planned for tomorrow)',
 };
 
-const parseSectionInput = (value: unknown): ProjectsBucket | null =>
-  value === 'today' || value === 'tomorrow' ? value : null;
-
-const formSnapshot = (): ReportFormSnapshot => {
-  const { reportDate, today, tomorrow } = useReportFormStore.getState();
-  return { reportDate, today, tomorrow };
+const TASK_SCHEMA: WebMcpJsonSchema = { type: 'string', description: 'Task text exactly as in the current state' };
+const PROJECT_REF_SCHEMA: WebMcpJsonSchema = {
+  type: 'string',
+  description: 'Project name exactly as in the current state, if known',
 };
-
-// 폼을 바꾸기 직전에 부르고, 바꾼 뒤 돌려받은 함수를 부른다 — 바뀐 칸을 강조하고(WebMCP 로 불러도) 채팅에는 변경 카드용
-// 줄과 되돌리기를 넘긴다. 되돌리기는 바꾼 뒤 그대로일 때만 한다(그사이 사용자가 고쳤으면 덮어쓰지 않는다).
-const beginFormChange = (context: AgentToolContext) => {
-  const before = formSnapshot();
-  return () => {
-    const after = formSnapshot();
-    const { lines, changedIds, dateChanged } = diffReportForm(before, after);
-    const { flash } = useAgentHighlightStore.getState();
-    flash([...changedIds, ...(dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
-    if (lines.length === 0) return;
-    context.reportChange?.({
-      lines,
-      undo: () => {
-        if (!isSameReportForm(formSnapshot(), after)) return false;
-        const store = useReportFormStore.getState();
-        store.setReportDate(before.reportDate);
-        store.setBucket('today', [...before.today]);
-        store.setBucket('tomorrow', [...before.tomorrow]);
-        const restored = diffReportForm(after, before);
-        flash([...restored.changedIds, ...(restored.dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
-        return true;
-      },
-    });
-  };
+const POSITION_SCHEMA: WebMcpJsonSchema = {
+  type: 'integer',
+  minimum: 1,
+  description: 'Position counted from 1 (1 = first). Omit to put it last',
 };
-
-const formHasContent = () => {
-  const { today, tomorrow } = useReportFormStore.getState();
-  return today.some(hasProjectContent) || tomorrow.some(hasProjectContent);
-};
-
-// 빈 배열로 교체하면 폼에 입력칸이 하나도 없는 상태가 되므로 초기값(빈 프로젝트 1개)으로 둔다.
-const orInitial = (projects: Array<Project>) => (projects.length > 0 ? projects : [createEmptyProject()]);
-
-// append 모드: 같은 이름의 프로젝트에는 작업만 덧붙이고, 나머지는 뒤에 추가한다.
-// 버킷이 초기값(빈 프로젝트만 있음)이면 그대로 교체한다.
-const appendProjects = (prev: ReadonlyArray<Project>, next: ReadonlyArray<Project>): Array<Project> => {
-  if (prev.every(isProjectEmpty)) return orInitial([...next]);
-  const merged = [...prev];
-  for (const project of next) {
-    const index = merged.findIndex((p) => p.name.trim() === project.name);
-    if (index > -1) merged[index] = { ...merged[index], tasks: [...merged[index].tasks, ...project.tasks] };
-    else merged.push(project);
-  }
-  return merged;
-};
-
-// ───────────── 스키마 ─────────────
 
 const PROJECTS_SCHEMA: WebMcpJsonSchema = {
   type: 'array',
@@ -268,33 +404,54 @@ const DATE_KEY_SCHEMA: WebMcpJsonSchema = {
   description: 'Report date (YYYY-MM-DD)',
 };
 
+// 개발 모드에서 대응표(REPORT_FORM_ACTION_TOOLS·REPORT_SCREEN_FEATURE_TOOLS)가 가리키는 도구가 실제로 있는지 확인한다 —
+// 표는 타입으로 빠짐없이 채우게 강제하지만, 도구 이름 오타·삭제는 실행해 봐야 안다.
+const checkToolCoverage = (tools: ReadonlyArray<AgentTool>) => {
+  const names = new Set(tools.map((t) => t.name));
+  const missing = [...Object.values(REPORT_FORM_ACTION_TOOLS), ...Object.values(REPORT_SCREEN_FEATURE_TOOLS)]
+    .flatMap((entry) => ('tools' in entry ? entry.tools : []))
+    .filter((name) => !names.has(name));
+  if (missing.length > 0) console.error('[agent-tools] 대응표에 있지만 등록되지 않은 도구:', [...new Set(missing)]);
+};
+
 type Options = {
   // 폼이 기록 hydration 까지 끝나 편집 가능한 상태일 때만 도구를 노출한다.
   // 그 전에 채우면 hydration(오늘 기록 복원 / 익일 carry-over)이 에이전트 입력을 덮어쓴다.
   enabled: boolean;
-  // save_report 로 기록에 저장된 직후 — 이탈 경고 baseline 갱신, 캘린더 이동 등 폼 쪽 후처리.
+  // save_report 로 기록에 저장된 직후 — 이탈 경고 baseline 갱신, 캘린더 이동, 커밋 보정 메모리 학습 등 폼 쪽 후처리.
   onSaved: (date: ReportDate) => void;
   // load_report / reset_report_form 으로 폼을 통째로 바꾼 직후 — 이탈 경고 baseline 갱신
   onReplaced: () => void;
   // GitHub 커밋 가져오기 다이얼로그 열기 (조회 범위 계산은 폼이 한다)
   onOpenGithubImport: () => void;
+  // "복사하기" 버튼과 같은 동작(클립보드 복사 + 기록 저장). 성공하면 true
+  onCopy: () => Promise<boolean>;
 };
 
 // 보고서 작성 화면의 기능을 에이전트 도구로 노출한다 (WebMCP + 앱 안 채팅, `useAgentTools`).
 // 도구는 DOM 을 거치지 않고 store 액션을 직접 호출하므로, 에이전트의 변경도 사용자 입력과 똑같이 화면에 반영된다.
-export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithubImport }: Readonly<Options>) => {
+// 화면에서 할 수 있는 일은 모두 도구가 있거나, 대응표(constants/agent-tool-coverage.constants.ts)에 빼는 이유가 있어야 한다.
+export const useReportAgentTools = ({
+  enabled,
+  onSaved,
+  onReplaced,
+  onOpenGithubImport,
+  onCopy,
+}: Readonly<Options>) => {
   // 도구는 등록 시점에 한 번 만들어지므로, 실행 시점의 최신 콜백을 ref 로 읽는다
-  const callbacks = useRef({ onSaved, onReplaced, onOpenGithubImport });
+  const callbacks = useRef({ onSaved, onReplaced, onOpenGithubImport, onCopy });
   useEffect(() => {
-    callbacks.current = { onSaved, onReplaced, onOpenGithubImport };
+    callbacks.current = { onSaved, onReplaced, onOpenGithubImport, onCopy };
   });
 
-  useAgentTools(
-    (): Array<AgentTool> => [
+  useAgentTools((): Array<AgentTool> => {
+    const tools: Array<AgentTool> = [
+      // ───────────── 조회 ─────────────
       {
         name: 'get_current_report',
         title: '작성 중인 보고서 확인',
         kind: 'read',
+        stateReader: true,
         description:
           'Return the daily report form currently being written: report date (month/day), today, tomorrow, whether it can be saved (canSave) and the finished report text (text). Call it to check the current state before editing.',
         inputSchema: { type: 'object', properties: {} },
@@ -390,72 +547,14 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           });
         },
       },
-      {
-        name: 'fill_report',
-        title: '보고서 폼 채우기',
-        kind: 'replace',
-        // 여러 구역·날짜·모드를 한 번에 받는 도구라 Gemini Nano 가 구역을 헷갈리고 필드를 지어냈다 — 채팅은 아래 단순한 도구를 쓴다
-        surfaces: ['webmcp'],
-        description:
-          'Put projects and tasks into the report form. Give only the sections to change — today (금일 업무 진행 현황) and/or tomorrow (익일 업무 진행 예정); omit the others (empty arrays are ignored). mode="append" (default) adds tasks to the project with the same name and appends new projects — always use append for add requests. "replace" replaces the section entirely and asks the user to confirm if existing content would be lost. To edit existing content, modify the get_current_report result and put it back with replace. Only changes the form; saving is save_report.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            month: { type: 'integer', minimum: 1, maximum: 12, description: 'Report month. Give together with day' },
-            day: { type: 'integer', minimum: 1, maximum: 31, description: 'Report day. Give together with month' },
-            today: { ...PROJECTS_SCHEMA, description: 'Projects for today (금일 업무 진행 현황)' },
-            tomorrow: { ...PROJECTS_SCHEMA, description: 'Projects for tomorrow (익일 업무 진행 예정)' },
-            mode: { type: 'string', enum: ['append', 'replace'], description: 'Defaults to append' },
-          },
-        },
-        execute: async (input, context) => {
-          // 작은 모델은 스키마의 모든 필드를 채우는 경향이 있어(추가 요청에 replace·빈 구역까지), 기본값을 덧붙이기로 두고
-          // 빈 배열은 "바꾸지 않음"으로 본다. 기존 내용을 지우는 교체는 확인을 받는다.
-          const mode = input.mode ?? 'append';
-          if (mode !== 'replace' && mode !== 'append') return toolError('mode 는 "append" 또는 "replace" 여야 합니다.');
 
-          const hasDate = input.month !== undefined || input.day !== undefined;
-          const date = hasDate ? parseMonthDayInput(input) : null;
-          if (typeof date === 'string') return toolError(date);
-
-          const updates: Array<[ProjectsBucket, Array<Project>]> = [];
-          for (const bucket of ['today', 'tomorrow'] as const) {
-            const value = input[bucket];
-            if (value === undefined || (Array.isArray(value) && value.length === 0)) continue;
-            const parsed = parseProjectsInput(value, bucket);
-            if (typeof parsed === 'string') return toolError(parsed);
-            updates.push([bucket, parsed]);
-          }
-          if (!date && updates.length === 0) return toolError('month/day, today, tomorrow 중 하나 이상을 주세요.');
-
-          if (
-            mode === 'replace' &&
-            !(await confirmReplace(
-              updates.map(([bucket]) => bucket),
-              context.confirm
-            ))
-          )
-            return toolError('사용자가 교체를 취소했습니다. 덧붙이려면 mode="append" 로 다시 부르세요.');
-
-          const finish = beginFormChange(context);
-          const store = useReportFormStore.getState();
-          if (date) store.setReportDate(date);
-          for (const [bucket, projects] of updates) {
-            store.setBucket(bucket, (prev) =>
-              mode === 'append' ? appendProjects(prev, projects) : orInitial(projects)
-            );
-          }
-          finish();
-          toast.success('에이전트가 보고서 폼을 채웠습니다.');
-          return toolText(currentFormSnapshot());
-        },
-      },
+      // ───────────── 추가 ─────────────
       {
         name: 'add_report_tasks',
         title: '보고서에 작업 추가',
         kind: 'add',
         description:
-          'Append one project and its tasks to one section of the report form. If a project with the same name exists, the tasks are added under it; otherwise a new project is created. Existing content is kept.',
+          "Append one project and its tasks to one section of the report form. If a project with the same name exists, the tasks are added under it; otherwise a new project is created. A task with the same text that already exists is not added twice — its progress is updated instead. Existing content is kept. To bring today's tasks over to tomorrow, use copy_today_to_tomorrow or carry_over_incomplete_tasks instead.",
         inputContext: currentFormState,
         inputSchema: {
           type: 'object',
@@ -489,19 +588,669 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           const parsed = parseProjectsInput([{ name: input.project, tasks: input.tasks }], 'input');
           if (typeof parsed === 'string')
             return toolError(parsed.replace('input[0].name', 'project').replace('input[0].', ''));
-          const finish = beginFormChange(context);
-          useReportFormStore.getState().setBucket(section, (prev) => appendProjects(prev, parsed));
-          finish();
-          toast.success(`에이전트가 ${BUCKET_LABEL[section]}에 작업을 추가했습니다.`);
-          return toolText(currentFormSnapshot());
+          // 이 구역의 다른 프로젝트에 이미 있는 작업은 넣지 않는다 — "API 연동 추가해줘"에 지금 폼의 작업을 베껴 넣었다
+          const current = useReportFormStore.getState()[section];
+          const elsewhere = new Set(
+            current.filter((p) => p.name.trim() !== parsed[0].name).flatMap((p) => p.tasks.map((t) => t.content.trim()))
+          );
+          // 채팅이면 사용자가 말했거나 지금 폼에 있는 작업만 넣는다 — 대화 앞부분에서 지운 작업을 다시 가져와 넣었다
+          const store = useReportFormStore.getState();
+          const inForm = new Set(
+            [...store.today, ...store.tomorrow].flatMap((p) => p.tasks.map((t) => t.content.trim()))
+          );
+          const mentioned = (content: string) => {
+            if (!context.request) return true;
+            const request = context.request.replace(/\s+/g, '');
+            const words = content.split(/\s+/).filter((w) => w.length > 1);
+            return (
+              request.includes(content.replace(/\s+/g, '')) ||
+              words.filter((w) => request.includes(w)).length * 2 >= words.length
+            );
+          };
+          const invented = parsed[0].tasks.filter((t) => !inForm.has(t.content) && !mentioned(t.content));
+          if (invented.length > 0)
+            return toolError(
+              `요청에도 지금 폼에도 없는 작업입니다: ${invented.map((t) => t.content).join(', ')}. 사용자가 이번에 말한 작업이나 지금 폼에 있는 작업만 넣으세요. 금일 작업을 익일로 옮기려면 copy_today_to_tomorrow 를 쓰세요.`
+            );
+          const fresh = parsed[0].tasks.filter((t) => !elsewhere.has(t.content));
+          if (fresh.length === 0)
+            return toolError(
+              '이미 이 구역의 다른 프로젝트에 있는 작업만 들어 있습니다. 사용자가 말한 새 작업만 넣어 다시 부르세요.'
+            );
+          const projects = appendProjects(current, [{ ...parsed[0], tasks: fresh }]);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [section]: projects },
+              { success: `에이전트가 ${BUCKET_LABEL[section]}에 작업을 추가했습니다.` }
+            ),
+            '이미 같은 작업이 같은 진행률로 있습니다.'
+          );
+        },
+      },
+      {
+        name: 'add_task_details',
+        title: '세부 항목 추가',
+        kind: 'add',
+        requires: (request) => DETAIL_REQUEST.test(request),
+        description:
+          'Add detail lines (세부 항목, no progress) under an existing task (세부 항목 추가, 아래에 적어줘). Lines already there are skipped.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            details: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Detail lines to add' },
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'details'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          if (!Array.isArray(input.details) || input.details.some((d) => typeof d !== 'string'))
+            return toolError('details 는 문자열 배열이어야 합니다.');
+          const lines = toDetails(input.details as Array<string>);
+          const projects = updateTasks(target.projects, target.refs, (t) => ({
+            ...t,
+            details: [...t.details, ...lines.filter((d) => !t.details.some((td) => td.content.trim() === d.content))],
+          }));
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: projects },
+              { success: '에이전트가 세부 항목을 추가했습니다.' }
+            ),
+            '이미 같은 세부 항목이 있습니다.'
+          );
+        },
+      },
+      {
+        name: 'carry_over_incomplete_tasks',
+        title: '미완료 업무 익일로 가져오기',
+        kind: 'add',
+        requires: (request) => INCOMPLETE_REQUEST.test(request),
+        description:
+          "Copy only today's unfinished tasks (under 100% progress) to tomorrow. Tasks are added under projects with the same name; tasks already there are skipped. To repeat today's work tomorrow regardless of progress, use copy_today_to_tomorrow.",
+        inputSchema: { type: 'object', properties: {} },
+        execute: async (_input, context) => {
+          const { today, tomorrow } = useReportFormStore.getState();
+          const merged = mergeIncompleteTasks(today, tomorrow);
+          if (!merged)
+            return toolText({
+              changed: false,
+              message:
+                '가져올 새로운 미완료 작업이 없습니다. 완료한 작업까지 옮기려면 "오늘 업무를 내일에도 그대로 넣어줘"라고 해 주세요.',
+            });
+          return changeResult(
+            await applyFormChange(
+              context,
+              { tomorrow: merged },
+              { success: '에이전트가 미완료 업무를 익일로 가져왔습니다.' }
+            ),
+            '가져올 새로운 미완료 작업이 없습니다.'
+          );
+        },
+      },
+      {
+        // 반복 업무(예: 24시간 모니터링)는 오늘 100% 여도 내일 또 한다 — 이 도구가 없을 때 Nano 가 add_report_tasks 로
+        // 프로젝트명·작업명을 지어내(요청 문장을 작업명으로) 넣었다
+        name: 'copy_today_to_tomorrow',
+        title: '금일 업무 익일로 복사',
+        kind: 'add',
+        requires: (request) => ALL_TODAY_REQUEST.test(request),
+        // "진행률도 똑같이 해줘"(복사 뒤 후속)는 수정으로 분류된다 — 금일 진행률을 그대로 맞추는 이 도구가 정답이다
+        extraKinds: ['edit'],
+        description:
+          "Copy all of today's tasks, including completed ones, to tomorrow — for work the user will do again tomorrow (오늘 한 업무 내일도 그대로, 반복 업무). keep_progress=true keeps today's progress (진행률도 그대로, 똑같이) and also sets tasks already copied to tomorrow to today's progress; otherwise completed tasks start at 0% tomorrow. Tasks already in tomorrow are not added twice.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            keep_progress: {
+              type: 'boolean',
+              description: "true only if the user asked to keep today's progress as it is",
+            },
+          },
+        },
+        execute: async (input, context) => {
+          const { today, tomorrow } = useReportFormStore.getState();
+          const keepProgress = input.keep_progress === true;
+          const copied = mergeIncompleteTasks(today, tomorrow, { includeCompleted: true, keepProgress });
+          // 진행률을 그대로 두라면 이미 익일에 있는 같은 작업의 진행률도 금일에 맞춘다 — 복사한 뒤 "진행률도 똑같이 해줘"
+          const merged = keepProgress ? (syncProgressFrom(today, copied ?? tomorrow) ?? copied) : copied;
+          if (!merged)
+            return toolText({ changed: false, message: '익일로 옮길 금일 작업이 없습니다(이미 모두 들어 있어요).' });
+          const result = await applyFormChange(
+            context,
+            { tomorrow: merged },
+            { success: '에이전트가 금일 업무를 익일로 복사했습니다.' }
+          );
+          if (result.status !== 'applied' || input.keep_progress === true) return changeResult(result, '');
+          // 진행률을 0 으로 시작한 줄 모르고 "그대로 복사했다"고 답하지 않게 알린다
+          return toolText({
+            changed: true,
+            changes: result.lines,
+            note: '완료(100%)한 작업은 익일 예정이라 진행률 0%로 넣었습니다. 진행률을 바꾸려면 set_task_progress 로 바꿀 수 있습니다.',
+            ...currentFormSnapshot(),
+          });
+        },
+      },
+
+      // ───────────── 작은 수정 (edit) ─────────────
+      // 작업·프로젝트·세부 항목 하나를 이름으로 가리켜 고친다. 없을 때 Nano 는 구역을 통째로 다시 쓰거나(replace_report_section)
+      // 비슷한 도구로 대신했다 — "진행률도 똑같이"에 같은 작업을 하나 더 넣고, "중복 삭제"에 폼 전체를 초기화했다.
+      // 사용자가 콕 집은 대상만 바꾸고 변경 카드에서 되돌릴 수 있어 확인을 받지 않는다.
+      {
+        name: 'set_report_date',
+        title: '보고서 날짜 바꾸기',
+        kind: 'edit',
+        description:
+          'Change only the report date (month/day) of the form; content stays. The year is the current year.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            month: { type: 'integer', minimum: 1, maximum: 12, description: 'Report month' },
+            day: { type: 'integer', minimum: 1, maximum: 31, description: 'Report day' },
+          },
+          required: ['month', 'day'],
+        },
+        execute: async (input, context) => {
+          const date = parseMonthDayInput(input);
+          if (typeof date === 'string') return toolError(date);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { reportDate: date },
+              { success: `보고서 날짜를 ${date.month}월 ${date.day}일로 바꿨습니다.` }
+            ),
+            `이미 ${date.month}월 ${date.day}일입니다.`
+          );
+        },
+      },
+      {
+        name: 'set_task_progress',
+        title: '작업 진행률 바꾸기',
+        kind: 'edit',
+        description:
+          "Change the progress (%) of an existing task (진행률 바꿔줘, 100%로 해줘, 다 했어). Only that task's progress changes; nothing is added.",
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            progress: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+              description:
+                'New progress (%). For "the same as today/똑같이", use the progress of the same task in the other section of the current state',
+            },
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'progress'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          const { progress } = input;
+          if (!isProgress(progress)) return toolError('progress 는 0~100 정수여야 합니다.');
+          const projects = updateTasks(target.projects, target.refs, (t) => ({ ...t, progress }));
+          // 같은 작업이 다른 구역에 다른 진행률로 있으면 알려 준다 — "진행률도 똑같이"에 익일 대신 금일 작업을 골랐다
+          const other = target.section === 'today' ? 'tomorrow' : 'today';
+          const elsewhere = findTasks(useReportFormStore.getState()[other], input.project, input.task as string);
+          const hint =
+            typeof elsewhere !== 'string' &&
+            elsewhere.some(
+              (r) => useReportFormStore.getState()[other][r.projectIndex].tasks[r.taskIndex].progress !== progress
+            )
+              ? ` ${BUCKET_LABEL[other]}의 같은 작업을 바꾸려면 section 을 "${other}" 로 다시 부르세요.`
+              : '';
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: projects },
+              { success: '에이전트가 작업 진행률을 바꿨습니다.' }
+            ),
+            `${BUCKET_LABEL[target.section]}의 이 작업은 이미 진행률이 ${progress}% 입니다.${hint}`
+          );
+        },
+      },
+      {
+        name: 'rename_report_task',
+        title: '작업 내용 고치기',
+        kind: 'edit',
+        description: 'Change the text of an existing task (작업 이름·내용 바꿔줘, 고쳐줘). Progress and details stay.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            new_text: { type: 'string', description: "New task text (keep the user's wording)" },
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'new_text'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          const text = parseTextInput(input.new_text, 'new_text');
+          if (typeof text !== 'string') return toolError(text.error);
+          const projects = updateTasks(target.projects, target.refs, (t) => ({ ...t, content: text }));
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: projects },
+              { success: '에이전트가 작업 내용을 고쳤습니다.' }
+            ),
+            '이미 같은 내용입니다.'
+          );
+        },
+      },
+      {
+        name: 'remove_report_task',
+        title: '작업 삭제',
+        kind: 'edit',
+        requires: (request) => !isProjectOnly(request),
+        description:
+          'Delete one task from one section (작업 삭제해줘, 빼줘, 안 했어). Everything else is kept. A project left with no tasks is removed. To merge duplicated tasks, use remove_duplicate_tasks.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: { section: SECTION_SCHEMA, task: TASK_SCHEMA, project: PROJECT_REF_SCHEMA },
+          required: ['section', 'task'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: removeTasks(target.projects, target.refs) },
+              { success: `에이전트가 ${BUCKET_LABEL[target.section]}에서 작업을 지웠습니다.` }
+            ),
+            '지울 작업이 없습니다.'
+          );
+        },
+      },
+      {
+        name: 'remove_duplicate_tasks',
+        title: '중복 작업 정리',
+        kind: 'edit',
+        summarize: (_input, changes) =>
+          `같은 작업 ${changes.filter((line) => line.startsWith('－')).length}개를 하나로 합쳤어요`,
+        description:
+          'Merge tasks with the same text inside the same project into one (중복 작업 삭제·정리). Keeps the higher progress and all details. Checks both sections.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async (_input, context) => {
+          const { today, tomorrow } = useReportFormStore.getState();
+          const patch: FormPatch = {};
+          const nextToday = dedupeTasks(today);
+          const nextTomorrow = dedupeTasks(tomorrow);
+          if (nextToday) patch.today = nextToday;
+          if (nextTomorrow) patch.tomorrow = nextTomorrow;
+          return changeResult(
+            await applyFormChange(context, patch, { success: '에이전트가 중복 작업을 정리했습니다.' }),
+            '중복된 작업이 없습니다.'
+          );
+        },
+      },
+      {
+        name: 'move_report_task',
+        title: '작업 옮기기',
+        kind: 'edit',
+        // "이 작업 내일로 옮겨줘"가 추가(add)로 분류되곤 한다
+        extraKinds: ['add'],
+        requires: (request) => MOVE_REQUEST.test(request) && !isProjectOnly(request),
+        description:
+          'Move one task to the other section (금일↔익일), to another project, or to another position (옮겨줘, 순서 바꿔줘). to_project defaults to the same project name in the target section (created if missing). Same task already there is merged.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: { ...SECTION_SCHEMA, description: 'Section the task is in now' },
+            task: TASK_SCHEMA,
+            to_section: { ...SECTION_SCHEMA, description: 'Section to move to (same as section to stay)' },
+            to_project: { type: 'string', description: 'Project to move into. Omit to keep the same project name' },
+            position: POSITION_SCHEMA,
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'to_section'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          const toSection = parseSectionInput(input.to_section);
+          if (!toSection) return toolError('to_section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const position = parsePositionInput(input.position);
+          if (typeof position === 'object') return toolError(position.error);
+          const toProject = typeof input.to_project === 'string' ? input.to_project : undefined;
+          const { today, tomorrow } = useReportFormStore.getState();
+          const ref = target.refs[0];
+          const next = moveTask({ today, tomorrow }, target.section, ref, toSection, toProject, position);
+          if (typeof next === 'string') return toolError(next);
+          return changeResult(
+            await applyFormChange(context, next, {
+              success: '에이전트가 작업을 옮겼습니다.',
+              moved: target.projects[ref.projectIndex].tasks[ref.taskIndex].id,
+            }),
+            '이미 그 자리에 있습니다.'
+          );
+        },
+      },
+      {
+        name: 'rename_report_project',
+        title: '프로젝트 이름 바꾸기',
+        kind: 'edit',
+        requires: (request) => PROJECT_REQUEST.test(request),
+        summarize: (input) => `프로젝트 이름을 ${quoted(input.project)}에서 ${euro(quoted(input.new_name))} 바꿨어요`,
+        description:
+          'Change the name of a project (프로젝트 이름 바꿔줘). If a project with the new name already exists in the section, the tasks are merged into it.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            project: { type: 'string', description: 'Current project name exactly as in the current state' },
+            new_name: { type: 'string', description: "New project name (keep the user's wording)" },
+          },
+          required: ['section', 'project', 'new_name'],
+        },
+        execute: async (input, context) => {
+          const section = parseSectionInput(input.section);
+          if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const name = parseTextInput(input.project, 'project');
+          const newName = parseTextInput(input.new_name, 'new_name');
+          if (typeof name !== 'string') return toolError(name.error);
+          if (typeof newName !== 'string') return toolError(newName.error);
+          const projects = useReportFormStore.getState()[section];
+          const index = findProject(projects, name);
+          if (typeof index === 'string') return toolError(index);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [section]: renameProject(projects, index, newName) },
+              { success: '에이전트가 프로젝트 이름을 바꿨습니다.' }
+            ),
+            '이미 같은 이름입니다.'
+          );
+        },
+      },
+      {
+        name: 'remove_report_project',
+        title: '프로젝트 삭제',
+        kind: 'edit',
+        requires: (request) => PROJECT_REQUEST.test(request),
+        summarize: (input, changes) =>
+          `${quoted(input.project)} 프로젝트와 작업 ${changes.filter((line) => !line.includes(' › ')).length}개를 지웠어요`,
+        description: 'Delete one whole project and all its tasks from one section (프로젝트 삭제해줘, 통째로 빼줘).',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: { section: SECTION_SCHEMA, project: { type: 'string', description: 'Project name' } },
+          required: ['section', 'project'],
+        },
+        execute: async (input, context) => {
+          const section = parseSectionInput(input.section);
+          if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const name = parseTextInput(input.project, 'project');
+          if (typeof name !== 'string') return toolError(name.error);
+          const projects = useReportFormStore.getState()[section];
+          const index = findProject(projects, name);
+          if (typeof index === 'string') return toolError(index);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [section]: removeProject(projects, index) },
+              { success: `에이전트가 ${BUCKET_LABEL[section]}에서 프로젝트를 지웠습니다.` }
+            ),
+            '지울 프로젝트가 없습니다.'
+          );
+        },
+      },
+      {
+        name: 'move_report_project',
+        title: '프로젝트 옮기기',
+        kind: 'edit',
+        summarize: (input) =>
+          input.section === input.to_section
+            ? `${quoted(input.project)} 프로젝트 순서를 바꿨어요`
+            : `${quoted(input.project)} 프로젝트를 ${euro(BUCKET_SHORT[input.to_section === 'today' ? 'today' : 'tomorrow'])} 옮겼어요`,
+        extraKinds: ['add'],
+        requires: (request) => MOVE_REQUEST.test(request) && PROJECT_REQUEST.test(request),
+        description:
+          'Move a whole project to the other section (금일↔익일) or to another position in the same section (프로젝트 옮겨줘, 순서 바꿔줘). A project with the same name in the target section is merged.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: { ...SECTION_SCHEMA, description: 'Section the project is in now' },
+            project: { type: 'string', description: 'Project name' },
+            to_section: { ...SECTION_SCHEMA, description: 'Section to move to (same as section to stay)' },
+            position: POSITION_SCHEMA,
+          },
+          required: ['section', 'project', 'to_section'],
+        },
+        execute: async (input, context) => {
+          const section = parseSectionInput(input.section);
+          const toSection = parseSectionInput(input.to_section);
+          if (!section || !toSection) return toolError('section·to_section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const name = parseTextInput(input.project, 'project');
+          if (typeof name !== 'string') return toolError(name.error);
+          const position = parsePositionInput(input.position);
+          if (typeof position === 'object') return toolError(position.error);
+          const { today, tomorrow } = useReportFormStore.getState();
+          const index = findProject({ today, tomorrow }[section], name);
+          if (typeof index === 'string') return toolError(index);
+          const next = moveProject({ today, tomorrow }, section, index, toSection, position);
+          if (typeof next === 'string') return toolError(next);
+          return changeResult(
+            await applyFormChange(context, next, {
+              success: '에이전트가 프로젝트를 옮겼습니다.',
+              moved: { today, tomorrow }[section][index].id,
+            }),
+            '이미 그 자리에 있습니다.'
+          );
+        },
+      },
+      {
+        name: 'edit_task_detail',
+        title: '세부 항목 고치기',
+        kind: 'edit',
+        requires: (request) => DETAIL_REQUEST.test(request),
+        description: 'Change the text of one detail line (세부 항목) under a task.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            detail: { type: 'string', description: 'Current detail text exactly as in the current state' },
+            new_text: { type: 'string', description: 'New detail text' },
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'detail', 'new_text'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          const detail = parseTextInput(input.detail, 'detail');
+          const text = parseTextInput(input.new_text, 'new_text');
+          if (typeof detail !== 'string') return toolError(detail.error);
+          if (typeof text !== 'string') return toolError(text.error);
+          const ref = target.refs[0];
+          const index = findDetail(target.projects[ref.projectIndex].tasks[ref.taskIndex], detail);
+          if (typeof index === 'string') return toolError(index);
+          const projects = updateTasks(target.projects, [ref], (t) => ({
+            ...t,
+            details: t.details.map((d, i) => (i === index ? { ...d, content: text } : d)),
+          }));
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: projects },
+              { success: '에이전트가 세부 항목을 고쳤습니다.' }
+            ),
+            '이미 같은 내용입니다.'
+          );
+        },
+      },
+      {
+        name: 'remove_task_detail',
+        title: '세부 항목 삭제',
+        kind: 'edit',
+        requires: (request) => DETAIL_REQUEST.test(request),
+        description: 'Delete one detail line (세부 항목) under a task. The task stays.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            detail: { type: 'string', description: 'Detail text exactly as in the current state' },
+            project: PROJECT_REF_SCHEMA,
+          },
+          required: ['section', 'task', 'detail'],
+        },
+        execute: async (input, context) => {
+          const target = resolveTaskInput(input);
+          if (typeof target === 'string') return toolError(target);
+          const detail = parseTextInput(input.detail, 'detail');
+          if (typeof detail !== 'string') return toolError(detail.error);
+          const ref = target.refs[0];
+          const index = findDetail(target.projects[ref.projectIndex].tasks[ref.taskIndex], detail);
+          if (typeof index === 'string') return toolError(index);
+          const projects = updateTasks(target.projects, [ref], (t) => ({
+            ...t,
+            details: t.details.filter((_d, i) => i !== index),
+          }));
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [target.section]: projects },
+              { success: '에이전트가 세부 항목을 지웠습니다.' }
+            ),
+            '지울 세부 항목이 없습니다.'
+          );
+        },
+      },
+      {
+        name: 'move_task_detail',
+        title: '세부 항목 옮기기',
+        kind: 'edit',
+        requires: (request) => DETAIL_REQUEST.test(request),
+        description: 'Move one detail line (세부 항목) to another task, in the same or the other section.',
+        inputContext: currentFormState,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            section: SECTION_SCHEMA,
+            task: TASK_SCHEMA,
+            detail: { type: 'string', description: 'Detail text exactly as in the current state' },
+            to_task: { type: 'string', description: 'Task to move it under, exactly as in the current state' },
+            to_section: { ...SECTION_SCHEMA, description: 'Section of to_task. Omit if the same section' },
+          },
+          required: ['section', 'task', 'detail', 'to_task'],
+        },
+        execute: async (input, context) => {
+          const from = resolveTaskInput(input);
+          if (typeof from === 'string') return toolError(from);
+          const detail = parseTextInput(input.detail, 'detail');
+          if (typeof detail !== 'string') return toolError(detail.error);
+          const fromRef = from.refs[0];
+          const index = findDetail(from.projects[fromRef.projectIndex].tasks[fromRef.taskIndex], detail);
+          if (typeof index === 'string') return toolError(index);
+          const toSection = input.to_section === undefined ? from.section : parseSectionInput(input.to_section);
+          if (!toSection) return toolError('to_section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const toTask = parseTextInput(input.to_task, 'to_task');
+          if (typeof toTask !== 'string') return toolError(toTask.error);
+
+          const moved = from.projects[fromRef.projectIndex].tasks[fromRef.taskIndex].details[index];
+          const removed = updateTasks(from.projects, [fromRef], (t) => ({
+            ...t,
+            details: t.details.filter((_d, i) => i !== index),
+          }));
+          const store = useReportFormStore.getState();
+          const targetProjects = toSection === from.section ? removed : store[toSection];
+          const toRefs = findTasks(targetProjects, undefined, toTask);
+          if (typeof toRefs === 'string') return toolError(toRefs);
+          const placed = updateTasks(targetProjects, [toRefs[0]], (t) => ({ ...t, details: [...t.details, moved] }));
+          const patch: FormPatch =
+            toSection === from.section ? { [from.section]: placed } : { [from.section]: removed, [toSection]: placed };
+          return changeResult(
+            await applyFormChange(context, patch, { success: '에이전트가 세부 항목을 옮겼습니다.' }),
+            '이미 그 자리에 있습니다.'
+          );
+        },
+      },
+
+      // ───────────── 통째로 바꾸기 (replace) ─────────────
+      // 지금 내용이 사라지면 사라질 줄을 보여 주며 확인을 받는다. 알맞은 작은 도구가 없을 때 쓰는 마지막 수단이기도 하다.
+      {
+        name: 'fill_report',
+        title: '보고서 폼 채우기',
+        kind: 'replace',
+        // 여러 구역·날짜·모드를 한 번에 받는 도구라 Gemini Nano 가 구역을 헷갈리고 필드를 지어냈다 — 채팅은 위 단순한 도구를 쓴다
+        surfaces: ['webmcp'],
+        description:
+          'Put projects and tasks into the report form. Give only the sections to change — today (금일 업무 진행 현황) and/or tomorrow (익일 업무 진행 예정); omit the others (empty arrays are ignored). mode="append" (default) adds tasks to the project with the same name and appends new projects — always use append for add requests. "replace" replaces the section entirely and asks the user to confirm if existing content would be lost. Only changes the form; saving is save_report.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            month: { type: 'integer', minimum: 1, maximum: 12, description: 'Report month. Give together with day' },
+            day: { type: 'integer', minimum: 1, maximum: 31, description: 'Report day. Give together with month' },
+            today: { ...PROJECTS_SCHEMA, description: 'Projects for today (금일 업무 진행 현황)' },
+            tomorrow: { ...PROJECTS_SCHEMA, description: 'Projects for tomorrow (익일 업무 진행 예정)' },
+            mode: { type: 'string', enum: ['append', 'replace'], description: 'Defaults to append' },
+          },
+        },
+        execute: async (input, context) => {
+          // 작은 모델은 스키마의 모든 필드를 채우는 경향이 있어(추가 요청에 replace·빈 구역까지), 기본값을 덧붙이기로 두고
+          // 빈 배열은 "바꾸지 않음"으로 본다. 기존 내용을 지우는 교체는 확인을 받는다.
+          const mode = input.mode ?? 'append';
+          if (mode !== 'replace' && mode !== 'append') return toolError('mode 는 "append" 또는 "replace" 여야 합니다.');
+
+          const hasDate = input.month !== undefined || input.day !== undefined;
+          const date = hasDate ? parseMonthDayInput(input) : null;
+          if (typeof date === 'string') return toolError(date);
+
+          const store = useReportFormStore.getState();
+          const patch: FormPatch = date ? { reportDate: date } : {};
+          for (const bucket of ['today', 'tomorrow'] as const) {
+            const value = input[bucket];
+            if (value === undefined || (Array.isArray(value) && value.length === 0)) continue;
+            const parsed = parseProjectsInput(value, bucket);
+            if (typeof parsed === 'string') return toolError(parsed);
+            patch[bucket] = mode === 'append' ? appendProjects(store[bucket], parsed) : orInitialProjects(parsed);
+          }
+          if (Object.keys(patch).length === 0) return toolError('month/day, today, tomorrow 중 하나 이상을 주세요.');
+
+          const result = await applyFormChange(context, patch, {
+            confirm: {
+              when: 'removal',
+              title: '작성 중인 내용 교체',
+              intro: '에이전트가 보고서 폼을 이렇게 바꾸려고 합니다.',
+              confirmText: '교체',
+              danger: true,
+            },
+            success: '에이전트가 보고서 폼을 채웠습니다.',
+          });
+          if (result.status === 'cancelled')
+            return toolError('사용자가 교체를 취소했습니다. 덧붙이려면 mode="append" 로 다시 부르세요.');
+          return changeResult(result, '바뀐 내용이 없습니다.');
         },
       },
       {
         name: 'replace_report_section',
         title: '보고서 구역 바꾸기',
         kind: 'replace',
+        // 작은 수정의 마지막 수단으로도 두므로 바꾸라는 말이 있을 때만 — "프로젝트 통째로 옮겨줘"에 옮기기 대신 이걸 골라 원래 자리에 남겼다
+        requires: (request) => /바꿔|바꾸|교체|새로|다시\s*써|덮어|대신/.test(request),
         description:
-          'Replace one section of the report form entirely with the given projects. Asks the user to confirm if current content would be lost. To only append, use add_report_tasks.',
+          'Rewrite one whole section of the report form with the given projects — only when the user asks to replace or rewrite the section (구역을 이걸로 바꿔줘, 새로 써줘). For a change to one task, project or detail, use the edit tools instead. Shows the user exactly what will be removed and asks to confirm.',
         inputContext: currentFormState,
         inputSchema: {
           type: 'object',
@@ -514,12 +1263,23 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           const parsed = parseProjectsInput(input.projects, 'projects');
           if (typeof parsed === 'string') return toolError(parsed);
           if (parsed.length === 0) return toolError('projects 에 프로젝트가 1개 이상 필요합니다.');
-          if (!(await confirmReplace([section], context.confirm))) return toolError('사용자가 교체를 취소했습니다.');
-          const finish = beginFormChange(context);
-          useReportFormStore.getState().setBucket(section, parsed);
-          finish();
-          toast.success(`에이전트가 ${BUCKET_LABEL[section]}을 바꿨습니다.`);
-          return toolText(currentFormSnapshot());
+          return changeResult(
+            await applyFormChange(
+              context,
+              { [section]: parsed },
+              {
+                confirm: {
+                  when: 'removal',
+                  title: '작성 중인 내용 교체',
+                  intro: `에이전트가 ${BUCKET_LABEL[section]}을 이렇게 바꾸려고 합니다.`,
+                  confirmText: '교체',
+                  danger: true,
+                },
+                success: `에이전트가 ${BUCKET_LABEL[section]}을 바꿨습니다.`,
+              }
+            ),
+            '바뀐 내용이 없습니다.'
+          );
         },
       },
       {
@@ -527,7 +1287,7 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         title: '보고서 텍스트 적용',
         kind: 'replace',
         description:
-          'Parse an existing daily report text ("N월 N일 ... 금일 업무 진행 현황 / 익일 업무 진행 예정" format, indented * project / - task (NN%) / · detail) and replace the whole form with it. Asks the user to confirm if the form has content. Tolerates loose formatting.',
+          'Parse an existing daily report text ("N월 N일 ... 금일 업무 진행 현황 / 익일 업무 진행 예정" format, indented * project / - task (NN%) / · detail) and replace the whole form with it. Asks the user to confirm if content would be lost. Tolerates loose formatting.',
         inputSchema: {
           type: 'object',
           properties: { text: { type: 'string', description: 'The report text as-is' } },
@@ -538,75 +1298,103 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           const parsed = parseReportText(input.text);
           if (!parsed || (parsed.todayProjects.length === 0 && parsed.tomorrowProjects.length === 0))
             return toolError('보고서 텍스트에서 프로젝트를 찾지 못했습니다.');
-          if (formHasContent()) {
-            const ok = await context.confirm({
-              title: '텍스트 적용',
-              description: '에이전트가 보고서 텍스트를 폼에 적용하려고 합니다.\n현재 작성 중인 내용이 덮어씌워집니다.',
-              confirmText: '적용',
-            });
-            if (!ok) return toolError('사용자가 텍스트 적용을 취소했습니다.');
-          }
+          const result = await applyFormChange(
+            context,
+            {
+              ...(parsed.month && parsed.day ? { reportDate: { month: parsed.month, day: parsed.day } } : {}),
+              today: orInitialProjects(parsed.todayProjects),
+              tomorrow: orInitialProjects(parsed.tomorrowProjects),
+            },
+            {
+              confirm: {
+                when: 'removal',
+                title: '텍스트 적용',
+                intro: '에이전트가 보고서 텍스트를 폼에 적용하려고 합니다.',
+                confirmText: '적용',
+              },
+              success: '에이전트가 보고서 텍스트를 폼에 적용했습니다.',
+            }
+          );
+          if (result.status === 'applied') callbacks.current.onReplaced();
+          return changeResult(result, '폼과 같은 내용입니다.');
+        },
+      },
+      {
+        name: 'load_report',
+        title: '저장된 보고서 불러오기',
+        kind: 'replace',
+        description:
+          'Load the saved report for a date into the form (replaces date, today and tomorrow). Asks the user to confirm if content would be lost. To only view it, use get_report.',
+        inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
+        execute: async (input, context) => {
+          const date = parseDateKeyInput(input.date, 'date');
+          if (typeof date !== 'string') return toolError(date.error);
+          const item = await findSavedReport(date);
+          if (typeof item === 'string') return toolError(item);
+          const result = await applyFormChange(
+            context,
+            {
+              reportDate: { month: item.month, day: item.day },
+              today: orInitialProjects([...item.todayProjects]),
+              tomorrow: orInitialProjects([...item.tomorrowProjects]),
+            },
+            {
+              confirm: {
+                when: 'removal',
+                title: '기록 불러오기',
+                intro: `${item.month}월 ${item.day}일 보고서를 불러오면 폼이 이렇게 바뀝니다.`,
+                confirmText: '불러오기',
+              },
+              success: `${item.month}월 ${item.day}일 보고서를 불러왔습니다.`,
+            }
+          );
+          if (result.status === 'applied') callbacks.current.onReplaced();
+          return changeResult(result, '이미 그 보고서와 같은 내용입니다.');
+        },
+      },
 
-          const store = useReportFormStore.getState();
-          const finish = beginFormChange(context);
-          if (parsed.month && parsed.day) store.setReportDate({ month: parsed.month, day: parsed.day });
-          store.setBucket('today', orInitial(parsed.todayProjects));
-          store.setBucket('tomorrow', orInitial(parsed.tomorrowProjects));
-          finish();
-          toast.success('에이전트가 보고서 텍스트를 폼에 적용했습니다.');
-          return toolText(currentFormSnapshot());
-        },
-      },
+      // ───────────── 초기화 ─────────────
       {
-        name: 'carry_over_incomplete_tasks',
-        title: '미완료 업무 익일로 가져오기',
-        kind: 'add',
+        name: 'reset_report_form',
+        title: '보고서 폼 초기화',
+        kind: 'reset',
+        summarize: () => '작성 중인 내용을 모두 비웠어요. 저장된 기록은 그대로예요',
         description:
-          "Copy only today's unfinished tasks (under 100% progress) to tomorrow. Tasks are added under projects with the same name; tasks already there are skipped. To repeat today's work tomorrow regardless of progress, use copy_today_to_tomorrow.",
+          'Clear the WHOLE report form (both sections). Only when the user wants everything cleared — to delete particular tasks use remove_report_task or remove_duplicate_tasks. Saved history is not deleted. Shows what will be cleared and asks to confirm.',
         inputSchema: { type: 'object', properties: {} },
         execute: async (_input, context) => {
-          const { today, tomorrow, setBucket } = useReportFormStore.getState();
-          const merged = mergeIncompleteTasks(today, tomorrow);
-          if (!merged)
-            return toolText({
-              changed: false,
-              message:
-                '가져올 새로운 미완료 작업이 없습니다. 완료한 작업까지 옮기려면 "오늘 업무를 내일에도 그대로 넣어줘"라고 해 주세요.',
-            });
-          const finish = beginFormChange(context);
-          setBucket('tomorrow', merged);
-          finish();
-          toast.success('에이전트가 미완료 업무를 익일로 가져왔습니다.');
-          return toolText({ changed: true, ...currentFormSnapshot() });
+          // resetForm 과 같은 상태 — 날짜는 오늘, 구역마다 빈 프로젝트 하나
+          const now = new Date();
+          const result = await applyFormChange(
+            context,
+            {
+              reportDate: { month: String(now.getMonth() + 1), day: String(now.getDate()) },
+              today: [createEmptyProject()],
+              tomorrow: [createEmptyProject()],
+            },
+            {
+              confirm: {
+                when: 'always',
+                title: '폼 초기화',
+                intro: '작성 중인 내용이 모두 지워집니다. 저장된 기록은 그대로 남습니다.',
+                confirmText: '초기화',
+                danger: true,
+              },
+              success: '보고서 폼을 초기화했습니다.',
+            }
+          );
+          if (result.status === 'applied') callbacks.current.onReplaced();
+          return changeResult(result, '폼이 이미 비어 있습니다.');
         },
       },
-      {
-        // 반복 업무(예: 24시간 모니터링)는 오늘 100% 여도 내일 또 한다 — 이 도구가 없을 때 Nano 가 add_report_tasks 로
-        // 프로젝트명·작업명을 지어내(요청 문장을 작업명으로) 넣었다
-        name: 'copy_today_to_tomorrow',
-        title: '금일 업무 익일로 복사',
-        kind: 'add',
-        description:
-          "Copy all of today's tasks, including completed ones, to tomorrow as they are — for work the user will do again tomorrow (오늘 한 업무 내일도 그대로, 반복 업무). Completed tasks start at 0% tomorrow. Tasks already in tomorrow are skipped.",
-        inputSchema: { type: 'object', properties: {} },
-        execute: async (_input, context) => {
-          const { today, tomorrow, setBucket } = useReportFormStore.getState();
-          const merged = mergeIncompleteTasks(today, tomorrow, { includeCompleted: true });
-          if (!merged)
-            return toolText({ changed: false, message: '익일로 옮길 금일 작업이 없습니다(이미 모두 들어 있어요).' });
-          const finish = beginFormChange(context);
-          setBucket('tomorrow', merged);
-          finish();
-          toast.success('에이전트가 금일 업무를 익일로 복사했습니다.');
-          return toolText({ changed: true, ...currentFormSnapshot() });
-        },
-      },
+
+      // ───────────── 저장·복사·내보내기 ─────────────
       {
         name: 'save_report',
         title: '보고서 기록에 저장',
         kind: 'save',
         description:
-          'Only when the user asks to save: save the current form as the record for the report date, overwriting an existing record for that date. Shows a confirmation and saves only if the user approves. Does not copy to the clipboard.',
+          'Only when the user asks to save: save the current form as the record for the report date, overwriting an existing record for that date. Shows a confirmation and saves only if the user approves. Does not copy to the clipboard (that is copy_report).',
         inputSchema: { type: 'object', properties: {} },
         execute: async (_input, context) => {
           const { reportDate, today, tomorrow } = useReportFormStore.getState();
@@ -629,83 +1417,26 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         },
       },
       {
-        name: 'set_report_date',
-        title: '보고서 날짜 바꾸기',
-        kind: 'replace',
+        // "복사하기" 버튼 — 클립보드 쓰기는 사용자 활성화가 필요해 확인을 누르는 순간 복사한다
+        name: 'copy_report',
+        title: '보고서 복사',
+        kind: 'save',
         description:
-          'Change only the report date (month/day) of the form; content stays. The year is the current year.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            month: { type: 'integer', minimum: 1, maximum: 12, description: 'Report month' },
-            day: { type: 'integer', minimum: 1, maximum: 31, description: 'Report day' },
-          },
-          required: ['month', 'day'],
-        },
-        execute: async (input, context) => {
-          const date = parseMonthDayInput(input);
-          if (typeof date === 'string') return toolError(date);
-          const finish = beginFormChange(context);
-          useReportFormStore.getState().setReportDate(date);
-          finish();
-          toast.success(`보고서 날짜를 ${date.month}월 ${date.day}일로 바꿨습니다.`);
-          return toolText({ month: Number(date.month), day: Number(date.day) });
-        },
-      },
-      {
-        name: 'load_report',
-        title: '저장된 보고서 불러오기',
-        kind: 'replace',
-        description:
-          'Load the saved report for a date into the form (replaces date, today and tomorrow). Asks the user to confirm if the form has content. To only view it, use get_report.',
-        inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
-        execute: async (input, context) => {
-          const date = parseDateKeyInput(input.date, 'date');
-          if (typeof date !== 'string') return toolError(date.error);
-          const item = await findSavedReport(date);
-          if (typeof item === 'string') return toolError(item);
-
-          if (formHasContent()) {
-            const ok = await context.confirm({
-              title: '기록 불러오기',
-              description: `${item.month}월 ${item.day}일 보고서를 불러오면 현재 작성 중인 내용이 덮어씌워집니다.`,
-              confirmText: '불러오기',
-            });
-            if (!ok) return toolError('사용자가 불러오기를 취소했습니다.');
-          }
-
-          const store = useReportFormStore.getState();
-          const finish = beginFormChange(context);
-          store.setReportDate({ month: item.month, day: item.day });
-          store.setBucket('today', orInitial([...item.todayProjects]));
-          store.setBucket('tomorrow', orInitial([...item.tomorrowProjects]));
-          finish();
-          callbacks.current.onReplaced();
-          toast.success(`${item.month}월 ${item.day}일 보고서를 불러왔습니다.`);
-          return toolText(currentFormSnapshot());
-        },
-      },
-      {
-        name: 'reset_report_form',
-        title: '보고서 폼 초기화',
-        kind: 'reset',
-        description: 'Clear the report form. Saved history is not deleted. Shows a confirmation.',
+          'Copy the finished report text to the clipboard and save it to history, like the 복사하기 button (복사해줘, 클립보드). Asks the user to confirm.',
         inputSchema: { type: 'object', properties: {} },
         execute: async (_input, context) => {
-          if (!formHasContent()) return toolText({ changed: false, message: '폼이 이미 비어 있습니다.' });
+          const { reportDate, today, tomorrow } = useReportFormStore.getState();
+          if (!isSavable(today, tomorrow))
+            return toolError('복사할 수 없습니다. 내용이 비어 있거나, 작업이 없는 프로젝트가 있습니다.');
           const ok = await context.confirm({
-            title: '폼 초기화',
-            description: '작성 중인 내용이 모두 초기화됩니다. 저장된 기록은 그대로 남습니다.',
-            confirmText: '초기화',
-            variant: 'danger',
+            title: '보고서 복사',
+            description: `${reportDate.month}월 ${reportDate.day}일 보고서를 클립보드에 복사하고 기록에 저장합니다.`,
+            confirmText: '복사',
           });
-          if (!ok) return toolError('사용자가 초기화를 취소했습니다.');
-          const finish = beginFormChange(context);
-          useReportFormStore.getState().resetForm();
-          finish();
-          callbacks.current.onReplaced();
-          toast.success('보고서 폼을 초기화했습니다.');
-          return toolText({ changed: true, ...currentFormSnapshot() });
+          if (!ok) return toolError('사용자가 복사를 취소했습니다.');
+          if (!(await callbacks.current.onCopy()))
+            return toolError('클립보드에 복사하지 못했습니다. 화면의 복사하기 버튼을 눌러 주세요.');
+          return toolText({ copied: true, saved: true });
         },
       },
       {
@@ -738,6 +1469,8 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           return toolText({ exported: items.length, format });
         },
       },
+
+      // ───────────── 열기 ─────────────
       {
         name: 'open_github_import',
         title: 'GitHub 커밋 가져오기 열기',
@@ -756,7 +1489,8 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           });
         },
       },
-    ],
-    enabled
-  );
+    ];
+    if (process.env.NODE_ENV !== 'production') checkToolCoverage(tools);
+    return tools;
+  }, enabled);
 };

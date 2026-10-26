@@ -293,11 +293,14 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   useReportAgentTools({
     enabled: isFormReady,
     onSaved: (date) => {
+      // 복사하기 버튼으로 저장할 때와 같이 가져온 커밋 항목의 최종 표기를 보정 메모리에 기억한다
+      void learnFromSavedReport(userId, useReportFormStore.getState().today, currentReportDateKey());
       requestHistoryFocus(date.month, date.day);
       refreshBaseline();
     },
     onReplaced: refreshBaseline,
     onOpenGithubImport: () => void openGithubImport(),
+    onCopy: () => handleCopy(),
   });
 
   // 프로젝트/작업/세부 항목 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
@@ -482,8 +485,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
   };
 
-  // 보고서를 클립보드에 복사 후 히스토리에 추가
-  const handleCopy = async () => {
+  // 보고서를 클립보드에 복사 후 히스토리에 추가. 복사했으면 true (에이전트 copy_report 도 이 경로를 쓴다)
+  const handleCopy = async (): Promise<boolean> => {
     setCopyError(null);
 
     // 일부 브라우저는 permissions.query를 지원하지 않을 수 있어 try/catch로 무시
@@ -492,7 +495,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
         const result = await navigator.permissions.query({ name: 'clipboard-write' as PermissionName });
         if (result.state === 'denied') {
           setCopyError('클립보드 쓰기 권한이 거부되었습니다. 브라우저 설정을 확인해주세요.');
-          return;
+          return false;
         }
       } catch {
         // 지원하지 않는 브라우저는 무시하고 진행
@@ -510,9 +513,11 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       // 복사 후엔 히스토리에 보관됐으니 현재 상태를 새 baseline으로 갱신해 이탈 경고를 끈다.
       refreshBaseline();
       setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
+      return true;
     } catch (err) {
       console.error('Failed to copy: ', err);
       setCopyError('복사에 실패했습니다. 직접 선택하여 복사해주세요.');
+      return false;
     }
   };
 

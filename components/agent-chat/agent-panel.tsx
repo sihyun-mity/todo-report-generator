@@ -42,6 +42,12 @@ type Props = {
   onDiscardDraft: (id: string) => void;
 };
 
+// 진행 중인 마지막 생각 단계
+const currentStepLabel = (messages: ReadonlyArray<AgentChatMessage>) => {
+  const thinking = messages.findLast((m) => m.role === 'thinking');
+  return thinking?.role === 'thinking' ? thinking.steps.findLast((s) => s.status === 'running')?.label : undefined;
+};
+
 // seed 로 섞은 순서 — 같은 seed 면 같은 순서라 렌더마다 바뀌지 않는다(선형 합동 생성기로 Fisher-Yates)
 const shuffleBySeed = <T,>(items: ReadonlyArray<T>, seed: number): Array<T> => {
   const result = [...items];
@@ -291,9 +297,10 @@ export function AgentPanel({
                 </li>
               ))}
               {isRunning && messages.at(-1)?.role !== 'assistant' && (
+                // 생각 과정 블록은 도구 줄 위에 남으므로, 맨 아래에는 지금 하고 있는 단계를 한 줄로 보여 준다
                 <li className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
                   <Loader2 size={14} className="animate-spin" aria-hidden />
-                  처리하는 중...
+                  {currentStepLabel(messages) ?? '처리하는 중...'}
                 </li>
               )}
             </ul>

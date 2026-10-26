@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertCircle, Check, Loader2, NotebookPen, Undo2 } from 'lucide-react';
-import type { AgentChatMessage, AgentNotesDraft } from '@/types';
+import { AlertCircle, Brain, Check, ChevronDown, Loader2, NotebookPen, Undo2 } from 'lucide-react';
+import type { AgentChatMessage, AgentNotesDraft, AgentThinkingStep } from '@/types';
 import { AGENT_CHANGE_VISIBLE_LINES } from '@/constants';
 import { cn } from '@/utils';
 
-// Nano 대화의 항목 하나 — 말풍선·도구 실행 줄(+변경 카드)·확인 카드·메모 초안·오류
+// Nano 대화의 항목 하나 — 말풍선·생각 과정·도구 실행 줄(+변경 카드)·확인 카드·메모 초안·오류
 type AgentMessageProps = {
   message: AgentChatMessage;
   isRunning: boolean;
@@ -25,12 +25,21 @@ export function AgentMessage({
   onDiscardDraft,
 }: Readonly<AgentMessageProps>) {
   switch (message.role) {
+    case 'thinking':
+      return message.steps.length > 0 ? <ThinkingTrace steps={message.steps} done={message.done} /> : null;
     case 'user':
       return (
-        <div className="flex justify-end">
-          <p className="w-fit max-w-[85%] rounded-2xl rounded-br-md bg-blue-500 px-3.5 py-2 text-sm whitespace-pre-wrap text-white">
+        // 멈춘 요청은 흐리게 두고 "중단됨"을 붙인다 — 다음 요청에는 이어지지 않는다는 것을 보여 준다
+        <div className="flex flex-col items-end gap-1">
+          <p
+            className={cn(
+              'w-fit max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2 text-sm whitespace-pre-wrap text-white',
+              message.cancelled ? 'bg-blue-500/40 dark:bg-blue-500/30' : 'bg-blue-500'
+            )}
+          >
             {message.text}
           </p>
+          {message.cancelled && <span className="text-[11px] text-zinc-400">중단됨 · 다음 요청에 이어지지 않아요</span>}
         </div>
       );
     case 'assistant':
@@ -136,6 +145,49 @@ type ChangeCardProps = {
 };
 
 // 도구가 바꾼 내용 — 무엇이 바뀌었는지 줄로 보여 주고 되돌리기를 단다. 길면 접어 두고 펼칠 수 있다.
+// Nano가 거친 단계 — 응답이 몇 초씩 걸려 기다리는 동안 무엇을 하는지 보여 준다(GitHub 커밋 분류의 "AI가 생각하는 과정"처럼).
+// 처리 중에는 펼쳐 두고, 끝나면 한 줄로 접는다(눌러서 다시 볼 수 있다).
+function ThinkingTrace({ steps, done }: Readonly<{ steps: ReadonlyArray<AgentThinkingStep>; done: boolean }>) {
+  // 사용자가 직접 펴거나 접었으면 그대로 둔다
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? !done;
+  return (
+    <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+      <button
+        type="button"
+        onClick={() => setToggled(!open)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-md py-0.5 font-medium transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+      >
+        <Brain size={12} aria-hidden />
+        {done ? `Nano가 생각한 과정 · ${steps.length}단계` : 'Nano가 생각하는 중'}
+        <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} aria-hidden />
+      </button>
+      {open && (
+        <ol className="mt-1 space-y-1 border-l border-zinc-200 pl-3 dark:border-zinc-700">
+          {steps.map((step) => (
+            <li key={step.key} className="flex min-w-0 items-start gap-1.5">
+              {step.status === 'running' ? (
+                <Loader2 size={11} className="mt-0.5 shrink-0 animate-spin" aria-hidden />
+              ) : (
+                <Check size={11} className="mt-0.5 shrink-0 text-emerald-500" aria-hidden />
+              )}
+              <span className="min-w-0">
+                <span className="text-zinc-600 dark:text-zinc-300">{step.label}</span>
+                {step.detail && (
+                  <span className="block truncate font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
+                    {step.detail}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function ChangeCard({ lines, undo, isRunning, onUndo }: Readonly<ChangeCardProps>) {
   const [isExpanded, setIsExpanded] = useState(false);
   const visible = isExpanded ? lines : lines.slice(0, AGENT_CHANGE_VISIBLE_LINES);

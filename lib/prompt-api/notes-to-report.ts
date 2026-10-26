@@ -87,7 +87,7 @@ export async function structureNotes(
     } finally {
       session.destroy();
     }
-  });
+  }, 'notes');
 }
 
 // 부탁 표현 — 이런 말이 있으면 메모가 아니라 부탁으로 본다("~해줘", "~알려", 물음표 등). "했어"·"함" 같은 서술은 걸리지 않는다.
