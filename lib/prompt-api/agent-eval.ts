@@ -231,6 +231,11 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     form: BASE_FORM,
     turns: [{ say: '지금 작성 중인 보고서 요약해줘', expect: ['get_current_report'] }],
   },
+  // 대화로 분류돼도 기록을 묻는 말이면 조회해야 한다 — 도구 없이 답하면 기록을 지어낸다
+  {
+    name: '저장 횟수 묻기',
+    turns: [{ say: '이번 달에 보고서 몇 번 썼어?', expect: ['list_report_dates', 'search_reports'] }],
+  },
   { name: '이번 주 기록 정리', turns: [{ say: '이번 주에 쓴 보고서 정리해줘', expect: ['search_reports'] }] },
   { name: '화면 모드', turns: [{ say: '다크 모드로 바꿔줘', expect: ['set_theme'] }] },
   { name: '새소식', turns: [{ say: '최근 새소식 알려줘', expect: ['list_news'] }] },

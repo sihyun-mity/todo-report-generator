@@ -230,6 +230,21 @@ const KIND_GUARDS: Partial<Record<AgentToolKind, { pattern: RegExp; fallback: Ag
 const QUESTION_REQUEST =
   /[?？]|몇|뭐|무엇|무슨|어떤|어떻게|얼마|언제|어디|알려|보여|세\s*줘|세어|세봐|계산|있어|했어|했나/;
 
+// 사용자의 데이터(보고서·기록·새소식)를 묻는 말 — 대화 의도로 분류돼도 도구 없이 답하면 지어내므로 조회로 돌린다.
+// 사용법을 묻는 말("어떻게 해?")은 대화 그대로 둔다(앱 안내로 답한다).
+const DATA_QUESTION = /보고서|기록|업무|작업|프로젝트|새\s*소식|공지|저장했|썼|했던|한\s*일/;
+const HOW_TO_QUESTION = /어떻게|방법|사용법|하려면|할\s*수\s*있|돼\?|되나|뭐\s*할/;
+
+// 대화 의도에서 사용법을 물으면 쓰는 앱 안내 — 도구 제목만으로는 화면 위치·회원 여부·저장 방식을 답하지 못하고 지어냈다
+const APP_GUIDE = `- Home (보고서 작성): pick the report date, then write projects → tasks (progress %) → detail lines under 금일 (today) and 익일 (tomorrow). The preview shows the finished text.
+- 복사하기 copies the report text to the clipboard and saves it to history. Saved reports appear in the calendar/history below the form and can be loaded back into the form. Deleting a saved report is done with the delete button on its history card (Nano cannot delete records).
+- 미완료 업무 가져오기 brings unfinished tasks of today over to tomorrow. A report text can be pasted to restore the form (텍스트로 복원). History can be exported as a file (내보내기).
+- GitHub에서 가져오기 (button in the 금일 header): reads the user's commits since the previous report and sorts them into projects/tasks with on-device AI. Members only; it asks to connect GitHub the first time.
+- Members (logged in) keep history in their account across devices. Guests keep it only in this browser (up to 100 reports). Logging in is optional (top bar 로그인 button).
+- Settings (members only): email, password, GitHub account link, passkeys, logged-in devices, writing reminder notifications (작성 알림), saved data management, account deletion.
+- 새소식 (top bar) shows service news and updates.
+- Nano (you) can fill, edit, save, copy and look up reports, change the color mode and move between screens. Nano runs on-device AI in Chrome; conversations stay on this device.`;
+
 // 앞 대화를 잇는 말 — 모델이 새 요청이라고 판단해도 이런 말이 있으면 앞 대화를 지우지 않는다(잘못 지우면 되묻기·후속 요청이 끊긴다)
 const FOLLOW_UP_REQUEST =
   /^(응|네|예|아니|좋아|그래|ㅇㅇ)|그거|그것|그걸|이거|이것|저거|방금|위에|아까|말고|다시|도\s*(똑같이|해|넣|바꿔|지워)|그럼|그러면/;
@@ -586,6 +601,16 @@ export async function runAgentChatTurn({
     let kind: AgentToolKind | 'any' | null = unsupported
       ? 'any'
       : (INTENTS.find((i) => i.label === intent)?.kind ?? null);
+    // 대화로 분류됐어도 사용자 데이터를 묻는 말이면 조회한다 — 도구 없이 답하면 기록을 지어냈다("어제 뭐 했어?")
+    if (
+      kind === null &&
+      QUESTION_REQUEST.test(request) &&
+      DATA_QUESTION.test(request) &&
+      !HOW_TO_QUESTION.test(request)
+    ) {
+      kind = 'read';
+      think('intent', '요청 이해: 보고서·새소식 조회', 'done');
+    }
     const lockIfForm = (k: AgentToolKind | 'any' | null) => {
       if (k && k !== 'any' && FORM_KINDS.includes(k)) onFormLock?.();
     };
@@ -815,12 +840,12 @@ export async function runAgentChatTurn({
     // 여기부터는 조회·대화 답변이다. 대화(인사·사용법)일 때만 할 수 있는 일 목록을 넘긴다 — 늘 넘기면 묻지 않아도 목록을 늘어놓았다
     const answerContext = kind
       ? ''
-      : `## What you can do on this screen\n${getTools()
+      : `## About the app\n${APP_GUIDE}\n\n## What you can do on this screen\n${getTools()
           .map((t) => `- ${t.title}`)
           .join('\n')}\n\n`;
     const rules = kind
-      ? '- Answer what the user asked, organized from the tool results. Use dates exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.'
-      : '- Reply to the greeting or question. If asked what you can do, answer from "What you can do on this screen".';
+      ? '- Answer what the user asked, organized from the tool results. Use dates and weekdays exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" (or total/byMonth) of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.\n- To summarize a period, use "tasks" (each task with its days and progress change) first, and "days" for what happened on a specific day.\n- If the tool results do not contain what was asked, say so plainly instead of guessing.'
+      : '- Reply to the greeting or question. For how-to questions answer only from "About the app"; if it is not there, say you are not sure. If asked what you can do, answer from "What you can do on this screen".';
     think('answer', '답을 쓰는 중');
     const answer = await ask(
       (conversation) =>
