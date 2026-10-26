@@ -102,7 +102,8 @@ export function AgentSuggestionCard({ suggestion, busy, onRun, onDismiss }: Read
 
   return (
     <div className="group relative">
-      {suggestion.emphasis ? <div className="rainbow-glow rounded-xl">{body}</div> : body}
+      {/* rainbow-glow 는 inline-flex 라 내용 너비로 줄어든다 — 다른 제안 카드처럼 줄을 꽉 채운다 */}
+      {suggestion.emphasis ? <div className="rainbow-glow flex w-full rounded-xl">{body}</div> : body}
       {onDismiss && (
         <button
           type="button"
