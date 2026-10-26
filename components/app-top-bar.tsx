@@ -9,7 +9,7 @@ import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import Link from 'next/link';
 import { hardNavigate } from '@/utils';
-import { ThemeToggle } from '.';
+import { AgentChatButton, ThemeToggle } from '.';
 
 // SSR에서는 항상 false, 클라이언트에서는 쿠키를 읽어 동기화 — hydration mismatch 방지
 const subscribeNoop = () => () => {};
@@ -95,6 +95,8 @@ export function AppTopBar() {
         </Link>
 
         <div className="flex items-center gap-2">
+          <AgentChatButton />
+
           <div className="hidden sm:block">
             <ThemeToggle />
           </div>

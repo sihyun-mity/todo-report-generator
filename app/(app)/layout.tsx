@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
+import { AgentAssistant, AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
@@ -9,6 +9,9 @@ export default function AppLayout({ children }: LayoutProps<'/'>) {
       <AppTopBar />
       <PasskeyRegisterBanner />
       {children}
+
+      {/* AI 도우미(채팅): (auth) 경로에는 두지 않도록 (app) 그룹 layout 에 마운트. 열기 버튼은 AppTopBar 에 있다 */}
+      <AgentAssistant />
 
       {/* 첫 진입 화면 모드 선택 dialog: 다이얼로그 큐에서 가장 먼저(새소식보다 앞서) 노출된다 */}
       <ThemePromptDialog />

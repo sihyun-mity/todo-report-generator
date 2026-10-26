@@ -1,4 +1,5 @@
 export * from './account.constants';
+export * from './agent-chat.constants';
 export * from './calendar.constants';
 export * from './dialog.constants';
 export * from './github.constants';

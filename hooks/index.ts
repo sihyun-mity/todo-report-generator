@@ -1,3 +1,4 @@
+export * from './use-agent-tools';
 export * from './use-all-search-params';
 export * from './use-backdrop-canvas';
 export * from './use-container';

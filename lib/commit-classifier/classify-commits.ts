@@ -1,4 +1,5 @@
 import {
+  COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS,
   COMMIT_IMPORT_DEFAULT_PROGRESS,
   COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT,
   COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT,
@@ -31,7 +32,7 @@ import {
   isReportedCommit,
   similarTaskCandidates,
 } from '@/lib/commit-classifier/registered-tasks';
-import { getPromptApiAvailability, type JsonAsker, openPromptSession } from '@/lib/commit-classifier/prompt-api';
+import { getPromptApiAvailability, type JsonAsker, openPromptSession } from '@/lib/prompt-api';
 import {
   detailStylePrompt,
   type DetailStyleResult,
@@ -146,7 +147,10 @@ export async function classifyCommits({
   startStage(COMMIT_CLASSIFY_STAGE.PREPARE, 0);
   const availability = await getPromptApiAvailability();
   signal?.throwIfAborted();
-  const session = availability === 'available' ? await openPromptSession(signal).catch(() => null) : null;
+  const session =
+    availability === 'available'
+      ? await openPromptSession({ signal, timeoutMs: COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS }).catch(() => null)
+      : null;
   const ask: JsonAsker | null = session?.ask ?? null;
   // 드물게 응답이 멈춰 타임아웃이 나므로 한 번 더 시도한다. 그래도 실패하면 null — 호출부는 "판정 없음"으로 처리한다.
   // 모든 모델 호출이 여기를 지나므로 중단은 여기서 던져 분류 전체를 끝낸다(판정 없음으로 삼켜 계속하지 않게).

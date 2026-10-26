@@ -1,3 +1,4 @@
+export * from './agent-chat';
 export * from './app-top-bar';
 export * from './back-stack';
 export * from './close-button';

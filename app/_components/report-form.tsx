@@ -287,7 +287,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   // - hydration 로직(오늘 기록 복원 / 익일 carry-over) 진행 중: hasHydratedFromHistory=false → skeleton
   const isFormReady = isClient && isHistoryLoaded && hasHydratedFromHistory;
 
-  // WebMCP 를 지원하는 브라우저 에이전트에게 폼 채우기·기록 조회 도구를 노출한다.
+  // 브라우저 에이전트(WebMCP)와 앱 안 채팅에 폼 채우기·기록 조회 도구를 노출한다.
   // 에이전트 저장도 복사와 같은 후처리(캘린더 이동 + 이탈 경고 해제)를 거친다.
   useReportAgentTools({
     enabled: isFormReady,
@@ -295,6 +295,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
       requestHistoryFocus(date.month, date.day);
       refreshBaseline();
     },
+    onReplaced: refreshBaseline,
+    onOpenGithubImport: () => void openGithubImport(),
   });
 
   // 프로젝트/작업/세부 항목 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.

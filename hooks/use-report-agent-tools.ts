@@ -1,12 +1,14 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import type { Project, ProjectsBucket, ReportDate, ReportHistoryItem, WebMcpJsonSchema, WebMcpTool } from '@/types';
-import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
-import { registerWebMcpTools, toolError, toolText } from '@/lib/webmcp';
+import type { AgentTool, Project, ProjectsBucket, ReportDate, ReportHistoryItem, WebMcpJsonSchema } from '@/types';
+import { useReportFormStore, useReportHistoryStore } from '@/stores';
+import { toolError, toolText } from '@/lib/webmcp';
+import { useAgentTools } from '.';
 import {
   areAllAttemptedProjectsValid,
   createEmptyProject,
   createId,
+  downloadReportHistory,
   generateReportText,
   hasProjectContent,
   isProjectEmpty,
@@ -111,6 +113,30 @@ const parseDateKeyInput = (value: unknown, field: string): string | { error: str
   return value;
 };
 
+// month/day 쌍 검증 — 둘 다 있어야 한다
+const parseMonthDayInput = (input: Record<string, unknown>): ReportDate | string => {
+  const { month, day } = input;
+  if (typeof month !== 'number' || !Number.isInteger(month) || month < 1 || month > 12)
+    return 'month 는 1~12 정수여야 합니다 (day 와 함께 주세요).';
+  if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31)
+    return 'day 는 1~31 정수여야 합니다 (month 와 함께 주세요).';
+  return { month: String(month), day: String(day) };
+};
+
+// 저장된 보고서 한 건을 찾는다. 로그인 사용자는 월 단위로 lazy 적재하므로 해당 월을 먼저 불러온다 (게스트는 no-op).
+const findSavedReport = async (date: string): Promise<ReportHistoryItem | string> => {
+  const store = useReportHistoryStore.getState();
+  if (!store.allReportDates.includes(date)) return `${date} 에 저장된 보고서가 없습니다.`;
+  await store.loadMonth(parseInt(date.slice(0, 4), 10), parseInt(date.slice(5, 7), 10));
+  const item = useReportHistoryStore.getState().history.find((i) => reportItemDateKey(i) === date);
+  return item ?? `${date} 보고서를 불러오지 못했습니다.`;
+};
+
+const formHasContent = () => {
+  const { today, tomorrow } = useReportFormStore.getState();
+  return today.some(hasProjectContent) || tomorrow.some(hasProjectContent);
+};
+
 // 빈 배열로 교체하면 폼에 입력칸이 하나도 없는 상태가 되므로 초기값(빈 프로젝트 1개)으로 둔다.
 const orInitial = (projects: Array<Project>) => (projects.length > 0 ? projects : [createEmptyProject()]);
 
@@ -170,20 +196,26 @@ type Options = {
   enabled: boolean;
   // save_report 로 기록에 저장된 직후 — 이탈 경고 baseline 갱신, 캘린더 이동 등 폼 쪽 후처리.
   onSaved: (date: ReportDate) => void;
+  // load_report / reset_report_form 으로 폼을 통째로 바꾼 직후 — 이탈 경고 baseline 갱신
+  onReplaced: () => void;
+  // GitHub 커밋 가져오기 다이얼로그 열기 (조회 범위 계산은 폼이 한다)
+  onOpenGithubImport: () => void;
 };
 
-// 보고서 작성 화면의 기능을 WebMCP 도구로 노출한다.
+// 보고서 작성 화면의 기능을 에이전트 도구로 노출한다 (WebMCP + 앱 안 채팅, `useAgentTools`).
 // 도구는 DOM 을 거치지 않고 store 액션을 직접 호출하므로, 에이전트의 변경도 사용자 입력과 똑같이 화면에 반영된다.
-// WebMCP 를 지원하지 않는 브라우저에서는 아무 일도 하지 않는다.
-export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => {
-  const handleSaved = useEffectEvent(onSaved);
-
+export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithubImport }: Readonly<Options>) => {
+  // 도구는 등록 시점에 한 번 만들어지므로, 실행 시점의 최신 콜백을 ref 로 읽는다
+  const callbacks = useRef({ onSaved, onReplaced, onOpenGithubImport });
   useEffect(() => {
-    if (!enabled) return;
+    callbacks.current = { onSaved, onReplaced, onOpenGithubImport };
+  });
 
-    const tools: Array<WebMcpTool> = [
+  useAgentTools(
+    (): Array<AgentTool> => [
       {
         name: 'get_current_report',
+        title: '작성 중인 보고서 확인',
         description:
           '현재 작성 중인 일일 업무 보고서 폼의 내용을 돌려준다. 보고서 날짜(month/day), 금일 업무(today), 익일 업무(tomorrow), 저장 가능 여부(canSave), 완성된 보고서 텍스트(text)를 포함한다. 폼을 수정하기 전에 먼저 호출해 현재 상태를 확인한다.',
         inputSchema: { type: 'object', properties: {} },
@@ -192,6 +224,7 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'list_report_dates',
+        title: '저장된 보고서 날짜 조회',
         description:
           '사용자가 이전에 저장한 보고서들의 날짜 목록(YYYY-MM-DD, 최신순)을 돌려준다. 특정 날짜의 본문은 get_report, 기간·키워드 조회는 search_reports 를 쓴다.',
         inputSchema: { type: 'object', properties: {} },
@@ -203,23 +236,21 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'get_report',
+        title: '저장된 보고서 조회',
         description: '지정한 날짜에 저장된 보고서의 금일/익일 업무 내용을 돌려준다.',
         inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: async (input) => {
           const date = parseDateKeyInput(input.date, 'date');
           if (typeof date !== 'string') return toolError(date.error);
-          const store = useReportHistoryStore.getState();
-          if (!store.allReportDates.includes(date)) return toolError(`${date} 에 저장된 보고서가 없습니다.`);
-          // 로그인 사용자는 월 단위로 lazy 적재한다 (게스트는 no-op).
-          await store.loadMonth(parseInt(date.slice(0, 4), 10), parseInt(date.slice(5, 7), 10));
-          const item = useReportHistoryStore.getState().history.find((i) => reportItemDateKey(i) === date);
-          if (!item) return toolError(`${date} 보고서를 불러오지 못했습니다.`);
+          const item = await findSavedReport(date);
+          if (typeof item === 'string') return toolError(item);
           return toolText(toAgentReport(item));
         },
       },
       {
         name: 'search_reports',
+        title: '보고서 기록 검색',
         description:
           '저장된 보고서를 기간(from~to, 양 끝 포함)과 키워드로 찾는다. 키워드를 주면 프로젝트명·작업·세부 항목에 키워드가 들어간 프로젝트만 남긴다. 주간/월간 보고나 특정 프로젝트 이력 정리에 쓴다. 결과는 날짜 오름차순이며 최근 62건까지만 돌려준다.',
         inputSchema: {
@@ -263,6 +294,7 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'fill_report',
+        title: '보고서 폼 채우기',
         description:
           '보고서 폼을 채운다. today(금일 업무 진행 현황)·tomorrow(익일 업무 진행 예정) 중 준 버킷만 바꾸고, month/day 를 주면 보고서 날짜도 바꾼다. mode="replace"(기본)는 버킷을 통째로 교체하고, "append"는 같은 이름의 프로젝트에 작업을 덧붙이고 새 프로젝트는 뒤에 추가한다. 기존 내용을 고치려면 get_current_report 결과를 수정해 replace 로 다시 넣는다. 폼만 바꾸며 기록 저장은 save_report 로 따로 한다.',
         inputSchema: {
@@ -280,13 +312,8 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
           if (mode !== 'replace' && mode !== 'append') return toolError('mode 는 "replace" 또는 "append" 여야 합니다.');
 
           const hasDate = input.month !== undefined || input.day !== undefined;
-          if (hasDate) {
-            const { month, day } = input;
-            if (typeof month !== 'number' || !Number.isInteger(month) || month < 1 || month > 12)
-              return toolError('month 는 1~12 정수여야 합니다 (day 와 함께 주세요).');
-            if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31)
-              return toolError('day 는 1~31 정수여야 합니다 (month 와 함께 주세요).');
-          }
+          const date = hasDate ? parseMonthDayInput(input) : null;
+          if (typeof date === 'string') return toolError(date);
 
           const updates: Array<[ProjectsBucket, Array<Project>]> = [];
           for (const bucket of ['today', 'tomorrow'] as const) {
@@ -295,10 +322,10 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
             if (typeof parsed === 'string') return toolError(parsed);
             updates.push([bucket, parsed]);
           }
-          if (!hasDate && updates.length === 0) return toolError('month/day, today, tomorrow 중 하나 이상을 주세요.');
+          if (!date && updates.length === 0) return toolError('month/day, today, tomorrow 중 하나 이상을 주세요.');
 
           const store = useReportFormStore.getState();
-          if (hasDate) store.setReportDate({ month: String(input.month), day: String(input.day) });
+          if (date) store.setReportDate(date);
           for (const [bucket, projects] of updates) {
             store.setBucket(bucket, (prev) =>
               mode === 'append' ? appendProjects(prev, projects) : orInitial(projects)
@@ -310,6 +337,7 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'import_report_text',
+        title: '보고서 텍스트 적용',
         description:
           '이미 작성된 일일 업무 보고 텍스트("N월 N일 ... 금일 업무 진행 현황 / 익일 업무 진행 예정" 형식, 들여쓰기 * 프로젝트 / - 작업 (NN%) / · 세부 항목)를 분석해 폼 전체를 교체한다. 형식이 느슨해도 최대한 복원한다.',
         inputSchema: {
@@ -333,6 +361,7 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'carry_over_incomplete_tasks',
+        title: '미완료 업무 익일로 가져오기',
         description:
           '금일 업무 중 진행률 100% 미만인 작업을 익일 업무 진행 예정으로 복사한다. 같은 이름의 프로젝트에는 작업만 덧붙이고, 이미 있는 작업은 건너뛴다.',
         inputSchema: { type: 'object', properties: {} },
@@ -347,10 +376,11 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
       },
       {
         name: 'save_report',
+        title: '보고서 기록에 저장',
         description:
           '현재 폼 내용을 보고서 날짜의 기록으로 저장한다. 같은 날짜 기록이 있으면 덮어쓴다. 사용자에게 확인 창을 띄우고, 사용자가 승인해야 저장된다. 클립보드 복사는 하지 않는다.',
         inputSchema: { type: 'object', properties: {} },
-        execute: async () => {
+        execute: async (_input, { confirm }) => {
           const { reportDate, today, tomorrow } = useReportFormStore.getState();
           if (!isSavable(today, tomorrow))
             return toolError('저장할 수 없습니다. 내용이 비어 있거나, 작업이 없는 프로젝트가 있습니다.');
@@ -365,16 +395,126 @@ export const useReportAgentTools = ({ enabled, onSaved }: Readonly<Options>) => 
           await useReportHistoryStore
             .getState()
             .addHistory({ ...reportDate, todayProjects: today, tomorrowProjects: tomorrow });
-          handleSaved(reportDate);
+          callbacks.current.onSaved(reportDate);
           toast.success('보고서를 기록에 저장했습니다.');
           return toolText({ saved: true, month: Number(reportDate.month), day: Number(reportDate.day) });
         },
       },
-    ];
+      {
+        name: 'set_report_date',
+        title: '보고서 날짜 바꾸기',
+        description: '보고서 폼의 날짜(월/일)만 바꾼다. 내용은 그대로 둔다. 연도는 올해로 본다.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            month: { type: 'integer', minimum: 1, maximum: 12, description: '보고서 월' },
+            day: { type: 'integer', minimum: 1, maximum: 31, description: '보고서 일' },
+          },
+          required: ['month', 'day'],
+        },
+        execute: async (input) => {
+          const date = parseMonthDayInput(input);
+          if (typeof date === 'string') return toolError(date);
+          useReportFormStore.getState().setReportDate(date);
+          toast.success(`보고서 날짜를 ${date.month}월 ${date.day}일로 바꿨습니다.`);
+          return toolText({ month: Number(date.month), day: Number(date.day) });
+        },
+      },
+      {
+        name: 'load_report',
+        title: '저장된 보고서 불러오기',
+        description:
+          '지정한 날짜에 저장된 보고서를 폼으로 불러온다(날짜·금일·익일 모두 교체). 작성 중인 내용이 있으면 사용자에게 덮어쓸지 확인한다. 내용만 보려면 get_report 를 쓴다.',
+        inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
+        execute: async (input, { confirm }) => {
+          const date = parseDateKeyInput(input.date, 'date');
+          if (typeof date !== 'string') return toolError(date.error);
+          const item = await findSavedReport(date);
+          if (typeof item === 'string') return toolError(item);
 
-    // 다른 화면으로 이동해 이 페이지가 숨겨지면(Activity) cleanup 이 돌아 도구도 함께 내려간다.
-    const controller = new AbortController();
-    registerWebMcpTools(tools, controller.signal);
-    return () => controller.abort();
-  }, [enabled]);
+          if (formHasContent()) {
+            const ok = await confirm({
+              title: '기록 불러오기',
+              description: `${item.month}월 ${item.day}일 보고서를 불러오면 현재 작성 중인 내용이 덮어씌워집니다.`,
+              confirmText: '불러오기',
+            });
+            if (!ok) return toolError('사용자가 불러오기를 취소했습니다.');
+          }
+
+          const store = useReportFormStore.getState();
+          store.setReportDate({ month: item.month, day: item.day });
+          store.setBucket('today', orInitial([...item.todayProjects]));
+          store.setBucket('tomorrow', orInitial([...item.tomorrowProjects]));
+          callbacks.current.onReplaced();
+          toast.success(`${item.month}월 ${item.day}일 보고서를 불러왔습니다.`);
+          return toolText(currentFormSnapshot());
+        },
+      },
+      {
+        name: 'reset_report_form',
+        title: '보고서 폼 초기화',
+        description: '보고서 폼을 빈 상태로 초기화한다. 저장된 기록은 지우지 않는다. 사용자에게 확인 창을 띄운다.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async (_input, { confirm }) => {
+          if (!formHasContent()) return toolText({ changed: false, message: '폼이 이미 비어 있습니다.' });
+          const ok = await confirm({
+            title: '폼 초기화',
+            description: '작성 중인 내용이 모두 초기화됩니다. 저장된 기록은 그대로 남습니다.',
+            confirmText: '초기화',
+            variant: 'danger',
+          });
+          if (!ok) return toolError('사용자가 초기화를 취소했습니다.');
+          useReportFormStore.getState().resetForm();
+          callbacks.current.onReplaced();
+          toast.success('보고서 폼을 초기화했습니다.');
+          return toolText({ changed: true, ...currentFormSnapshot() });
+        },
+      },
+      {
+        name: 'export_reports',
+        title: '보고서 기록 내보내기',
+        description:
+          '저장된 보고서 기록 전체를 파일로 내려받는다. format 은 "txt"(보고서 본문을 날짜순으로) 또는 "json"(프로젝트·작업·진행률 구조). 기록은 그대로 남는다. 사용자에게 확인 창을 띄운다.',
+        inputSchema: {
+          type: 'object',
+          properties: { format: { type: 'string', enum: ['txt', 'json'], description: '파일 형식. 기본값 txt' } },
+        },
+        execute: async (input, { confirm }) => {
+          const format = input.format ?? 'txt';
+          if (format !== 'txt' && format !== 'json') return toolError('format 은 "txt" 또는 "json" 이어야 합니다.');
+          const items = await useReportHistoryStore.getState().fetchAllHistory();
+          if (!items) return toolError('보고서 기록을 불러오지 못했습니다.');
+          if (items.length === 0) return toolError('내보낼 기록이 없습니다.');
+
+          const ok = await confirm({
+            title: '기록 내보내기',
+            description: `보고서 기록 ${items.length}건을 ${format === 'txt' ? '텍스트(.txt)' : 'JSON(.json)'} 파일로 내려받습니다.`,
+            confirmText: '내려받기',
+          });
+          if (!ok) return toolError('사용자가 내보내기를 취소했습니다.');
+          downloadReportHistory(items, format);
+          toast.success(`기록 ${items.length}건을 내보냈습니다.`);
+          return toolText({ exported: items.length, format });
+        },
+      },
+      {
+        name: 'open_github_import',
+        title: 'GitHub 커밋 가져오기 열기',
+        description:
+          'GitHub 커밋을 불러와 금일 업무로 정리하는 "GitHub에서 가져오기" 창을 연다. 커밋 선택·적용은 사용자가 창에서 직접 한다. 로그인 회원 전용이라 게스트에게는 로그인 안내가 보인다.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async () => {
+          callbacks.current.onOpenGithubImport();
+          const isMember = useReportHistoryStore.getState().mode === 'user';
+          return toolText({
+            opened: true,
+            message: isMember
+              ? '가져오기 창을 열었습니다. 사용자가 창에서 커밋을 확인하고 적용합니다.'
+              : '게스트라 로그인 안내가 표시됩니다. 커밋 가져오기는 로그인 후 쓸 수 있습니다.',
+          });
+        },
+      },
+    ],
+    enabled
+  );
 };

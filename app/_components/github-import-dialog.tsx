@@ -66,9 +66,8 @@ import {
   toggleCommitAuthors,
   toggleExcludedRepo,
 } from '@/lib/commit-classifier/memory';
+import { downloadPromptModel, getPromptApiAvailability } from '@/lib/prompt-api';
 import {
-  downloadPromptModel,
-  getPromptApiAvailability,
   hasSeenPromptAiNotice,
   markPromptAiNoticeSeen,
   type PromptAiNoticeKind,

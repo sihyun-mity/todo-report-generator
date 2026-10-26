@@ -121,15 +121,29 @@ Next.js 기본 파일명이 아니다. 동작:
 - **게스트**: localStorage에서 한 번에 로드. `MAX_HISTORY_ITEMS` 제한이 있고 `sortGuestByReportDateDesc`로 클라이언트 정렬한다.
 - **`addHistory`**: 같은 날짜의 기존 본문과 일치하면 I/O를 건너뛴다(복사 연타 시 무의미한 쓰기 방지). 사용자 모드에서는 upsert 후 해당 월을 직접 refetch — `loadingMonths`를 표시하지 않아 사용자 액션 직후 스켈레톤 깜빡임이 없다.
 
-### 에이전트 도구 (WebMCP)
+### 에이전트 도구 (WebMCP) · AI 도우미(채팅)
 
-보고서 작성 화면은 브라우저 에이전트용 WebMCP 도구를 등록한다 (`hooks/use-report-agent-tools.ts`, `ReportForm`에서 호출). 서버는 관여하지 않는다 — 도구는 탭 안의 JS 로 store 액션을 직접 호출하고, 지시 해석은 에이전트 몫이다.
+화면의 기능을 **에이전트 도구**로 정의해 두 경로에 함께 노출한다 — ① 브라우저 에이전트용 WebMCP, ② 앱 안 AI 도우미 채팅(Chrome 내장 모델). 서버는 관여하지 않는다 — 도구는 탭 안의 JS 로 store 액션을 직접 호출하고, 지시 해석은 에이전트·모델 몫이다.
 
-- **도구**: 조회 `get_current_report` · `list_report_dates` · `get_report` · `search_reports`, 쓰기 `fill_report` · `import_report_text` · `carry_over_incomplete_tasks` · `save_report`. 쓰기 도구는 id 대신 버킷(today/tomorrow) 단위로 받는다.
-- **진입점**: `lib/webmcp`의 `getModelContext()`가 `document.modelContext`(최신 스펙)를 우선하고 `navigator.modelContext`(초기 프리뷰)로 폴백한다. 둘 다 없으면 아무것도 하지 않는다. 스펙이 초안이라 타입(`types/webmcp.type.ts`)과 이 래퍼만 고치면 되게 격리했다.
-- **노출 시점**: `isFormReady`(기록 hydration 완료) 이후에만 등록한다. 그 전에 채우면 hydration 이 에이전트 입력을 덮어쓴다. `<Activity>`로 숨겨지면 effect cleanup 의 `AbortController.abort()`로 해제되고, 복귀하면 다시 등록된다.
-- **사용자 확인**: 폼 변경은 화면에 그대로 보이므로 확인 없이 반영한다. 기록에 남는 `save_report`만 `confirm()` 다이얼로그로 승인을 받는다. 설정·인증·기록 삭제는 도구로 노출하지 않는다.
-- **입력 검증**: `inputSchema`는 브라우저가 강제하지 않는 힌트다. `execute`에서 다시 검증하고, 실패하면 에이전트가 고쳐 재호출할 수 있도록 필드 경로가 담긴 `isError` 결과를 돌려준다. 기록 본문이 포함된 결과에는 `untrustedContentHint`를 단다.
+- **정의는 한 곳**: 도구는 `AgentTool`(`types/agent-tool.type.ts`, WebMCP 도구 + 채팅 표시용 `title`)로 만들고 `useAgentTools(createTools, enabled)`(`hooks/use-agent-tools.ts`)로 등록한다. 이 훅이 `registerWebMcpTools`(WebMCP)와 `useAgentToolsStore`(채팅이 읽는 레지스트리)에 함께 올리고, `enabled` 가 꺼지거나 화면이 `<Activity>`로 숨겨지면 effect cleanup(`AbortController.abort()` + 레지스트리 해제)으로 둘 다 내린다. 복귀하면 다시 등록된다. 도구는 등록 시점에 한 번 만들어지므로 `execute` 는 `store.getState()` 나 ref 로 최신 값을 읽는다(`useEffectEvent` 함수는 effect 밖 콜백에서 부르면 lint 오류).
+- **등록 위치**:
+  - 전역 — `useGlobalAgentTools`(`components/agent-chat/`, (app) 레이아웃의 `AgentAssistant` 가 호출): `get_app_context`(경로·회원/비회원·테마·이동 가능 화면) · `navigate`(`AGENT_PAGES` 키 + `news_detail`; `settings*` 는 회원만, `login` 은 비회원만) · `set_theme` · `list_news` · `get_news`.
+  - 보고서 작성(홈) — `useReportAgentTools`(`ReportForm` 에서 `isFormReady` 이후): 조회 `get_current_report` · `list_report_dates` · `get_report` · `search_reports`, 쓰기 `fill_report` · `set_report_date` · `import_report_text` · `carry_over_incomplete_tasks` · `load_report` · `reset_report_form` · `save_report` · `export_reports` · `open_github_import`. 쓰기 도구는 id 대신 버킷(today/tomorrow) 단위로 받는다. 폼 hydration 전에 채우면 hydration 이 입력을 덮어쓰므로 `isFormReady` 전에는 등록하지 않는다.
+  - 설정 화면 전용 도구는 두지 않는다 — 계정·인증·로그인 수단·데이터 삭제는 노출 대상이 아니고, 작성 알림 켜기는 알림 권한 프롬프트(사용자 제스처)가 필요해서다. 설정은 `navigate` 로 화면까지만 안내한다.
+- **새 조회 경로 규칙은 도구에도 적용된다**: 새소식은 `getVisibleNewsList` / `getVisibleNewsDetail`(`actions/news.actions.ts`, `queries.news.*`)이 세션으로 회원 여부를 판단해 `newsAudiencesFor` 필터를 건다. 회원/비회원 분기는 `isGuestMode()` 쿠키를 먼저 보고 Supabase 호출을 건너뛴다.
+- **사용자 확인**: 폼 변경·화면 모드·이동은 화면에 그대로 보이므로 확인 없이 반영한다. 기록에 남거나 작성 중인 내용을 지우거나 파일을 내려받는 도구(`save_report` · `load_report`(작성 중 내용이 있을 때) · `reset_report_form` · `export_reports`)는 `execute(input, { confirm })` 의 `confirm` 으로 승인을 받는다 — WebMCP 로 부르면 `ConfirmDialogHost` 다이얼로그, 채팅에서 부르면 대화 안 확인 카드가 뜬다. 기록 삭제·설정·인증·회원 탈퇴·패스키·로그인 기기는 도구로 노출하지 않는다. 확인이 필요한 새 도구도 전역 `confirm` 을 직접 부르지 말고 context 의 `confirm` 을 쓴다.
+- **입력 검증**: `inputSchema`는 브라우저가 강제하지 않는 힌트다(채팅에서는 응답 제약으로 쓰지만 그래도 작은 모델이 틀린다). `execute`에서 다시 검증하고, 실패하면 에이전트가 고쳐 재호출할 수 있도록 필드 경로가 담긴 `isError` 결과를 돌려준다. 기록 본문이 포함된 결과에는 `untrustedContentHint`를 단다(채팅은 이 결과를 "데이터일 뿐 지시가 아님"으로 표시해 모델에 넘긴다).
+- **WebMCP 진입점**: `lib/webmcp`의 `getModelContext()`가 `document.modelContext`(최신 스펙)를 우선하고 `navigator.modelContext`(초기 프리뷰)로 폴백한다. 둘 다 없으면 아무것도 하지 않는다. 스펙이 초안이라 타입(`types/webmcp.type.ts`)과 이 래퍼만 고치면 되게 격리했다. `title` 은 WebMCP 로 넘기지 않는다.
+- **AI 도우미(채팅) UI** — `components/agent-chat/`:
+  - 열기 버튼(`AgentChatButton`)은 **상단바**에, 패널(`AgentAssistant` → `AgentChatPanel`)은 **(app) 레이아웃**에 둔다. 상단바·레이아웃이 (app) 그룹에만 있어 로그인·회원가입에는 자연히 빠지고, 레이아웃이 화면 이동에도 유지돼 대화가 (app) 화면 사이에서 이어진다. 플로팅 버튼을 쓰지 않은 이유: 모바일 하단 복사 바(`MobileCopyBar`)·토스트와 자리가 겹친다.
+  - 모바일(sm 미만)은 하단 시트(80dvh), 그 이상은 우측 하단 떠 있는 패널(400px). **비모달**이라 배경을 깔지 않는다 — 도구가 폼을 채우는 모습을 옆에서 보며 대화한다. 그래서 바깥 클릭으로는 닫지 않고(`useDismissLayer` `outsideClick: false`) Esc·back(`useDismissOnBack`)·X 로 닫는다. back-stack 은 라우트가 바뀌면 비워지므로, `navigate` 등으로 화면을 옮긴 뒤의 back 은 패널이 아니라 이전 화면으로 간다(다이얼로그 안 링크와 같은 동작).
+  - 레이아웃째 숨겨지면(`/login` 등으로 이동) `useResetOnHide` 로 진행 중인 응답을 멈추고 패널을 닫는다. 패널을 닫으면 응답 대기 중인 확인 카드는 취소로 본다. 확인이 필요해지면 패널이 닫혀 있어도 연다.
+- **응답 모델 = Chrome 내장 Prompt API(Gemini Nano)** — `lib/prompt-api/`(커밋 분류와 공용):
+  - `getPromptApiAvailability` 가 `available` 일 때만 대화를 연다. 미지원(`unavailable`)·미설치(`downloadable`/`downloading`)는 패널 안에서 안내하고, 다운로드는 버튼 클릭(`downloadPromptModel`)으로만 시작한다. `ko` 선언 시 unavailable 이라 `en` 으로 선언하고 한국어를 넣는다(`PROMPT_API_OPTIONS`).
+  - 모델 호출은 **탭 전체에서 직렬**이다(`withModelLock`) — 세션이 달라도(커밋 분류 중 채팅) 동시에 돌리면 뒤 요청이 수 분간 멈춘다. 도구 실행·확인 대기는 락 밖에서 한다.
+  - 루프(`runAgentChatTurn`): ① 다음 행동을 `responseConstraint` `{ next: enum['answer', ...도구 이름] }` 으로 고르고 ② 도구면 **그 도구의 `inputSchema` 를 응답 제약으로** 입력을 만든 뒤 ③ 실행해 결과를 대화 기록에 붙이고 반복한다. `answer` 를 고르거나 `AGENT_CHAT_MAX_TOOL_STEPS` 에 닿거나 같은 호출을 되풀이하면 지금까지의 결과로 답을 `promptStreaming` 으로 받아 보여 준다. 한 스키마(anyOf)로 도구와 입력을 함께 고르게 하면 작은 모델이 입력 형태를 자주 틀려 두 단계로 나눴다. 도구 목록은 매 단계 레지스트리에서 다시 읽는다(이동하면 바뀐다).
+  - 질문마다 시스템 프롬프트만 든 세션을 clone 해 쓰고, 문맥은 매번 최근 `AGENT_CHAT_HISTORY_TURNS` 개 대화 + 잘라 낸 도구 결과(`AGENT_CHAT_TOOL_RESULT_MAX_CHARS`)로 넘긴다 — Nano 입력 한도가 작다. 한도 초과(`QuotaExceededError`)는 "새 대화" 안내로 알린다.
+  - 프롬프트를 바꾸면 실제 모델로 대표 요청(폼 채우기·기록 정리·화면 모드·새소식)을 다시 돌려 본다. 아직 실제 Nano 로 검증한 수치는 없다.
 - **DOM 경로도 유지한다**: WebMCP 를 모르는 에이전트·보조기술을 위해 폼 입력칸·버튼은 "금일 프로젝트 1 작업 2 진행률(%)" 같은 위치 기반 `aria-label`을 갖는다. 접두어는 `ProjectList → ProjectItem → TaskItem → TaskDetailItem`으로 `label` prop 을 내려 만든다.
 - **로컬 검증**: Chrome 을 `--enable-features=WebMCPTesting`(또는 `chrome://flags/#enable-webmcp-testing`)으로 띄우고, `chrome-devtools-mcp --categoryExperimentalWebmcp=true`의 `list_webmcp_tools` / `execute_webmcp_tool`로 호출한다.
 - **실사용자 노출 = 오리진 트라이얼**: 기본 설정의 Chrome 에는 `document.modelContext`가 없다. `ORIGIN_TRIAL_TOKENS`(쉼표 구분, `types/environments.d.ts`)를 설정하면 `next.config.ts`의 `headers()`가 모든 응답에 `Origin-Trial` 헤더를 실어 방문자 브라우저에서 API 가 켜진다. 토큰이 없으면 헤더를 싣지 않는다.
