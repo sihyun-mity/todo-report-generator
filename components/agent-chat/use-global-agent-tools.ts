@@ -63,7 +63,7 @@ export function useGlobalAgentTools() {
         title: '현재 화면 확인',
         kind: 'read',
         description:
-          '지금 보고 있는 화면(경로·제목), 사용자 상태(로그인 회원 member / 비회원 guest), 화면 모드(theme), 이동할 수 있는 화면 목록을 돌려준다. 무엇을 할 수 있는지 모를 때 먼저 호출한다.',
+          'Return the current screen (path, title), the user state (member = logged in / guest), the color theme and the screens you can navigate to. Call it first when unsure what is possible.',
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
@@ -85,12 +85,12 @@ export function useGlobalAgentTools() {
         name: 'navigate',
         title: '화면 이동',
         kind: 'navigate',
-        description: `앱 안의 다른 화면으로 이동한다. page 는 ${PAGE_KEYS.join(', ')}, news_detail 중 하나. news_detail 은 newsId(list_news 결과의 id)가 필요하다. settings 로 시작하는 화면은 로그인 회원만, login 은 비회원만 이동할 수 있다. 이동하면 그 화면의 도구가 새로 생기고 이전 화면 도구는 사라진다.`,
+        description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news). settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
         inputSchema: {
           type: 'object',
           properties: {
-            page: { type: 'string', enum: [...PAGE_KEYS, 'news_detail'], description: '이동할 화면' },
-            newsId: { type: 'string', description: 'page 가 news_detail 일 때 소식 id' },
+            page: { type: 'string', enum: [...PAGE_KEYS, 'news_detail'], description: 'Screen to go to' },
+            newsId: { type: 'string', description: 'News id when page is news_detail' },
           },
           required: ['page'],
         },
@@ -122,11 +122,10 @@ export function useGlobalAgentTools() {
         name: 'set_theme',
         title: '화면 모드 바꾸기',
         kind: 'setting',
-        description:
-          '화면 모드를 바꾼다. theme 은 light(라이트), dark(다크), system(기기 설정을 따름) 중 하나. 이 기기에 저장된다.',
+        description: 'Change the color theme: light, dark, or system (follow the device). Saved on this device.',
         inputSchema: {
           type: 'object',
-          properties: { theme: { type: 'string', enum: ['light', 'dark', 'system'], description: '화면 모드' } },
+          properties: { theme: { type: 'string', enum: ['light', 'dark', 'system'], description: 'Color theme' } },
           required: ['theme'],
         },
         execute: async (input) => {
@@ -143,7 +142,7 @@ export function useGlobalAgentTools() {
         name: 'list_news',
         title: '새소식 목록 조회',
         kind: 'read',
-        description: `서비스 업데이트 소식(새소식)을 최신순으로 최대 ${AGENT_NEWS_LIST_LIMIT}건 돌려준다(id·제목·게시일). 회원/비회원에 따라 보이는 소식이 다르다. 본문은 get_news 로 읽는다.`,
+        description: `Return up to ${AGENT_NEWS_LIST_LIMIT} service news/updates (새소식), newest first (id, title, date). Members and guests see different news. Read the body with get_news.`,
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
@@ -163,10 +162,10 @@ export function useGlobalAgentTools() {
         name: 'get_news',
         title: '새소식 읽기',
         kind: 'read',
-        description: '새소식 한 건의 본문(마크다운)을 돌려준다. id 는 list_news 결과의 id.',
+        description: 'Return the body (markdown) of one news item. id comes from list_news.',
         inputSchema: {
           type: 'object',
-          properties: { id: { type: 'string', description: '소식 id' } },
+          properties: { id: { type: 'string', description: 'News id' } },
           required: ['id'],
         },
         annotations: { readOnlyHint: true },

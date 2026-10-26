@@ -26,6 +26,7 @@ export function AgentAssistant() {
 
   const isOpen = useAgentChatStore((s) => s.isOpen);
   const setOpen = useAgentChatStore((s) => s.setOpen);
+  const setRunning = useAgentChatStore((s) => s.setRunning);
   const tools = agentToolsFor(
     useAgentToolsStore((s) => s.tools),
     'chat'
@@ -97,6 +98,7 @@ export function AgentAssistant() {
     const controller = new AbortController();
     abortRef.current = controller;
     setIsRunning(true);
+    setRunning(true);
 
     const history: Array<AgentChatTurn> = [...turns, { role: 'user', text: text.trim() }];
     setTurns(history);
@@ -139,6 +141,7 @@ export function AgentAssistant() {
       if (answerId) patchMessage(answerId, { streaming: false });
       settleConfirms(false);
       setIsRunning(false);
+      setRunning(false);
       if (abortRef.current === controller) abortRef.current = null;
     }
   };

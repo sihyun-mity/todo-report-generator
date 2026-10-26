@@ -1,8 +1,21 @@
 'use client';
 
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
-import { AlertCircle, ArrowUp, Check, Cpu, Download, Loader2, RotateCcw, Sparkles, Square } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowUp,
+  Check,
+  Cpu,
+  Download,
+  Lightbulb,
+  Loader2,
+  RotateCcw,
+  Shuffle,
+  Sparkles,
+  Square,
+} from 'lucide-react';
 import type { AgentChatMessage } from '@/types';
+import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLE_ROTATE_MS, AGENT_CHAT_EXAMPLES } from '@/constants';
 import { useDismissLayer } from '@/hooks';
 import { cn } from '@/utils';
 import { CloseButton, useDismissOnBack } from '..';
@@ -23,14 +36,17 @@ type Props = {
   onAnswerConfirm: (id: string, ok: boolean) => void;
 };
 
-// 추천 질문 — 필요한 도구가 지금 화면에 있을 때만 보여 준다
-const SUGGESTIONS: ReadonlyArray<{ text: string; tool: string }> = [
-  { text: '지금 작성 중인 보고서를 요약해줘', tool: 'get_current_report' },
-  { text: '오늘 미완료 업무를 내일 할 일로 옮겨줘', tool: 'carry_over_incomplete_tasks' },
-  { text: '이번 주에 쓴 보고서를 정리해줘', tool: 'search_reports' },
-  { text: '최근 새소식 알려줘', tool: 'list_news' },
-  { text: '다크 모드로 바꿔줘', tool: 'set_theme' },
-];
+// seed 로 섞은 순서 — 같은 seed 면 같은 순서라 렌더마다 바뀌지 않는다(선형 합동 생성기로 Fisher-Yates)
+const shuffleBySeed = <T,>(items: ReadonlyArray<T>, seed: number): Array<T> => {
+  const result = [...items];
+  let state = seed;
+  for (let i = result.length - 1; i > 0; i--) {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    const j = state % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
 
 // 모바일(sm 미만)은 하단 시트, 그 이상은 우측 하단 떠 있는 패널.
 // 페이지를 가리지 않는 비모달 창이라 배경을 깔지 않는다 — 도구가 폼을 채우는 모습을 옆에서 보면서 대화한다.
@@ -52,6 +68,16 @@ export function AgentChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputId = useId();
   const [draft, setDraft] = useState('');
+  // 예시는 열 때마다 무작위 순서로 — "다른 예시"를 누르면 seed 를 바꿔 다시 섞는다
+  const [exampleSeed, setExampleSeed] = useState(() => Math.floor(Math.random() * 2147483648));
+  const [exampleTick, setExampleTick] = useState(0);
+
+  // 대화 중 예시 칩을 돌려 가며 바꿔, 할 수 있는 일을 조금씩 보여 준다.
+  // 입력칸 안내 문구로 돌리지 않는 이유: 입력칸이 내용 길이에 맞춰 늘어나(field-sizing) 긴 예시마다 높이가 출렁인다.
+  useEffect(() => {
+    const timer = setInterval(() => setExampleTick((t) => t + 1), AGENT_CHAT_EXAMPLE_ROTATE_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   useDismissLayer(panelRef, onClose, { outsideClick: false });
   useDismissOnBack(true, onClose);
@@ -77,7 +103,12 @@ export function AgentChatPanel({
   };
 
   const isReady = availability === 'available';
-  const suggestions = SUGGESTIONS.filter((s) => toolNames.includes(s.tool)).slice(0, 4);
+  // 지금 화면에 도구가 있는 예시만 — 다른 화면의 기능을 권하지 않는다
+  const examples = shuffleBySeed(
+    AGENT_CHAT_EXAMPLES.filter((e) => toolNames.includes(e.tool)).map((e) => e.text),
+    exampleSeed
+  );
+  const rotatingExample = examples.length > 0 ? examples[exampleTick % examples.length] : null;
 
   return (
     <section
@@ -122,18 +153,33 @@ export function AgentChatPanel({
               무엇을 도와드릴까요? 보고서를 채우거나, 지난 기록을 찾아 정리하거나, 화면 모드를 바꾸는 등 이 화면에서 할
               수 있는 일을 말로 시켜 보세요.
             </p>
-            {suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map((s) => (
-                  <button
-                    key={s.text}
-                    type="button"
-                    onClick={() => submit(s.text)}
-                    className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  >
-                    {s.text}
-                  </button>
-                ))}
+            {examples.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">이렇게 말해 보세요</p>
+                  {examples.length > AGENT_CHAT_EXAMPLE_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setExampleSeed((seed) => seed + 1)}
+                      className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                    >
+                      <Shuffle size={12} aria-hidden />
+                      다른 예시
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {examples.slice(0, AGENT_CHAT_EXAMPLE_COUNT).map((text) => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => submit(text)}
+                      className="rounded-full border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -154,6 +200,18 @@ export function AgentChatPanel({
         )}
       </div>
 
+      {isReady && messages.length > 0 && !isRunning && rotatingExample && (
+        // 대화 중에도 다른 기능을 알 수 있게 예시 하나를 돌려 가며 보여 준다. 누르면 보내지 않고 입력칸에 채운다.
+        <button
+          type="button"
+          onClick={() => setDraft(rotatingExample)}
+          className="mx-3 flex items-center gap-1.5 truncate rounded-lg px-2 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        >
+          <Lightbulb size={12} className="shrink-0" aria-hidden />
+          <span className="truncate">이렇게도 말해 보세요 · {rotatingExample}</span>
+        </button>
+      )}
+
       {isReady && (
         <form
           onSubmit={(event) => {
@@ -171,7 +229,7 @@ export function AgentChatPanel({
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder="예: 오늘 보고서에 회의 준비 작업 50% 추가해줘"
+            placeholder="AI 도우미에게 부탁할 일을 적어 주세요"
             className="max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             style={{ fieldSizing: 'content' } as React.CSSProperties}
           />
@@ -210,15 +268,16 @@ function ChatMessage({ message, onAnswerConfirm }: Readonly<ChatMessageProps>) {
     case 'user':
       return (
         <div className="flex justify-end">
-          <p className="max-w-[85%] rounded-2xl rounded-br-md bg-blue-500 px-3.5 py-2 text-sm whitespace-pre-wrap text-white">
+          <p className="w-fit max-w-[85%] rounded-2xl rounded-br-md bg-blue-500 px-3.5 py-2 text-sm whitespace-pre-wrap text-white">
             {message.text}
           </p>
         </div>
       );
     case 'assistant':
       return (
-        <p className="max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-          {message.text}
+        // w-fit: 블록 요소라 짧은 답도 최대 폭까지 늘어나던 것을 글 길이에 맞춘다. 모델이 끝에 붙이는 빈 줄은 떼어 낸다.
+        <p className="w-fit max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
+          {message.text.trim()}
           {message.streaming && (
             <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
           )}

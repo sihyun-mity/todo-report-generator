@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AgentAssistant, AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
+import { AgentAssistant, AgentBusyGuard, AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
@@ -7,8 +7,11 @@ export default function AppLayout({ children }: LayoutProps<'/'>) {
   return (
     <div className="isolate min-h-screen-enhanced bg-background text-foreground">
       <AppTopBar />
-      <PasskeyRegisterBanner />
-      {children}
+      {/* AI 도우미가 요청을 처리하는 동안 본문 조작을 막는다(상단바·채팅 패널은 바깥이라 그대로 쓴다) */}
+      <AgentBusyGuard>
+        <PasskeyRegisterBanner />
+        {children}
+      </AgentBusyGuard>
 
       {/* AI 도우미(채팅): (auth) 경로에는 두지 않도록 (app) 그룹 layout 에 마운트. 열기 버튼은 AppTopBar 에 있다 */}
       <AgentAssistant />

@@ -30,6 +30,9 @@ export type AgentChatStore = {
   isOpen: boolean;
   setOpen: (isOpen: boolean) => void;
   toggle: () => void;
+  // 채팅이 요청을 처리하는 중 — 그동안 페이지 본문 조작을 막는다(AgentBusyGuard)
+  isRunning: boolean;
+  setRunning: (isRunning: boolean) => void;
 };
 
 export type AgentToolsStore = {
