@@ -6,6 +6,7 @@ import { ClipboardList, Github, KeyRound, Mail } from 'lucide-react';
 import { WebAuthnAbortService } from '@simplewebauthn/browser';
 import Link from 'next/link';
 import { CloseIcon, closeButtonClassName } from '@/components';
+import { PASSWORD_MIN_LENGTH } from '@/constants';
 import { useSearchParams } from 'next/navigation';
 import { useWebAuthnSupported } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
@@ -176,8 +177,8 @@ function SignupForm() {
           autoComplete="new-password"
           value={password}
           onChange={setPassword}
-          placeholder="6자 이상 입력해주세요"
-          minLength={6}
+          placeholder={`${PASSWORD_MIN_LENGTH}자 이상 입력해주세요`}
+          minLength={PASSWORD_MIN_LENGTH}
           required
         />
         <Field
@@ -188,7 +189,7 @@ function SignupForm() {
           value={confirmPassword}
           onChange={setConfirmPassword}
           placeholder="비밀번호를 다시 입력해주세요"
-          minLength={6}
+          minLength={PASSWORD_MIN_LENGTH}
           required
           invalid={confirmPassword.length > 0 && confirmPassword !== password}
           error={
@@ -370,7 +371,7 @@ function LoginForm() {
               value={password}
               onChange={setPassword}
               placeholder="비밀번호를 입력해주세요"
-              minLength={6}
+              minLength={PASSWORD_MIN_LENGTH}
               required
             />
             <AuthButton type="submit" variant="primary" disabled={isSubmitting}>

@@ -55,6 +55,8 @@ import {
 const DETAIL_USAGE_RATIO = 0.1;
 // 비율을 볼 만큼 작업이 쌓이지 않았으면 판단하지 않는다
 const DETAIL_USAGE_MIN_TASKS = 10;
+// 비율을 셀 최근 보고서 수
+const DETAIL_USAGE_RECENT_REPORTS = 20;
 
 // 저장소 → 프로젝트 판정 임계 점수. PoC 에서 같은 제품 9-10, 다른 코드베이스 ≤7 로 갈렸다.
 const REPO_MATCH_THRESHOLD = 8;
@@ -638,11 +640,11 @@ export async function classifyCommits({
   }
 }
 
-// 최근 보고서(최대 20건)의 작업 중 세부 항목을 단 비율로 이 사용자가 세부 항목을 쓰는지 본다.
+// 최근 보고서(최대 `DETAIL_USAGE_RECENT_REPORTS` 건)의 작업 중 세부 항목을 단 비율로 이 사용자가 세부 항목을 쓰는지 본다.
 function usesDetails(history: ReadonlyArray<ReportHistoryItem>): boolean {
   const tasks = [...history]
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 20)
+    .slice(0, DETAIL_USAGE_RECENT_REPORTS)
     .flatMap((item) => item.todayProjects.flatMap((p) => p.tasks.filter((t) => t.content.trim())));
   if (tasks.length < DETAIL_USAGE_MIN_TASKS) return true;
   const withDetails = tasks.filter((t) => (t.details ?? []).some((d) => d.content.trim())).length;

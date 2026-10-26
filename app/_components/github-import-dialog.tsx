@@ -48,9 +48,11 @@ import {
   COMMIT_CLASSIFY_COMPLETE_HOLD_MS,
   GITHUB_IMPORT_INTENT_COOKIE,
   GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
+  GITHUB_COMMITS_CLASSIFY_LIMIT,
   GITHUB_COMMITS_MAX_LOOKBACK_DAYS,
   GITHUB_IMPORT_OAUTH_SCOPES,
   GITHUB_MAX_REPOS,
+  GITHUB_TOKEN_TTL_DAYS,
 } from '@/constants';
 import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
@@ -127,7 +129,7 @@ const omissionNotice = (result: {
   if (result.omitted > 0) {
     // 한 페이지가 꽉 찬 조회가 있으면 실제 커밋은 더 많을 수 있다
     const total = `${result.commits.length + result.omitted}건${result.pageCapped ? ' 이상' : ''}`;
-    lines.push(`커밋이 ${total}이라 최근 ${result.commits.length}건만 분류했어요.`);
+    lines.push(`커밋이 ${total}이라 최근 ${GITHUB_COMMITS_CLASSIFY_LIMIT}건만 분류했어요.`);
   }
   if (result.omitted === 0 && !result.clipped) return lines.join(' ');
   const end = result.until ? new Date(new Date(result.until).getTime() - 1) : new Date();
@@ -1163,7 +1165,7 @@ function ConnectGuide({ onConnect, isConnecting }: Readonly<ConnectGuideProps>) 
           넘어갔다면 GitHub Settings → Applications → Authorized OAuth Apps 에서 요청할 수 있어요.
         </GuideItem>
         <GuideItem icon={Lock} title="토큰은 서버에 저장하지 않아요">
-          이 브라우저의 보안 쿠키에만 30일간 보관되고, 언제든 연결을 해제할 수 있어요.
+          이 브라우저의 보안 쿠키에만 {GITHUB_TOKEN_TTL_DAYS}일간 보관되고, 언제든 연결을 해제할 수 있어요.
         </GuideItem>
         <GuideItem icon={Cpu} title="분류는 이 기기 안에서 이뤄져요">
           Chrome 내장 온디바이스 AI가 커밋을 프로젝트와 작업에 나눠요. 커밋 내용을 외부 AI로 보내지 않아요.

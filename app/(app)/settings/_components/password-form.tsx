@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createClient } from '@/lib/supabase/client';
+import { PASSWORD_MIN_LENGTH } from '@/constants';
 import { useResetOnHide } from '@/hooks';
 
 type Props = {
@@ -33,8 +34,8 @@ export function PasswordForm({ currentEmail, hasPassword, onPasswordCreated }: R
       toast.error(hasPassword ? '새 비밀번호 확인이 일치하지 않습니다.' : '비밀번호 확인이 일치하지 않습니다.');
       return;
     }
-    if (newPassword.length < 6) {
-      toast.error('비밀번호는 6자 이상이어야 합니다.');
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      toast.error(`비밀번호는 ${PASSWORD_MIN_LENGTH}자 이상이어야 합니다.`);
       return;
     }
     if (hasPassword && newPassword === currentPassword) {
@@ -85,7 +86,7 @@ export function PasswordForm({ currentEmail, hasPassword, onPasswordCreated }: R
 
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">6자 이상 입력해주세요.</p>
+      <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">{PASSWORD_MIN_LENGTH}자 이상 입력해주세요.</p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {hasPassword && (
           <div className="flex flex-col gap-1">
@@ -112,7 +113,7 @@ export function PasswordForm({ currentEmail, hasPassword, onPasswordCreated }: R
             id="new-password"
             type="password"
             autoComplete="new-password"
-            minLength={6}
+            minLength={PASSWORD_MIN_LENGTH}
             required
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
@@ -128,7 +129,7 @@ export function PasswordForm({ currentEmail, hasPassword, onPasswordCreated }: R
             id="confirm-password"
             type="password"
             autoComplete="new-password"
-            minLength={6}
+            minLength={PASSWORD_MIN_LENGTH}
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}

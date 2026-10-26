@@ -1,7 +1,9 @@
 // GitHub OAuth 액세스 토큰을 담는 봉인(iron-session) 쿠키. httpOnly 라 브라우저 JS 에서는 읽을 수 없다.
 export const GITHUB_TOKEN_COOKIE_NAME = 'github_token';
-// OAuth App 토큰은 만료가 없지만, 쿠키는 30일 동안 커밋을 가져오지 않으면 끊어 노출 기간을 줄인다(가져올 때마다 다시 센다).
-export const GITHUB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+// OAuth App 토큰은 만료가 없지만, 쿠키는 이 기간 동안 커밋을 가져오지 않으면 끊어 노출 기간을 줄인다(가져올 때마다 다시 센다).
+// 연결 안내 문구가 일 단위를 그대로 보여 주므로 일 단위로 정하고 초는 거기서 만든다.
+export const GITHUB_TOKEN_TTL_DAYS = 30;
+export const GITHUB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * GITHUB_TOKEN_TTL_DAYS;
 
 // 로그인에 쓰는 Supabase GitHub OAuth App 을 그대로 쓰되, 연결할 때만 `repo` 스코프를 추가로 요청한다.
 // 조직 비공개 저장소의 커밋을 읽으려면 OAuth App 에서는 `repo` 외에 선택지가 없다(읽기 전용 스코프 없음).
@@ -20,7 +22,9 @@ export const GITHUB_OAUTH_RESULT_PARAM = 'github';
 export const GITHUB_COMMITS_MAX_LOOKBACK_DAYS = 7;
 // 한 번에 분류할 커밋 수 상한. 온디바이스 AI 는 직렬로만 돌고 호출 수가 커밋(묶음) 수에 비례하며,
 // 새 작업 이름짓기 프롬프트에 묶음 전체가 들어가므로 넘치면 최근 커밋만 남긴다(금일 보고서에는 최근 작업이 더 중요하다).
-export const GITHUB_COMMITS_CLASSIFY_LIMIT = 40;
+// 이름짓기 프롬프트는 프로젝트마다 한 번이고 질문마다 세션을 clone 해 문맥이 쌓이지 않는다. 60건이면 커밋 제목이
+// 2-3천 토큰으로 Gemini Nano 입력 한도(약 9천)에 여유가 있고, 분류 시간은 40건 대비 1.5배 안쪽으로 는다.
+export const GITHUB_COMMITS_CLASSIFY_LIMIT = 60;
 // 최근 push 된 저장소 중 조회할 최대 개수 / 저장소당 조회할 최대 브랜치 수
 export const GITHUB_MAX_REPOS = 20;
 export const GITHUB_MAX_BRANCHES_PER_REPO = 10;
@@ -40,14 +44,16 @@ export const COMMIT_IMPORT_DETAIL_EDIT_LIMIT = 20;
 // 세부 항목 피드백 횟수 감쇠율 — 보고서 날짜가 바뀐 저장마다 기존 횟수에 곱한다. 0.85 면 4번 저장 뒤 영향이 절반,
 // 15번 뒤 10% 아래. 누적만 하면 오래 쓸수록 "아낄지" 판단이 굳어 습관이 바뀌어도 뒤집히지 않았다.
 export const COMMIT_IMPORT_DETAIL_FEEDBACK_DECAY = 0.85;
-export const COMMIT_IMPORT_PENDING_LINK_LIMIT = 300;
+// 저장 대기 연결은 가져온 작업·세부 항목마다 쌓여 분류 커밋 수에 비례한다 — 상한을 올리면 함께 늘린다
+export const COMMIT_IMPORT_PENDING_LINK_LIMIT = 450;
 // 세부 항목 표기 보정을 프롬프트 예시로 넘기는 개수
 export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;
 // 기억할 진행률 보정 최대 개수 / 진행률 유추 프롬프트에 예시로 넘기는 개수
 export const COMMIT_IMPORT_PROGRESS_EDIT_LIMIT = 20;
 export const COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT = 8;
-// 기억할 가져온 작업(등록 기록) 최대 개수 — 다음 가져오기에서 이미 등록한 작업을 알아보는 데 쓴다
-export const COMMIT_IMPORT_IMPORTED_TASK_LIMIT = 60;
+// 기억할 가져온 작업(등록 기록) 최대 개수 — 다음 가져오기에서 이미 등록한 작업을 알아보는 데 쓴다.
+// 한 번에 분류하는 커밋 수(`GITHUB_COMMITS_CLASSIFY_LIMIT`)보다 넉넉해야 같은 날 나눠 가져올 때 앞 기록이 밀려나지 않는다.
+export const COMMIT_IMPORT_IMPORTED_TASK_LIMIT = 100;
 // 가져온 작업명과 등록 기록의 작업명(AI 원래 이름·사용자 최종 이름)이 이 유사도(글자 bigram Dice, 0-1) 이상이면 같은 작업으로 본다
 export const COMMIT_IMPORT_SIMILAR_TASK_THRESHOLD = 0.7;
 // 유사도가 이 값 이상 ~ 위 임계값 미만인 애매한 후보만 AI 에 묻는다(표현만 다른 같은 작업). 작업마다 묻는 후보 수 상한.
