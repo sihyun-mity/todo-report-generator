@@ -21,6 +21,8 @@ type AgentInputBoxProps = {
   // 안내 줄이 pendingHint 로 바뀐다. 그동안은 새로 보내지 않는다
   pending?: boolean;
   pendingHint?: string;
+  // 보낸 글을 바로 지우지 않고 pending 이 끝날 때까지 반짝이며(스켈레톤처럼) 남겨 둔다 — 무엇을 보냈고 무엇을 기다리는지 보이게
+  holdUntilHandoff?: boolean;
   className?: string;
 };
 
@@ -40,10 +42,17 @@ export function AgentInputBox({
   attentionKey,
   pending = false,
   pendingHint,
+  holdUntilHandoff = false,
   className,
 }: Readonly<AgentInputBoxProps>) {
   const inputId = useId();
   const [text, setText] = useState('');
+  // 기다림이 끝나면(Nano로 넘어가면) 남겨 둔 글을 지운다 — effect 대신 렌더 중에 이전 값과 견준다
+  const [wasPending, setWasPending] = useState(pending);
+  if (wasPending !== pending) {
+    setWasPending(pending);
+    if (!pending && holdUntilHandoff) setText('');
+  }
   const speechBase = useRef('');
   const speech = useSpeechInput((transcript) => {
     setText(speechBase.current ? `${speechBase.current} ${transcript}` : transcript);
@@ -59,7 +68,7 @@ export function AgentInputBox({
     }
     speech.stop();
     onSubmit(value);
-    setText('');
+    if (!holdUntilHandoff) setText('');
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -113,13 +122,28 @@ export function AgentInputBox({
         onKeyDown={handleKeyDown}
         rows={1}
         disabled={disabled}
+        readOnly={pending}
         placeholder={placeholder}
         className={cn(
           'block max-h-40 min-h-11 w-full resize-none bg-transparent px-3.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-500',
-          hasToolbar ? 'pt-3 pb-1' : 'py-3'
+          hasToolbar ? 'pt-3 pb-1' : 'py-3',
+          // 기다리는 동안 글은 위에 겹친 반짝이 글로 보여 준다(입력칸 글은 자리만 차지한다)
+          pending && 'text-transparent caret-transparent dark:text-transparent'
         )}
         style={{ fieldSizing: 'content' } as React.CSSProperties}
       />
+      {pending && text && (
+        // 보낸 요청 — 입력칸과 같은 자리·여백에 겹쳐 빛이 지나가는 글(스켈레톤)로 "이걸 처리하는 중"을 보인다
+        <p
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-0 max-h-40 text-shimmer overflow-hidden px-3.5 text-sm break-words whitespace-pre-wrap',
+            hasToolbar ? 'pt-3' : 'py-3'
+          )}
+        >
+          {text}
+        </p>
+      )}
       <div className={cn('flex items-center gap-1 px-2 pb-2', !hasToolbar && 'hidden')}>
         {/* 안내 줄도 입력칸의 label 로 둔다 — 버튼 사이 빈 곳까지 채우므로(flex-1) 이 줄을 눌러도 입력칸으로 포커스가 간다.
             입력칸 이름은 위의 sr-only label 로 충분하므로 보조기술에는 숨긴다 */}

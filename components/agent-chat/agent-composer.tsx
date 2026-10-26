@@ -29,6 +29,7 @@ export function AgentComposer() {
           hint="예: 지난주 보고서 요약해줘 · 로그인 오류 고쳤고 결제 리팩터링 절반 했어"
           isRunning={isRunning && !handoff}
           pending={handoff}
+          holdUntilHandoff
           pendingHint="Nano가 요청을 읽고 있어요…"
           // 보내자마자 Nano로 넘어가면 모델을 준비하는 몇 초 동안 빈 패널만 보였다 — 첫 생각을 시작할 때 넘긴다
           onSubmit={(text) => useAgentChatStore.getState().submit({ type: 'prompt', text }, { handoff: true })}

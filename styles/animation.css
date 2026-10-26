@@ -115,6 +115,51 @@
 }
 
 /**
+ * text-shimmer: 글 위로 빛이 지나간다 — 보낸 요청을 Nano가 받기 전까지 그 글을 스켈레톤처럼 보여 준다(홈 입력창).
+ * 글자색 자체를 그라디언트로 칠하고(background-clip: text) 그라디언트 위치를 옮긴다.
+ */
+@keyframes text-shimmer-move {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@utility text-shimmer {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-zinc-400) 0%,
+    var(--color-zinc-400) 35%,
+    var(--color-zinc-900) 50%,
+    var(--color-zinc-400) 65%,
+    var(--color-zinc-400) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  animation: text-shimmer-move 1.8s linear infinite;
+
+  :where(.dark) & {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-zinc-500) 0%,
+      var(--color-zinc-500) 35%,
+      var(--color-zinc-50) 50%,
+      var(--color-zinc-500) 65%,
+      var(--color-zinc-500) 100%
+    );
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    color: var(--color-zinc-500);
+    background: none;
+  }
+}
+
+/**
  * rainbow-glow: AI 기능 버튼(iOS·Gemini 풍)을 감싸는 무지개 빛 — 배경 전체가 무지개로 빛나고 바깥으로 번진다.
  * 감싼 요소(버튼)를 반투명 배경으로 두면 그 아래 무지개가 비친다. padding 만큼은 무지개가 그대로 드러나 테두리가 된다.
  * 너무 쨍하다는 피드백으로 채도를 낮추고(saturate) 바깥 번짐을 옅게 했다 — 버튼 배경도 80% 안팎으로 가려 비치는 색을 줄인다.
