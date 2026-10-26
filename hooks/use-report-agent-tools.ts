@@ -18,7 +18,7 @@ import {
   REPORT_FORM_ACTION_TOOLS,
   REPORT_SCREEN_FEATURE_TOOLS,
 } from '@/constants';
-import { toolError, toolText } from '@/lib/webmcp';
+import { toolError, toolText, toolUnavailable } from '@/lib/webmcp';
 import { useAgentTools } from '.';
 import {
   appendProjects,
@@ -212,14 +212,36 @@ const parsePositionInput = (value: unknown): number | undefined | { error: strin
   return value;
 };
 
+// 없는 날짜를 물었을 때 함께 알려 줄 가까운 저장 날짜 수
+const NEAREST_REPORT_DATES = 3;
+
+// 보고서 기록 store 를 적재한다 — 홈이 아닌 화면으로 바로 들어오면 아직 적재 전(mode: 'loading')이다. 적재는 한 번만 돈다(Promise 캐시).
+const ensureHistory = () => useReportHistoryStore.getState().initialize();
+
+const monthDay = (date: string) => `${parseInt(date.slice(5, 7), 10)}월 ${parseInt(date.slice(8, 10), 10)}일`;
+
 // 저장된 보고서 한 건을 찾는다. 로그인 사용자는 월 단위로 lazy 적재하므로 해당 월을 먼저 불러온다 (게스트는 no-op).
-const findSavedReport = async (date: string): Promise<ReportHistoryItem | string> => {
+// 없는 날짜면 가까운 저장 날짜를 골라 그 보고서로 할지 되묻는다(verb: "볼까요"·"불러올까요") — 오류만 돌려주면 모델이 아무 날짜나 다시 골랐다.
+const findSavedReport = async (date: string, verb: string): Promise<ReportHistoryItem | WebMcpToolResult> => {
+  await ensureHistory();
   const store = useReportHistoryStore.getState();
-  if (!store.allReportDates.includes(date)) return `${date} 에 저장된 보고서가 없습니다.`;
+  if (!store.allReportDates.includes(date)) {
+    const nearest = [...store.allReportDates]
+      .sort((a, b) => Math.abs(Date.parse(a) - Date.parse(date)) - Math.abs(Date.parse(b) - Date.parse(date)))
+      .slice(0, NEAREST_REPORT_DATES)
+      .sort();
+    return nearest.length > 0
+      ? toolUnavailable({
+          reason: `${monthDay(date)}에 저장된 보고서가 없어요.`,
+          offer: `가까운 ${nearest.map(monthDay).join(' · ')} 중 하나를 ${verb}?`,
+        })
+      : toolError('저장된 보고서가 하나도 없어요.');
+  }
   await store.loadMonth(parseInt(date.slice(0, 4), 10), parseInt(date.slice(5, 7), 10));
   const item = useReportHistoryStore.getState().history.find((i) => reportItemDateKey(i) === date);
-  return item ?? `${date} 보고서를 불러오지 못했습니다.`;
+  return item ?? toolError(`${monthDay(date)} 보고서를 불러오지 못했어요.`);
 };
+const isToolResult = (value: ReportHistoryItem | WebMcpToolResult): value is WebMcpToolResult => 'content' in value;
 
 // 한 작업을 가리키는 입력(section · task · project?)을 풀어 찾는다
 const resolveTaskInput = (input: Record<string, unknown>) => {
@@ -404,6 +426,105 @@ const DATE_KEY_SCHEMA: WebMcpJsonSchema = {
   description: 'Report date (YYYY-MM-DD)',
 };
 
+// 저장된 보고서 기록 조회 — 작성 중인 폼과 관계없어 (app) 어느 화면에서나 쓴다(useHistoryAgentTools).
+// 보고서 화면에만 두었을 때는 새소식 화면에서 "지난주 보고서 요약해줘"에 새소식 목록으로 대신했다.
+const createHistoryAgentTools = (): Array<AgentTool> => [
+  {
+    name: 'list_report_dates',
+    title: '저장된 보고서 날짜 조회',
+    kind: 'read',
+    description:
+      'Return only the dates (YYYY-MM-DD, newest first) that have saved reports — no content. Use it only to know which dates have records. To view or summarize content, use search_reports (range/keyword) or get_report (one day).',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+    execute: async () => {
+      await ensureHistory();
+      const { mode, allReportDates } = useReportHistoryStore.getState();
+      return toolText({ storage: mode === 'user' ? 'account' : 'browser', dates: allReportDates });
+    },
+  },
+  {
+    name: 'get_report',
+    title: '저장된 보고서 조회',
+    kind: 'read',
+    description: 'Return the saved report (today and tomorrow sections) for the given date.',
+    inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input) => {
+      const date = parseDateKeyInput(input.date, 'date');
+      if (typeof date !== 'string') return toolError(date.error);
+      const item = await findSavedReport(date, '볼까요');
+      if (isToolResult(item)) return item;
+      return toolText(toAgentReport(item));
+    },
+  },
+  {
+    name: 'search_reports',
+    title: '보고서 기록 검색',
+    kind: 'read',
+    description:
+      'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. Results are in ascending date order, up to the latest 62 reports.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { ...DATE_KEY_SCHEMA, description: 'Start date (YYYY-MM-DD). Omit for the beginning' },
+        to: { ...DATE_KEY_SCHEMA, description: 'End date (YYYY-MM-DD). Omit for the latest' },
+        query: {
+          type: 'string',
+          description:
+            'A single word that appears in project names or tasks (case-insensitive, e.g. "토큰"). Give it only to find a specific word; omit it to view or summarize a whole period',
+        },
+      },
+    },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input) => {
+      const from = input.from === undefined ? null : parseDateKeyInput(input.from, 'from');
+      const to = input.to === undefined ? null : parseDateKeyInput(input.to, 'to');
+      if (from !== null && typeof from !== 'string') return toolError(from.error);
+      if (to !== null && typeof to !== 'string') return toolError(to.error);
+      if (input.query !== undefined && typeof input.query !== 'string')
+        return toolError('query 는 문자열이어야 합니다.');
+      // 기간·대상을 가리키는 말("지난주", "보고서")은 검색어가 아니다 — 작은 모델이 이런 말을 query 로 넣어 0건이 됐다
+      const rawQuery = (input.query ?? '').trim().toLowerCase();
+      const query = QUERY_STOP_WORDS_REGEX.test(rawQuery) ? '' : rawQuery;
+
+      await ensureHistory();
+      const all = await useReportHistoryStore.getState().fetchAllHistory();
+      if (!all) return toolError('보고서 기록을 불러오지 못했습니다.');
+
+      const matchesQuery = (p: AgentProject) =>
+        [p.name, ...p.tasks.flatMap((t) => [t.content, ...t.details])].some((s) => s.toLowerCase().includes(query));
+
+      const inPeriod = all
+        .map(toAgentReport)
+        .filter((r) => (from === null || r.date >= from) && (to === null || r.date <= to));
+      const reports = inPeriod
+        .map((r) =>
+          query ? { ...r, today: r.today.filter(matchesQuery), tomorrow: r.tomorrow.filter(matchesQuery) } : r
+        )
+        .filter((r) => !query || r.today.length > 0 || r.tomorrow.length > 0);
+
+      // 키워드로 하나도 안 나오면 기간 전체를 돌려준다 — "query 를 빼고 다시 부르라"고 알려도 모델이 같은 호출을 되풀이했다
+      if (query && reports.length === 0 && inPeriod.length > 0)
+        return toolText({
+          total: inPeriod.length,
+          note: `"${rawQuery}" 와 일치하는 프로젝트가 없어 기간 안의 보고서 전체를 돌려줍니다.`,
+          truncated: inPeriod.length > MAX_SEARCH_RESULTS,
+          reports: inPeriod.slice(-MAX_SEARCH_RESULTS),
+        });
+
+      return toolText({
+        total: reports.length,
+        truncated: reports.length > MAX_SEARCH_RESULTS,
+        reports: reports.slice(-MAX_SEARCH_RESULTS),
+      });
+    },
+  },
+];
+
+// 보고서 기록 조회 도구를 전역으로 등록한다((app) 레이아웃의 AgentAssistant)
+export const useHistoryAgentTools = () => useAgentTools(createHistoryAgentTools, true);
+
 // 개발 모드에서 대응표(REPORT_FORM_ACTION_TOOLS·REPORT_SCREEN_FEATURE_TOOLS)가 가리키는 도구가 실제로 있는지 확인한다 —
 // 표는 타입으로 빠짐없이 채우게 강제하지만, 도구 이름 오타·삭제는 실행해 봐야 안다.
 const checkToolCoverage = (tools: ReadonlyArray<AgentTool>) => {
@@ -457,95 +578,6 @@ export const useReportAgentTools = ({
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: async () => toolText(currentFormSnapshot()),
-      },
-      {
-        name: 'list_report_dates',
-        title: '저장된 보고서 날짜 조회',
-        kind: 'read',
-        description:
-          'Return only the dates (YYYY-MM-DD, newest first) that have saved reports — no content. Use it only to know which dates have records. To view or summarize content, use search_reports (range/keyword) or get_report (one day).',
-        inputSchema: { type: 'object', properties: {} },
-        annotations: { readOnlyHint: true },
-        execute: async () => {
-          const { mode, allReportDates } = useReportHistoryStore.getState();
-          return toolText({ storage: mode === 'user' ? 'account' : 'browser', dates: allReportDates });
-        },
-      },
-      {
-        name: 'get_report',
-        title: '저장된 보고서 조회',
-        kind: 'read',
-        description: 'Return the saved report (today and tomorrow sections) for the given date.',
-        inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
-        annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: async (input) => {
-          const date = parseDateKeyInput(input.date, 'date');
-          if (typeof date !== 'string') return toolError(date.error);
-          const item = await findSavedReport(date);
-          if (typeof item === 'string') return toolError(item);
-          return toolText(toAgentReport(item));
-        },
-      },
-      {
-        name: 'search_reports',
-        title: '보고서 기록 검색',
-        kind: 'read',
-        description:
-          'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. Results are in ascending date order, up to the latest 62 reports.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            from: { ...DATE_KEY_SCHEMA, description: 'Start date (YYYY-MM-DD). Omit for the beginning' },
-            to: { ...DATE_KEY_SCHEMA, description: 'End date (YYYY-MM-DD). Omit for the latest' },
-            query: {
-              type: 'string',
-              description:
-                'A single word that appears in project names or tasks (case-insensitive, e.g. "토큰"). Give it only to find a specific word; omit it to view or summarize a whole period',
-            },
-          },
-        },
-        annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: async (input) => {
-          const from = input.from === undefined ? null : parseDateKeyInput(input.from, 'from');
-          const to = input.to === undefined ? null : parseDateKeyInput(input.to, 'to');
-          if (from !== null && typeof from !== 'string') return toolError(from.error);
-          if (to !== null && typeof to !== 'string') return toolError(to.error);
-          if (input.query !== undefined && typeof input.query !== 'string')
-            return toolError('query 는 문자열이어야 합니다.');
-          // 기간·대상을 가리키는 말("지난주", "보고서")은 검색어가 아니다 — 작은 모델이 이런 말을 query 로 넣어 0건이 됐다
-          const rawQuery = (input.query ?? '').trim().toLowerCase();
-          const query = QUERY_STOP_WORDS_REGEX.test(rawQuery) ? '' : rawQuery;
-
-          const all = await useReportHistoryStore.getState().fetchAllHistory();
-          if (!all) return toolError('보고서 기록을 불러오지 못했습니다.');
-
-          const matchesQuery = (p: AgentProject) =>
-            [p.name, ...p.tasks.flatMap((t) => [t.content, ...t.details])].some((s) => s.toLowerCase().includes(query));
-
-          const inPeriod = all
-            .map(toAgentReport)
-            .filter((r) => (from === null || r.date >= from) && (to === null || r.date <= to));
-          const reports = inPeriod
-            .map((r) =>
-              query ? { ...r, today: r.today.filter(matchesQuery), tomorrow: r.tomorrow.filter(matchesQuery) } : r
-            )
-            .filter((r) => !query || r.today.length > 0 || r.tomorrow.length > 0);
-
-          // 키워드로 하나도 안 나오면 기간 전체를 돌려준다 — "query 를 빼고 다시 부르라"고 알려도 모델이 같은 호출을 되풀이했다
-          if (query && reports.length === 0 && inPeriod.length > 0)
-            return toolText({
-              total: inPeriod.length,
-              note: `"${rawQuery}" 와 일치하는 프로젝트가 없어 기간 안의 보고서 전체를 돌려줍니다.`,
-              truncated: inPeriod.length > MAX_SEARCH_RESULTS,
-              reports: inPeriod.slice(-MAX_SEARCH_RESULTS),
-            });
-
-          return toolText({
-            total: reports.length,
-            truncated: reports.length > MAX_SEARCH_RESULTS,
-            reports: reports.slice(-MAX_SEARCH_RESULTS),
-          });
-        },
       },
 
       // ───────────── 추가 ─────────────
@@ -1329,8 +1361,8 @@ export const useReportAgentTools = ({
         execute: async (input, context) => {
           const date = parseDateKeyInput(input.date, 'date');
           if (typeof date !== 'string') return toolError(date.error);
-          const item = await findSavedReport(date);
-          if (typeof item === 'string') return toolError(item);
+          const item = await findSavedReport(date, '불러올까요');
+          if (isToolResult(item)) return item;
           const result = await applyFormChange(
             context,
             {
@@ -1490,7 +1522,7 @@ export const useReportAgentTools = ({
         },
       },
     ];
-    if (process.env.NODE_ENV !== 'production') checkToolCoverage(tools);
+    if (process.env.NODE_ENV !== 'production') checkToolCoverage([...tools, ...createHistoryAgentTools()]);
     return tools;
   }, enabled);
 };

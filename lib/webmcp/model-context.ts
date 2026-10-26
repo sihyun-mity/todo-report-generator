@@ -2,6 +2,7 @@ import type {
   AgentTool,
   AgentToolContext,
   AgentToolSurface,
+  AgentToolUnavailable,
   WebMcpModelContext,
   WebMcpTool,
   WebMcpToolResult,
@@ -65,3 +66,24 @@ export const toolError = (message: string): WebMcpToolResult => ({
   content: [{ type: 'text', text: message }],
   isError: true,
 });
+
+// 요청한 대상이 없어 할 수 없을 때 — 못 한 이유와 대신 해 줄 수 있는 일을 묻는 문장을 함께 돌려준다.
+// 채팅은 이 결과를 받으면 다른 도구로 대신하지 않고 이 두 문장으로 되묻는다(parseToolUnavailable). WebMCP 에이전트는 JSON 으로 읽는다.
+export const toolUnavailable = (unavailable: AgentToolUnavailable): WebMcpToolResult => ({
+  content: [{ type: 'text', text: JSON.stringify({ unavailable: true, ...unavailable }) }],
+  isError: true,
+});
+
+export const parseToolUnavailable = (result: WebMcpToolResult): AgentToolUnavailable | null => {
+  if (!result.isError) return null;
+  try {
+    const data = JSON.parse(result.content.map((c) => c.text).join('')) as Partial<AgentToolUnavailable> & {
+      unavailable?: unknown;
+    };
+    return data.unavailable === true && typeof data.reason === 'string' && typeof data.offer === 'string'
+      ? { reason: data.reason, offer: data.offer }
+      : null;
+  } catch {
+    return null;
+  }
+};

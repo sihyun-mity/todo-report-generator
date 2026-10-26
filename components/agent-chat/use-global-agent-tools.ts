@@ -8,7 +8,7 @@ import { AGENT_NAVIGATE_WAIT_MS, AGENT_NEWS_CONTENT_MAX_CHARS, AGENT_NEWS_LIST_L
 import { useAgentTools, useRouter } from '@/hooks';
 import { isGuestMode } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
-import { toolError, toolText } from '@/lib/webmcp';
+import { toolError, toolText, toolUnavailable } from '@/lib/webmcp';
 import { queries } from '@/providers';
 import { useAgentChatStore } from '@/stores';
 import { isNewsId, newsIdFromPath } from '@/utils';
@@ -127,9 +127,14 @@ export function useGlobalAgentTools() {
             if (typeof input.page !== 'string' || !(input.page in AGENT_PAGES))
               return toolError(`page 는 ${PAGE_KEYS.join(', ')}, news_detail 중 하나여야 합니다.`);
             const page: PageEntry = AGENT_PAGES[input.page as PageKey];
+            // 로그인 화면으로 대신 옮기지 않고 묻는다 — 오류에 "로그인하도록 안내하세요"를 적었더니 채팅이 바로 로그인 화면으로 옮겼다
             if (page.memberOnly && !viewer.isMember)
-              return toolError('로그인 회원만 쓸 수 있는 화면입니다. 먼저 로그인하도록 안내하세요(page: login).');
-            if (page.guestOnly && viewer.isMember) return toolError('이미 로그인되어 있습니다.');
+              return toolUnavailable({
+                reason: `${page.label.split(' — ')[0]} 화면은 로그인한 회원만 쓸 수 있어요.`,
+                offer: '로그인 화면으로 갈까요?',
+              });
+            if (page.guestOnly && viewer.isMember)
+              return toolText({ moved: false, path: window.location.pathname, message: '이미 로그인되어 있어요.' });
             path = page.path;
           }
 
@@ -243,7 +248,11 @@ export function useGlobalAgentTools() {
           if (typeof input.id !== 'string' || !isNewsId(input.id))
             return toolError('id 는 list_news 결과의 소식 id 여야 합니다.');
           const item = await queryClient.fetchQuery(queries.news.detail(input.id));
-          if (!item) return toolError('볼 수 있는 소식이 아닙니다. list_news 로 id 를 다시 확인하세요.');
+          if (!item)
+            return toolUnavailable({
+              reason: '그 새소식은 찾을 수 없거나 지금 볼 수 없는 소식이에요.',
+              offer: '대신 최근 새소식을 살펴볼까요?',
+            });
           return toolText({
             id: item.id,
             title: item.title,

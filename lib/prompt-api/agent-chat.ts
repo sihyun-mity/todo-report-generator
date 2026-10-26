@@ -18,6 +18,7 @@ import {
   AGENT_CHAT_TOOL_RESULT_MIN_CHARS,
   AGENT_CHAT_TOOL_WAIT_MS,
 } from '@/constants';
+import { parseToolUnavailable } from '@/lib/webmcp';
 import { eul, euro } from '@/utils';
 import { otherModelOwner, PROMPT_API_OPTIONS, readPromptStream, withModelLock, type ModelOwner } from '.';
 
@@ -559,11 +560,14 @@ export async function runAgentChatTurn({
     };
     lockIfForm(kind);
 
-    // 보고서 도구가 없는 화면(설정 등)이면 홈으로 옮겨 가서 이어 한다
+    // 보고서 도구가 없는 화면(설정 등)이면 홈으로 옮겨 가서 이어 한다.
+    // 처리하는 사이 사용자가 다른 화면으로 옮겨 가 보고서 도구가 내려가도 같은 방법으로 돌아와 마친다 —
+    // 남은 후보(화면 이동 등)로 대신하거나 "처리하지 못했어요"로 끝내지 않게.
     let movedHome = false;
     const hasKind = (k: AgentToolKind) => getTools().some((t) => t.kind === k || t.extraKinds?.includes(k));
-    const home = getTools().find((t) => t.name === HOME_NAVIGATION.tool);
-    if (kind && kind !== 'any' && HOME_KINDS.includes(kind) && !hasKind(kind) && home) {
+    const goHomeIfNeeded = async (kind: AgentToolKind | 'any' | null) => {
+      const home = getTools().find((t) => t.name === HOME_NAVIGATION.tool);
+      if (!kind || kind === 'any' || !HOME_KINDS.includes(kind) || hasKind(kind) || !home) return;
       think('home', '보고서 작성 화면으로 이동하는 중');
       onToolStart(home);
       const result = await home.execute({ ...HOME_NAVIGATION.input }, context);
@@ -585,7 +589,8 @@ export async function runAgentChatTurn({
       }
       movedHome = hasKind(kind);
       think('home', movedHome ? '보고서 작성 화면으로 이동했어요' : '보고서 작성 화면을 준비하지 못했어요', 'done');
-    }
+    };
+    await goHomeIfNeeded(kind);
 
     let askUser = false;
     let cannotDo = false;
@@ -605,6 +610,7 @@ export async function runAgentChatTurn({
     }
 
     for (let step = 0; kind && step < AGENT_CHAT_MAX_TOOL_STEPS; step++) {
+      if (step > 0) await goHomeIfNeeded(kind);
       const tools = candidateTools(getTools(), kind, request, scope);
       const state = currentState(tools, scope);
       // 실행해야 하는 요청인데 아직 아무 도구도 돌리지 않았으면 "answer" 를 빼 둔다 — 남겨 두면 실행 없이 "바꿨다"고 답했다
@@ -705,6 +711,15 @@ export async function runAgentChatTurn({
         untrusted: !!tool.annotations?.untrustedContentHint,
         ...(tool.kind === 'read' ? {} : { changes }),
       });
+      // 도구가 요청한 대상을 찾지 못했다고 알렸으면(toolUnavailable) 다른 도구로 대신하지 않고 이유와 대안을 되묻는다
+      // — 비회원이 설정 화면을 열어 달라고 하면 오류 안내를 보고 로그인 화면으로 옮겨 갔다
+      const unavailableResult = parseToolUnavailable(result);
+      if (unavailableResult) {
+        const text = `${unavailableResult.reason} ${unavailableResult.offer}`;
+        onAnswer(text);
+        added.push({ role: 'assistant', text });
+        return { turns: added, route: 'question' };
+      }
       // 바꾸는 도구가 성공하면 이번 요청은 끝낸다 — 계속 고르게 하면 시키지 않은 다른 변경(미완료 업무 옮기기 등)을 이어서 골랐다
       // 아무것도 바꾸지 않았으면(옮길 미완료 업무 없음 등) 다른 도구를 고를 수 있게 이어 간다
       if (tool.kind !== 'read' && !result.isError && !isNoop(result)) break;

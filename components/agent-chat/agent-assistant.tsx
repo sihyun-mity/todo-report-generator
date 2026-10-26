@@ -10,7 +10,7 @@ import type {
   AgentSuggestion,
   AgentToolContext,
 } from '@/types';
-import { useResetOnHide } from '@/hooks';
+import { useHistoryAgentTools, useResetOnHide } from '@/hooks';
 import {
   downloadPromptModel,
   getPromptApiAvailability,
@@ -38,6 +38,7 @@ const errorMessage = (error: unknown) => {
 // 이 기기에서 만들고, 상황 제안·빠른 작업은 모델 없이 도구를 바로 실행한다(모델이 없는 브라우저에서도 동작).
 export function AgentAssistant() {
   useGlobalAgentTools();
+  useHistoryAgentTools();
 
   const setRunning = useAgentChatStore((s) => s.setRunning);
   const availability = useAgentChatStore((s) => s.availability);
