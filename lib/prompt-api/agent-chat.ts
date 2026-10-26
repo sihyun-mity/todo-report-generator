@@ -96,6 +96,7 @@ const INPUT_LABELS: Record<string, string> = {
   query: '검색어',
   theme: '화면 모드',
   page: '화면',
+  rank: '순서',
   keep_progress: '진행률 유지',
   format: '형식',
   text: '텍스트',
@@ -185,7 +186,7 @@ const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'go_to_screen',
     kind: 'navigate',
-    hint: 'go to another screen, or open a dialog such as GitHub import (이동, 가줘, 열어줘)',
+    hint: 'go to another screen, open one news item on screen, or open a dialog such as GitHub import (이동, 가줘, 열어줘, 가장 최근 새소식 보여줘)',
   },
   {
     label: 'change_theme',
@@ -224,6 +225,10 @@ const KIND_GUARDS: Partial<Record<AgentToolKind, { pattern: RegExp; fallback: Ag
     fallback: 'edit',
   },
 };
+
+// 화면 모드 요청 — 화면 모드 의도인데 이 말이 없으면 분류를 믿지 않고 전체 도구에서 다시 고른다.
+// "가장 최근 새소식 보여줘"를 화면 모드로 분류해, 남은 조회 후보로 목록을 읽고 "새 소식 11가지"라고 답했다.
+const THEME_REQUEST = /모드|테마|다크|라이트|밝게|어둡게|밝은|어두운|눈부|theme|dark|light/i;
 
 // 묻는 말 — 쓰기 의도로 잘못 분류돼 맞는 쓰기 도구가 없으면 거절하지 않고 조회로 다시 고른다.
 // "프로젝트 단위말고 작업 단위로 세줘"를 추가로, "내일 할 업무는 몇가지야?"를 쓰기 의도로 분류해 "처리할 기능이 없어요"로 끝났다.
@@ -611,6 +616,13 @@ export async function runAgentChatTurn({
       kind = 'read';
       think('intent', '요청 이해: 보고서·새소식 조회', 'done');
     }
+    // 다음 단계에 알려 줄 의도 — 분류를 믿지 않기로 했으면 요청 문장으로 고르게 한다
+    let intentNote = unsupported ? 'it may be something the app cannot do' : intent;
+    if (kind === 'setting' && !THEME_REQUEST.test(request)) {
+      kind = 'any';
+      intentNote = 'the first guess was wrong; decide only from what the request asks';
+      think('intent', '요청 이해: 화면 모드 요청이 아니라 다시 찾아볼게요', 'done');
+    }
     const lockIfForm = (k: AgentToolKind | 'any' | null) => {
       if (k && k !== 'any' && FORM_KINDS.includes(k)) onFormLock?.();
     };
@@ -684,7 +696,7 @@ export async function runAgentChatTurn({
       const decision = JSON.parse(
         await ask(
           (conversation) =>
-            `## Available tools\n${toolCatalog(tools)}\n\n${state}## Conversation\n${conversation}\n\n## Task\nPick the next action for the user's last request (${unsupported ? 'it may be something the app cannot do' : intent}).\n- If a tool is needed, pick the tool that does exactly what the user asked.\n- If no tool does what the user asked, pick "${CANNOT}". Never use a different tool as a substitute (e.g. clearing the whole form to delete one task).\n- If the tool results so far are enough, pick "${ANSWER}".\n- If the request lacks information the tool needs and it is neither in the conversation nor in the current state, pick "${ASK}" to ask the user. Do not ask when the request is clear enough to act.\n- Do not call a tool that just succeeded again for the same purpose.\n- A short follow-up (진행률도 똑같이, 그것도) refers to the items the previous request just changed (see the latest [tool … changed] lines) — act on those items.\n- 금일 = today, 익일 = tomorrow.`,
+            `## Available tools\n${toolCatalog(tools)}\n\n${state}## Conversation\n${conversation}\n\n## Task\nPick the next action for the user's last request (${intentNote}).\n- If a tool is needed, pick the tool that does exactly what the user asked.\n- If no tool does what the user asked, pick "${CANNOT}". Never use a different tool as a substitute (e.g. clearing the whole form to delete one task).\n- If the tool results so far are enough, pick "${ANSWER}".\n- If the request lacks information the tool needs and it is neither in the conversation nor in the current state, pick "${ASK}" to ask the user. Do not ask when the request is clear enough to act.\n- Do not call a tool that just succeeded again for the same purpose.\n- A short follow-up (진행률도 똑같이, 그것도) refers to the items the previous request just changed (see the latest [tool … changed] lines) — act on those items.\n- 금일 = today, 익일 = tomorrow.`,
           {
             type: 'object',
             properties: { next: { type: 'string', enum: options } },
@@ -849,7 +861,7 @@ export async function runAgentChatTurn({
     think('answer', '답을 쓰는 중');
     const answer = await ask(
       (conversation) =>
-        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".`,
+        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.${kind ? "\n- Base the reply only on the tool results after the user's last message. Earlier assistant replies answered other requests; never repeat them." : ''}\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".`,
       null,
       (text) => onAnswer(toPlainAnswer(text, !kind))
     );
