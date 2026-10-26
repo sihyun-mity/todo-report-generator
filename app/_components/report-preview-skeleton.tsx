@@ -19,7 +19,7 @@ export const ReportPreviewSkeleton = () => {
             <span className="inline-block w-7 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700">&nbsp;</span>
           </span>
           {/* 크게 보기 버튼(데스크탑 전용) placeholder — 실제 p-1.5 + 15px 아이콘 = 27px 정사각 */}
-          <span className="hidden h-[27px] w-[27px] animate-pulse rounded-md bg-zinc-200 lg:inline-block dark:bg-zinc-700" />
+          <span className="hidden h-[27px] w-[27px] animate-pulse rounded-md bg-zinc-200 @min-[60rem]:inline-block dark:bg-zinc-700" />
         </div>
       </div>
       {/* 본문 — 실제 pre 의 p-4 + text-sm 그대로. 9 줄 분량을 차지해 동일한 높이가 된다. */}

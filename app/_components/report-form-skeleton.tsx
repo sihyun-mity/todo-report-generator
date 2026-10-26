@@ -5,10 +5,10 @@ import { HistoryCardSkeleton, ProjectListSkeleton, ReportPreviewSkeleton } from 
 // ReportForm 의 컨테이너/열 구성과 각 영역의 실제 스켈레톤을 그대로 써서 스트리밍 전후 레이아웃 점프를 막는다.
 export function ReportFormSkeleton() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:flex-row lg:p-12 lg:pb-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-12 lg:pb-28 @min-[60rem]:flex-row">
       <div className="flex-1 overflow-hidden">
         {/* ReportHeader — 타이틀/부제는 고정 문구라 그대로, 날짜 선택·복원 버튼(h-9)만 placeholder */}
-        <header className="mb-10">
+        <header className="mb-6">
           <h1 className="mb-1 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
             일일 업무 보고 생성기
           </h1>
@@ -25,7 +25,7 @@ export function ReportFormSkeleton() {
         <ProjectListSkeleton title="익일 업무 진행 예정" accent="tomorrow" showImportButton />
       </div>
 
-      <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
+      <div className="w-full @min-[60rem]:sticky @min-[60rem]:top-12 @min-[60rem]:h-fit @min-[60rem]:w-80">
         <ReportPreviewSkeleton />
 
         {/* ReportHistory — 외곽·제목 행·캘린더(5주)·카드 3장 */}

@@ -610,8 +610,10 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     setIsImportModalOpen(false);
   };
 
+  // 두 열(폼 | 미리보기)은 화면 너비가 아니라 본문 폭(홈 main 의 @container)으로 나눈다 — 데스크톱에서 Nano 패널을 펼치면
+  // 본문이 400px 줄어 lg 기준으로는 폼 열이 200px 안팎으로 찌그러졌다. 좁으면 모바일처럼 폼 아래에 미리보기·기록을 쌓는다
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:flex-row lg:p-12 lg:pb-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-12 lg:pb-28 @min-[60rem]:flex-row">
       <div className="flex-1 overflow-hidden">
         <ReportHeader
           reportDate={reportDate}
@@ -666,7 +668,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
         )}
       </div>
 
-      <div className="w-full lg:sticky lg:top-12 lg:h-fit lg:w-80">
+      <div className="w-full @min-[60rem]:sticky @min-[60rem]:top-12 @min-[60rem]:h-fit @min-[60rem]:w-80">
         {isFormReady ? (
           <ReportPreview
             text={reportText}

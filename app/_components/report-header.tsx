@@ -28,7 +28,7 @@ export const ReportHeader = ({
   // Nano가 보고서 날짜를 바꿨으면 날짜 선택을 잠깐 강조한다
   const isDateChanged = useAgentHighlightStore((s) => s.ids.has(AGENT_HIGHLIGHT_DATE_ID));
   return (
-    <header className="mb-10">
+    <header className="mb-6">
       <h1 className="mb-1 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
         일일 업무 보고 생성기
       </h1>

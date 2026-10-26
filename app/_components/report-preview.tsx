@@ -48,13 +48,13 @@ export const ReportPreview = ({
         </div>
         <div className="flex items-end gap-1.5">
           <span className="text-[11px] text-zinc-400 tabular-nums dark:text-zinc-500">{charCount}자</span>
-          {/* 큰 화면으로 미리보기 — 데스크탑(lg)에서만 노출. 모바일은 이미 전체 너비로 표시된다. */}
+          {/* 큰 화면으로 미리보기 — 두 열 배치(본문 폭 60rem 이상)에서만 노출. 한 열일 때는 이미 전체 너비로 표시된다. */}
           <button
             type="button"
             onClick={() => setIsDialogOpen(true)}
             aria-label="크게 보기"
             title="크게 보기"
-            className="hidden items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200/60 hover:text-zinc-600 lg:inline-flex dark:text-zinc-500 dark:hover:bg-zinc-700/40 dark:hover:text-zinc-300"
+            className="hidden items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200/60 hover:text-zinc-600 @min-[60rem]:inline-flex dark:text-zinc-500 dark:hover:bg-zinc-700/40 dark:hover:text-zinc-300"
           >
             <Maximize2 size={15} />
           </button>
