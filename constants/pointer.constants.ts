@@ -59,7 +59,11 @@ export const CUSTOM_POINTER_SNAP_SELECTOR = [
   '[data-pointer-snap]',
 ].join(', ');
 
-/** 하이라이트 대신 I-beam 캐럿으로 표시할 텍스트 입력 요소 */
+/**
+ * 하이라이트 대신 I-beam 캐럿으로 표시할 텍스트 입력 요소.
+ * 입력칸의 일부지만 입력 요소가 아닌 곳(예: 입력칸 label 로 둔 안내 줄)은 `data-pointer-caret` 을 붙여 옵트인한다 —
+ * 그러지 않으면 label 이라 버튼처럼 감싸는 하이라이트가 그려진다.
+ */
 export const CUSTOM_POINTER_TEXT_SELECTOR = [
   'input:not([type])',
   'input[type="text"]',
@@ -72,6 +76,7 @@ export const CUSTOM_POINTER_TEXT_SELECTOR = [
   'textarea',
   '[contenteditable="true"]',
   '[contenteditable="plaintext-only"]',
+  '[data-pointer-caret]',
 ].join(', ');
 
 /**

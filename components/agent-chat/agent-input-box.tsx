@@ -96,6 +96,10 @@ export function AgentInputBox({
         <label
           htmlFor={inputId}
           aria-hidden
+          // 버튼이 아니라 입력칸의 일부다 — 커스텀 포인터는 버튼처럼 감싸 강조하지 않고 입력칸처럼 I-beam 캐럿으로 보이고,
+          // 눌림 피드백(label[for] 이 대상)으로 누르는 동안 줄어들지 않게 뺀다
+          data-pointer-caret
+          data-press-ignore
           className={cn(
             'min-w-0 flex-1 self-stretch truncate pl-1.5 text-[11px] leading-8 text-zinc-400 dark:text-zinc-500',
             disabled ? 'cursor-not-allowed' : 'cursor-text'
