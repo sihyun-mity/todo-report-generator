@@ -54,7 +54,7 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
       get().showFollowUp();
       return;
     }
-    toast('Nano가 앞 요청을 처리하고 있어요. 끝난 뒤 다시 부탁하거나 멈추기를 눌러 주세요.', {
+    toast('Nano가 앞 요청을 처리하고 있어요. 끝난 뒤 다시 요청하거나 멈추기를 눌러 주세요.', {
       id: AGENT_BUSY_TOAST_ID,
     });
     get().reveal({ attention: 'panel' });

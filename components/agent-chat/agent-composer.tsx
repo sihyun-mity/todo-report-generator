@@ -23,7 +23,7 @@ export function AgentComposer() {
     <section aria-label="Nano에게 부탁하기" className="mb-8 space-y-3">
       {isReady && (
         <AgentInputBox
-          placeholder="부탁하거나 오늘 한 일을 적어 보세요"
+          placeholder="요청하거나 오늘 한 일을 적어 보세요"
           hint="예: 지난주 보고서 요약해줘 · 로그인 오류 고쳤고 결제 리팩터링 절반 했어"
           isRunning={isRunning}
           onSubmit={(text) => useAgentChatStore.getState().submit({ type: 'prompt', text })}

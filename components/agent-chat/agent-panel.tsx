@@ -361,7 +361,7 @@ export function AgentPanel({
             placeholder={
               isReady
                 ? canWriteFromNotes
-                  ? '부탁하거나 오늘 한 일을 적어 보세요'
+                  ? '요청하거나 오늘 한 일을 적어 보세요'
                   : '무엇이든 부탁해 보세요'
                 : '위의 추천과 빠른 작업을 눌러 보세요'
             }
