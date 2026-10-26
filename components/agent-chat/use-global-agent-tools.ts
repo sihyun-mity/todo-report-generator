@@ -18,6 +18,15 @@ type PageEntry = { path: string; label: string; memberOnly?: boolean; guestOnly?
 const PAGE_KEYS = Object.keys(AGENT_PAGES) as Array<PageKey>;
 const NEWS_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// 새소식 상세 화면에서 보고 있는 소식 id(아니면 null)
+const currentNewsId = () => {
+  const id = /^\/whats-new\/([^/]+)$/.exec(window.location.pathname)?.[1];
+  return id && NEWS_ID_REGEX.test(id) ? id : null;
+};
+
+// 상세 화면에서 목록까지 볼 이유가 있는 요청 — 없으면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다
+const NEWS_LIST_REQUEST = /목록|최근|다른|전체|모든|모두|지난|이전|여러|\d+\s*개/;
+
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
 
 // 세 가지 인증 상태 중 회원인지. 게스트 쿠키가 있으면 Supabase 호출을 건너뛴다(stale refresh token 회피).
@@ -159,6 +168,8 @@ export function useGlobalAgentTools() {
         title: '새소식 목록 조회',
         kind: 'read',
         description: `Return up to ${AGENT_NEWS_LIST_LIMIT} service news/updates (새소식), newest first (id, title, date). Members and guests see different news. Read the body with get_news.`,
+        // 소식 하나를 보고 있으면 그 소식은 get_news 가 바로 읽는다 — 목록을 가리키는 말이 있을 때만 후보로 둔다
+        requires: (request) => !currentNewsId() || NEWS_LIST_REQUEST.test(request),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
@@ -182,8 +193,8 @@ export function useGlobalAgentTools() {
           'Return the body (markdown) of one news item. id comes from list_news, or currentNewsId when the user is reading one (이 소식).',
         // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다
         inputContext: () => {
-          const id = /^\/whats-new\/([^/]+)$/.exec(window.location.pathname)?.[1];
-          return id && NEWS_ID_REGEX.test(id) ? { currentNewsId: id } : { currentPath: window.location.pathname };
+          const id = currentNewsId();
+          return id ? { currentNewsId: id } : { currentPath: window.location.pathname };
         },
         inputSchema: {
           type: 'object',
