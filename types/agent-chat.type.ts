@@ -43,8 +43,9 @@ export type AgentChatTurn =
 // 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 Nano에 넘긴다.
 // prompt 는 AI(Gemini Nano)에게 묻고(부탁인지 업무 메모인지는 Nano가 가른다), tool 은 모델 없이 도구를 바로 실행하며,
 // notes 는 업무 메모를 보고서 초안으로 정리한다(text 가 없으면 입력칸으로 데려가 적게 한다).
+// prompt 의 fresh 는 앞 대화와 관계없는 독립 요청(AI 추천 — "이번 주 보고서 정리해줘" 등)이라 새 대화로 시작한다.
 export type AgentAction =
-  | { type: 'prompt'; text: string }
+  | { type: 'prompt'; text: string; fresh?: boolean }
   | { type: 'tool'; tool: string; title: string; input?: Record<string, unknown> }
   | { type: 'notes'; text?: string };
 

@@ -112,7 +112,7 @@ export function useAgentSuggestions(): {
         id: 'weekly',
         title: '이번 주 보고서 정리하기',
         reason: '금요일이에요 — 한 주를 정리해 보세요',
-        action: { type: 'prompt', text: '이번 주에 쓴 보고서를 정리해줘' },
+        action: { type: 'prompt', text: '이번 주에 쓴 보고서를 정리해줘', fresh: true },
         needsAi: true,
       });
     if (has('search_reports') && clock?.weekday === 1)
@@ -120,7 +120,7 @@ export function useAgentSuggestions(): {
         id: 'last-week',
         title: '지난주 보고서 돌아보기',
         reason: '월요일이에요 — 지난주에 한 일을 요약해 드려요',
-        action: { type: 'prompt', text: '지난주 보고서 요약해줘' },
+        action: { type: 'prompt', text: '지난주 보고서 요약해줘', fresh: true },
         needsAi: true,
       });
   }
@@ -129,7 +129,7 @@ export function useAgentSuggestions(): {
       id: 'news-summary',
       title: '최근 새소식 요약 듣기',
       reason: '최근 업데이트를 짧게 정리해 드려요',
-      action: { type: 'prompt', text: '최근 새소식 3개를 요약해줘' },
+      action: { type: 'prompt', text: '최근 새소식 3개를 요약해줘', fresh: true },
       needsAi: true,
     });
   if (pathname.startsWith('/whats-new/') && has('get_news'))
@@ -137,7 +137,7 @@ export function useAgentSuggestions(): {
       id: `news-${pathname}`,
       title: '이 소식 요약하기',
       reason: '긴 소식을 몇 줄로 줄여 드려요',
-      action: { type: 'prompt', text: '지금 보고 있는 새소식을 요약해줘' },
+      action: { type: 'prompt', text: '지금 보고 있는 새소식을 요약해줘', fresh: true },
       needsAi: true,
     });
   if (pathname === '/settings' && has('navigate'))
@@ -183,7 +183,7 @@ export function useAgentSuggestions(): {
       });
     if (has('save_report')) quick('save', '저장', { type: 'tool', tool: 'save_report', title: '보고서 기록에 저장' });
     if (has('search_reports'))
-      quick('weekly', '이번 주 정리', { type: 'prompt', text: '이번 주에 쓴 보고서를 정리해줘' }, true);
+      quick('weekly', '이번 주 정리', { type: 'prompt', text: '이번 주에 쓴 보고서를 정리해줘', fresh: true }, true);
     if (has('export_reports'))
       quick('export', '기록 내보내기', { type: 'tool', tool: 'export_reports', title: '보고서 기록 내보내기' });
   }

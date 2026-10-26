@@ -172,7 +172,8 @@ export function AgentAssistant() {
 
   // 입력창 하나로 부탁과 업무 메모를 함께 받는다. 분명한 메모는 규칙(looksLikeWorkNotes)으로 바로 메모 정리로 보내고,
   // 그 밖에는 채팅으로 보내 의도 분류가 메모(work_notes)라고 하면 거기서 메모 정리로 넘긴다.
-  const send = async (text: string) => {
+  // fresh 면 앞 대화와 관계없는 독립 요청이라 앞 대화 기록 없이 시작한다(startFresh 참고).
+  const send = async (text: string, { fresh = false }: Readonly<{ fresh?: boolean }> = {}) => {
     if (isRunning || text.trim() === '') return;
     if (canWriteFromNotes && looksLikeWorkNotes(text)) {
       void submitNotes(text);
@@ -180,7 +181,9 @@ export function AgentAssistant() {
     }
     const controller = begin();
 
-    const history: Array<AgentChatTurn> = [...turns, { role: 'user', text: text.trim() }];
+    // 이번 요청 전의 대화 기록 — 멈추거나 메모로 넘어가면 여기로 되돌린다
+    const before: Array<AgentChatTurn> = fresh ? [] : turns;
+    const history: Array<AgentChatTurn> = [...before, { role: 'user', text: text.trim() }];
     setTurns(history);
     const userMessageId = createId();
     // 생각 과정 — 단계가 오면 채운다(단계가 없으면 그리지 않는다)
@@ -254,7 +257,7 @@ export function AgentAssistant() {
       controller.signal.throwIfAborted();
       if (route === 'notes') {
         // 부탁이 아니라 업무 메모였다 — 메모 정리가 대화 기록을 메모 턴으로 남기므로 방금 넣은 사용자 턴은 되돌린다
-        setTurns(turns);
+        setTurns(before);
         await showNotesDraft(text, controller);
       } else {
         setTurns([...history, ...added]);
@@ -267,7 +270,7 @@ export function AgentAssistant() {
         // 멈춘 요청은 대화 기록에서 뺀다 — 남겨 두면 다음 요청 때 모델이 답하지 않은 앞 요청까지 함께 처리하려 했다.
         // 대부분 잘못 보내 멈추고 다시 부탁하는 경우다. 이미 실행된 변경은 변경 카드의 되돌리기로 돌리고,
         // 모델은 프롬프트마다 지금 폼 상태를 새로 받으므로 따로 알리지 않는다.
-        setTurns(turns);
+        setTurns(before);
         patchMessage(userMessageId, { cancelled: true });
       } else {
         console.error('[agent-chat]', error);
@@ -458,10 +461,21 @@ export function AgentAssistant() {
     }
   };
 
+  // AI 추천처럼 앞 대화와 관계없는 요청은 새 대화로 시작한다 — 앞 대화를 모델에 넘기면 지난 요청·지난 폼 상태가 섞여
+  // 엉뚱한 기간을 정리하거나 앞 요청을 이어서 처리했다. 다만 사용자가 아직 처리하지 않은 후속 동작(폼에 넣지 않은 초안)이
+  // 있으면 화면의 대화는 지우지 않고 모델에 넘기는 기록만 새로 시작한다(초안을 잃지 않게).
+  const startFresh = (text: string) => {
+    if (isRunning) return;
+    if (followUpCount === 0) reset();
+    void send(text, { fresh: true });
+  };
+
   // 상황 제안·빠른 작업·홈 입력창이 넘긴 할 일을 처리한다
   const runAction = (action: AgentAction) => {
-    if (action.type === 'prompt') void send(action.text);
-    else if (action.type === 'tool') void runTool(action.tool, action.title, action.input);
+    if (action.type === 'prompt') {
+      if (action.fresh) startFresh(action.text);
+      else void send(action.text);
+    } else if (action.type === 'tool') void runTool(action.tool, action.title, action.input);
     else if (action.text) void submitNotes(action.text);
     // 메모 내용 없이 온 할 일(예: "오늘 한 일 적어서 보고서 쓰기" 제안)은 입력칸으로 데려간다 — 적으면 메모로 알아본다
     else useAgentChatStore.getState().reveal();
