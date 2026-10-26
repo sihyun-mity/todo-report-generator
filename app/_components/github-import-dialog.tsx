@@ -50,6 +50,7 @@ import {
   GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
   GITHUB_COMMITS_MAX_LOOKBACK_DAYS,
   GITHUB_IMPORT_OAUTH_SCOPES,
+  GITHUB_MAX_REPOS,
 } from '@/constants';
 import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
@@ -74,7 +75,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
 import { cn } from '@/utils';
-import { CommitAuthorsMenu, ExcludedReposMenu, GithubImportPreview } from '.';
+import { CommitAuthorsMenu, ExcludedReposMenu, GithubImportPreview, GithubRepoGaps } from '.';
 
 type GithubImportDialogProps = {
   // 커밋 가져오기는 로그인 회원 전용 — 게스트에게는 로그인 안내만 보여주고 조회·분류를 시작하지 않는다
@@ -98,25 +99,37 @@ const timeLabel = (iso: string) =>
     new Date(iso)
   );
 
-// 범위가 잘렸거나(최대 조회 기간) 분류 상한을 넘어 빠진 커밋이 있을 때 미리보기에 보여 줄 안내. 없으면 null.
+// 저장소 상한에 걸려 찾아보지 않은 저장소가 있을 때의 안내 — 미리보기와 빈 화면이 같이 쓴다.
+// 제외한 저장소는 상한을 세기 전에 빠지므로, 업무와 무관한 저장소를 제외하면 남은 저장소가 그 자리에 들어온다.
+const reposCappedNotice = (reposCapped: number) =>
+  `최근 작업한 저장소 ${GITHUB_MAX_REPOS}개만 찾아봤어요(${reposCapped}개 더 있어요). 업무와 상관없는 저장소를 제외하면 나머지도 찾아봐요.`;
+
+// 범위가 잘렸거나(최대 조회 기간·저장소 상한) 분류 상한을 넘어 빠진 커밋이 있을 때 미리보기에 보여 줄 안내. 없으면 null.
+// 순서: 기간 → 저장소 수 → 건수 → 날짜 바꾸기. 저장소마다의 사정(SSO·브랜치 등)은 `GithubRepoGaps` 가 따로 보인다.
 // 빠진 커밋이 범위 안의 이전 날짜에 있을 수 있으면, 지난 날짜 보고서는 그날 커밋만 가져온다는 점을 함께 알린다.
 const omissionNotice = (result: {
   since: string;
   until: string | null;
   clipped: boolean;
   omitted: number;
+  pageCapped: boolean;
+  reposCapped: number;
   commits: ReadonlyArray<unknown>;
 }) => {
-  if (!result.clipped && result.omitted === 0) return null;
+  if (!result.clipped && result.omitted === 0 && result.reposCapped === 0) return null;
   const lines: Array<string> = [];
   if (result.clipped) {
     lines.push(
       `마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일 커밋만 가져왔어요.`
     );
   }
+  if (result.reposCapped > 0) lines.push(reposCappedNotice(result.reposCapped));
   if (result.omitted > 0) {
-    lines.push(`커밋이 ${result.commits.length + result.omitted}건이라 최근 ${result.commits.length}건만 분류했어요.`);
+    // 한 페이지가 꽉 찬 조회가 있으면 실제 커밋은 더 많을 수 있다
+    const total = `${result.commits.length + result.omitted}건${result.pageCapped ? ' 이상' : ''}`;
+    lines.push(`커밋이 ${total}이라 최근 ${result.commits.length}건만 분류했어요.`);
   }
+  if (result.omitted === 0 && !result.clipped) return lines.join(' ');
   const end = result.until ? new Date(new Date(result.until).getTime() - 1) : new Date();
   if (result.clipped || new Date(result.since).toDateString() !== end.toDateString()) {
     lines.push('빠진 커밋은 보고서 날짜를 그날로 바꿔 가져올 수 있어요.');
@@ -258,6 +271,9 @@ export function GithubImportDialog({
   const commitsResult = commits.data;
   const hasCommits = commitsResult?.ok === true && commitsResult.commits.length > 0;
   const notice = commitsResult?.ok ? omissionNotice(commitsResult) : null;
+  // 상한·오류로 일부 저장소를 다 찾아보지 못했는지
+  const isSearchPartial =
+    commitsResult?.ok === true && (commitsResult.reposCapped > 0 || commitsResult.repoGaps.length > 0);
 
   // 온디바이스 AI 를 쓸 수 없으면(모델 미설치·미지원 브라우저) 분류 전에 이 기기에서 한 번 안내한다 —
   // 모델을 받거나 브라우저를 바꿔 AI 로 분류할지, 저장소 기준 분류로 계속할지 알고 고르게 한다.
@@ -499,11 +515,15 @@ export function GithubImportDialog({
                 description="잠시 후 다시 시도해 주세요."
               />
             ) : !hasCommits ? (
-              <StatusPanel
-                icon={Inbox}
-                title="가져올 커밋이 없어요"
-                description={`${rangeLabel(commitsResult)} ${authorsLabel(commitsResult)}${commitsResult.extraAuthors.length ? '이' : ' 계정으로'} 작성한 커밋을 찾지 못했어요.${commitsResult.clipped ? ` 마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일만 찾아봤어요.` : ''}${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
-              />
+              // 다 찾아보지 못한 곳이 있으면 "커밋이 없다"고 단정하지 않는다 — 제목을 바꾸고 빠진 저장소를 펼쳐 보인다
+              <div className="space-y-3">
+                <StatusPanel
+                  icon={Inbox}
+                  title={isSearchPartial ? '찾은 커밋이 없어요' : '가져올 커밋이 없어요'}
+                  description={`${rangeLabel(commitsResult)} ${authorsLabel(commitsResult)}${commitsResult.extraAuthors.length ? '이' : ' 계정으로'} 작성한 커밋을 찾지 못했어요.${commitsResult.clipped ? ` 마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일만 찾아봤어요.` : ''}${commitsResult.reposCapped > 0 ? ` ${reposCappedNotice(commitsResult.reposCapped)}` : ''}${commitsResult.repoGaps.length ? ' 다만 아래 저장소는 다 찾아보지 못했어요.' : ''}${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
+                />
+                <GithubRepoGaps gaps={commitsResult.repoGaps} defaultOpen />
+              </div>
             ) : plan.isError ? (
               <StatusPanel
                 icon={AlertCircle}
@@ -596,6 +616,7 @@ export function GithubImportDialog({
                       <span className="min-w-0 flex-1">{notice}</span>
                     </div>
                   )}
+                  <GithubRepoGaps gaps={commitsResult.repoGaps} />
                   <div className="grid grid-cols-3 gap-2">
                     <SummaryStat label="기존 작업에 추가" value={summary?.linkedTasks ?? 0} />
                     <SummaryStat label="새 작업" value={summary?.newTasks ?? 0} />

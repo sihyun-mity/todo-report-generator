@@ -135,6 +135,7 @@ const toRepoSet = (repos: ReadonlyArray<string>) =>
  * 연결돼 있지 않은 경우(예: GitLab 에서 옮겨 온 저장소) 등. 조회 범위는 연결한 계정이 접근할 수 있는 저장소 그대로다.
  * 조회 기간은 범위 끝에서 `GITHUB_COMMITS_MAX_LOOKBACK_DAYS` 까지로 잘라 API 호출 수를 제한하고,
  * 분류할 커밋은 최근 `GITHUB_COMMITS_CLASSIFY_LIMIT` 건만 남긴다(뺀 개수는 `omitted` 로 알려 미리보기에서 안내한다).
+ * 저장소·브랜치·페이지 상한이나 저장소 단위 오류로 다 찾아보지 못한 곳(`pageCapped`·`reposCapped`·`repoGaps`)도 함께 알린다.
  * `excludedRepos`(사용자가 분류에서 뺀 저장소)는 조회하지 않는다.
  */
 export async function fetchGithubCommits(
@@ -160,7 +161,12 @@ export async function fetchGithubCommits(
       if (authors.length >= GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT) break;
     }
     // 작성 시각 오름차순이라 뒤쪽이 최근 커밋이다
-    const found = await listAuthoredCommitsSince(
+    const {
+      commits: found,
+      pageCapped,
+      reposCapped,
+      gaps,
+    } = await listAuthoredCommitsSince(
       token.accessToken,
       [token.login, ...authors],
       since,
@@ -178,6 +184,9 @@ export async function fetchGithubCommits(
       until: until?.toISOString() ?? null,
       clipped: since.getTime() === floor && sinceMs < floor,
       omitted: found.length - commits.length,
+      pageCapped,
+      reposCapped,
+      repoGaps: gaps,
       commits,
     };
   } catch (error) {

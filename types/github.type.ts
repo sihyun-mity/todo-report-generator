@@ -1,3 +1,5 @@
+import type { GITHUB_REPO_GAP_VALUES } from '@/enums';
+
 // 가져오기 대상 커밋 1건. message 는 첫 줄(제목)만 담는다.
 export type GithubCommit = {
   sha: string;
@@ -7,6 +9,11 @@ export type GithubCommit = {
   // ISO 8601 (작성 시각)
   committedAt: string;
 };
+
+export type GithubRepoGapReason = (typeof GITHUB_REPO_GAP_VALUES)[number];
+
+// 커밋을 다 찾아보지 못한 저장소. ssoUrl 은 SSO 승인 페이지(GitHub `X-GitHub-SSO` 헤더가 알려 줄 때만).
+export type GithubRepoGap = { repo: string; reason: GithubRepoGapReason; ssoUrl?: string };
 
 // 작성자 추가 자동완성 후보. GitHub 계정과 연결된 커밋은 login, 연결되지 않은 커밋은 작성 이메일로 모은다.
 export type GithubCommitAuthor = {
@@ -42,6 +49,12 @@ export type GithubCommitsResult =
       clipped: boolean;
       // 분류 상한(`GITHUB_COMMITS_CLASSIFY_LIMIT`)을 넘어 뺀 오래된 커밋 수
       omitted: number;
+      // 커밋 목록이 한 페이지(100건)를 채워 실제 커밋이 더 있을 수 있는지 — 찾은 개수를 "이상"으로 알린다
+      pageCapped: boolean;
+      // 범위 안에 작업했지만 저장소 상한(`GITHUB_MAX_REPOS`)에 걸려 찾아보지 않은 저장소 수
+      reposCapped: number;
+      // 찾아보지 못했거나 일부만 찾아본 저장소
+      repoGaps: Array<GithubRepoGap>;
       commits: Array<GithubCommit>;
     }
   | {

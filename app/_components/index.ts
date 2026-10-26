@@ -5,6 +5,7 @@ export * from './excluded-repos-menu';
 export * from './github-import-dialog';
 export * from './github-import-preview';
 export * from './github-oauth-result';
+export * from './github-repo-gaps';
 export * from './import-local-dialog';
 export * from './import-modal';
 export * from './mobile-copy-bar';
