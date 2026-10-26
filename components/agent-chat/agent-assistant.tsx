@@ -191,8 +191,8 @@ export function AgentAssistant() {
     const controller = begin();
 
     // 이번 요청 전의 대화 기록 — 멈추거나 메모로 넘어가면 여기로 되돌린다
-    const before: Array<AgentChatTurn> = fresh ? [] : turns;
-    const history: Array<AgentChatTurn> = [...before, { role: 'user', text: text.trim() }];
+    let before: Array<AgentChatTurn> = fresh ? [] : turns;
+    let history: Array<AgentChatTurn> = [...before, { role: 'user', text: text.trim() }];
     setTurns(history);
     const userMessageId = createId();
     // 생각 과정 — 단계가 오면 채운다(단계가 없으면 그리지 않는다)
@@ -221,6 +221,20 @@ export function AgentAssistant() {
           },
         },
         onContextTrim: () => setIsContextTrimmed(true),
+        // 앞 대화와 관계없는 새 요청이라 모델이 앞 대화 없이 시작했다 — 화면의 앞 대화도 비운다(startFresh 와 같은 규칙:
+        // 처리하지 않은 후속 동작(폼에 넣지 않은 초안·승인 대기 카드)이 있으면 화면은 두고 모델에 넘기는 기록만 새로 시작한다)
+        onFreshStart: () => {
+          before = [];
+          history = history.slice(-1);
+          setTurns(history);
+          setIsContextTrimmed(false);
+          if (followUpCount > 0) return;
+          setMessages((prev) => {
+            const start = prev.findIndex((m) => m.id === userMessageId);
+            for (const m of prev.slice(0, start)) undoFns.current.delete(m.id);
+            return prev.slice(start);
+          });
+        },
         // 폼을 바꾸는 요청으로 정해진 때부터만 본문을 잠근다(조회·요약·대화·저장은 잠그지 않는다)
         onFormLock: () => useAgentChatStore.getState().setFormLocked(true),
         onThinking: (step) =>

@@ -99,6 +99,53 @@ const toAgentReport = (item: ReportHistoryItem) => ({
   tomorrow: toAgentProjects(item.tomorrowProjects),
 });
 
+// ───────────── 개수 ─────────────
+// "몇 개"를 묻는 질문에 쓰도록 도구가 미리 센다 — 작은 모델은 목록을 직접 세지 못했다(지난주 작업 수를 묻자 날짜 수를 답하고
+// 작업 대신 프로젝트를 늘어놓았다). 결과가 길면 뒤가 잘리므로 결과 맨 앞(counts)에 문장으로 둔다.
+
+const countTasks = (projects: ReadonlyArray<AgentProject>) => {
+  const tasks = projects.flatMap((p) => p.tasks);
+  return { projects: projects.length, tasks: tasks.length, completed: tasks.filter((t) => t.progress === 100).length };
+};
+
+const formCounts = (today: ReadonlyArray<AgentProject>, tomorrow: ReadonlyArray<AgentProject>) =>
+  (
+    [
+      ['금일', today],
+      ['익일', tomorrow],
+    ] as const
+  )
+    .map(([label, projects]) => {
+      const c = countTasks(projects);
+      return `${label} 프로젝트 ${c.projects}개 · 작업 ${c.tasks}개(100% 완료 ${c.completed}개)`;
+    })
+    .join(' / ');
+
+// 여러 날을 합친 개수 — 같은 작업을 날마다 이어 적으므로 같은 작업(프로젝트+작업 내용)을 한 번만 센 개수와 날짜별로 센 건수를 함께 준다
+const periodCounts = (reports: ReadonlyArray<{ today: Array<AgentProject>; tomorrow: Array<AgentProject> }>) => {
+  const section = (bucket: ProjectsBucket) => {
+    const projects = new Set<string>();
+    const tasks = new Map<string, number>();
+    for (const report of reports)
+      for (const p of report[bucket]) {
+        projects.add(p.name.trim());
+        for (const t of p.tasks) {
+          const key = `${p.name.trim()}\n${t.content.trim()}`;
+          tasks.set(key, Math.max(tasks.get(key) ?? 0, t.progress));
+        }
+      }
+    const entries = reports.reduce((n, r) => n + countTasks(r[bucket]).tasks, 0);
+    const completed = [...tasks.values()].filter((progress) => progress === 100).length;
+    return `프로젝트 ${projects.size}개 · 작업 ${tasks.size}개(같은 작업은 한 번만 셈, 100% 완료 ${completed}개, 날짜별로 따로 세면 ${entries}건)`;
+  };
+  return `보고서 ${reports.length}일 · 금일(한 일) ${section('today')} · 익일(예정) ${section('tomorrow')}`;
+};
+
+const withCounts = <T extends { today: Array<AgentProject>; tomorrow: Array<AgentProject> }>(report: T) => ({
+  counts: formCounts(report.today, report.tomorrow),
+  ...report,
+});
+
 const isSavable = (today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Project>) =>
   (today.some(hasProjectContent) || tomorrow.some(hasProjectContent)) &&
   areAllAttemptedProjectsValid(today) &&
@@ -106,11 +153,14 @@ const isSavable = (today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Projec
 
 const currentFormSnapshot = () => {
   const { reportDate, today, tomorrow } = useReportFormStore.getState();
+  const agentToday = toAgentProjects(today);
+  const agentTomorrow = toAgentProjects(tomorrow);
   return {
+    counts: formCounts(agentToday, agentTomorrow),
     month: Number(reportDate.month),
     day: Number(reportDate.day),
-    today: toAgentProjects(today),
-    tomorrow: toAgentProjects(tomorrow),
+    today: agentToday,
+    tomorrow: agentTomorrow,
     canSave: isSavable(today, tomorrow),
     text: generateReportText({ ...reportDate, todayProjects: today, tomorrowProjects: tomorrow }),
   };
@@ -455,7 +505,7 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
       if (typeof date !== 'string') return toolError(date.error);
       const item = await findSavedReport(date, '볼까요');
       if (isToolResult(item)) return item;
-      return toolText(toAgentReport(item));
+      return toolText(withCounts(toAgentReport(item)));
     },
   },
   {
@@ -463,7 +513,7 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
     title: '보고서 기록 검색',
     kind: 'read',
     description:
-      'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. Results are in ascending date order, up to the latest 62 reports.',
+      'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. Results are in ascending date order, up to the latest 62 reports. The result starts with counts: projects and tasks already counted for the period (use them for "how many" questions).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -507,16 +557,18 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
       // 키워드로 하나도 안 나오면 기간 전체를 돌려준다 — "query 를 빼고 다시 부르라"고 알려도 모델이 같은 호출을 되풀이했다
       if (query && reports.length === 0 && inPeriod.length > 0)
         return toolText({
+          counts: periodCounts(inPeriod),
           total: inPeriod.length,
           note: `"${rawQuery}" 와 일치하는 프로젝트가 없어 기간 안의 보고서 전체를 돌려줍니다.`,
           truncated: inPeriod.length > MAX_SEARCH_RESULTS,
-          reports: inPeriod.slice(-MAX_SEARCH_RESULTS),
+          reports: inPeriod.slice(-MAX_SEARCH_RESULTS).map(withCounts),
         });
 
       return toolText({
+        counts: periodCounts(reports),
         total: reports.length,
         truncated: reports.length > MAX_SEARCH_RESULTS,
-        reports: reports.slice(-MAX_SEARCH_RESULTS),
+        reports: reports.slice(-MAX_SEARCH_RESULTS).map(withCounts),
       });
     },
   },
@@ -574,7 +626,7 @@ export const useReportAgentTools = ({
         kind: 'read',
         stateReader: true,
         description:
-          'Return the daily report form currently being written: report date (month/day), today, tomorrow, whether it can be saved (canSave) and the finished report text (text). Call it to check the current state before editing.',
+          'Return the daily report form currently being written: report date (month/day), today, tomorrow, whether it can be saved (canSave), the finished report text (text) and counts (projects and tasks already counted per section — use them for "how many" questions). Call it to check the current state before editing.',
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: async () => toolText(currentFormSnapshot()),

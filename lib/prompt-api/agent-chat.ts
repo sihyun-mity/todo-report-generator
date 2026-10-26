@@ -153,7 +153,7 @@ const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'read_reports',
     kind: 'read',
-    hint: 'show, summarize or search the current report, past reports or news (보여줘, 요약, 정리, 찾아줘, 새소식)',
+    hint: 'show, summarize, search or count the current report, past reports or news, or any question about them (보여줘, 요약, 정리, 찾아줘, 새소식, 몇 개야?, 몇 가지?, 뭐 했어?, 작업 단위로 세줘)',
   },
   {
     label: 'add_to_report',
@@ -225,6 +225,15 @@ const KIND_GUARDS: Partial<Record<AgentToolKind, { pattern: RegExp; fallback: Ag
   },
 };
 
+// 묻는 말 — 쓰기 의도로 잘못 분류돼 맞는 쓰기 도구가 없으면 거절하지 않고 조회로 다시 고른다.
+// "프로젝트 단위말고 작업 단위로 세줘"를 추가로, "내일 할 업무는 몇가지야?"를 쓰기 의도로 분류해 "처리할 기능이 없어요"로 끝났다.
+const QUESTION_REQUEST =
+  /[?？]|몇|뭐|무엇|무슨|어떤|어떻게|얼마|언제|어디|알려|보여|세\s*줘|세어|세봐|계산|있어|했어|했나/;
+
+// 앞 대화를 잇는 말 — 모델이 새 요청이라고 판단해도 이런 말이 있으면 앞 대화를 지우지 않는다(잘못 지우면 되묻기·후속 요청이 끊긴다)
+const FOLLOW_UP_REQUEST =
+  /^(응|네|예|아니|좋아|그래|ㅇㅇ)|그거|그것|그걸|이거|이것|저거|방금|위에|아까|말고|다시|도\s*(똑같이|해|넣|바꿔|지워)|그럼|그러면/;
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // "지난달"·"이번 주" 같은 표현을 기간으로 바꿀 수 있게 오늘 날짜를 프롬프트마다 넣는다(이 기기 시각 기준)
@@ -273,6 +282,8 @@ type RunOptions = {
   onFormLock?: () => void;
   // 생각 과정 — 단계마다(같은 key 는 고쳐 쓴다) 알린다. 응답이 느려 기다리는 동안 무엇을 하는지 보여 준다
   onThinking?: (step: AgentThinkingStep) => void;
+  // 이번 요청이 앞 대화와 관계없는 새 요청이라 앞 대화 기록을 버리고 시작했다 — 화면의 대화도 비운다
+  onFreshStart?: () => void;
 };
 
 // 이번 요청의 결과. route 가 'notes' 면 부탁이 아니라 업무 메모라서 대화 대신 메모 정리(structureNotes)로 넘긴다.
@@ -438,6 +449,7 @@ export async function runAgentChatTurn({
   canWriteFromNotes,
   onFormLock,
   onThinking,
+  onFreshStart,
 }: Readonly<RunOptions>): Promise<AgentChatTurnResult> {
   // 모델을 기다리는 사이 화면을 옮겨도 요청할 때의 화면을 기준으로 한다
   const scope: AgentRequestScope = { path: window.location.pathname };
@@ -454,6 +466,8 @@ export async function runAgentChatTurn({
   // changes 는 도구가 알린 실제 변경 줄(변경 카드와 같은 내용) — 답변이 요청이 아니라 실제로 바뀐 것을 말하게 한다
   const executed: Array<Executed> = [];
   let maxDropped = 0;
+  // 모델에 넘기는 대화 기록 — 앞 대화와 관계없는 새 요청이면 이번 요청만 남긴다
+  let conversation = history;
 
   // 질문마다 base 를 clone 해 앞 단계의 프롬프트가 문맥에 쌓이지 않게 한다 — 필요한 문맥은 매번 대화 기록으로 넘긴다.
   // 대화 기록은 고정 개수가 아니라 **남은 컨텍스트**에 맞춘다: 컨텍스트 창 − (시스템 프롬프트가 쓴 양) − 응답 여유분 안에
@@ -478,7 +492,7 @@ export async function runAgentChatTurn({
           ...(schema ? { responseConstraint: schema } : {}),
           signal: AbortSignal.any([AbortSignal.timeout(AGENT_CHAT_PROMPT_TIMEOUT_MS), signal]),
         };
-        const turns = [...history, ...added];
+        const turns = [...conversation, ...added];
         const maxDrop = Math.max(
           0,
           turns.findLastIndex((t) => t.role === 'user')
@@ -536,19 +550,36 @@ export async function runAgentChatTurn({
     const capabilities = [...new Set(getTools().map((t) => t.title))].join(', ');
     const request = [...history].reverse().find((t) => t.role === 'user')?.text ?? '';
     think('intent', '요청을 이해하는 중');
-    const { intent } = JSON.parse(
+    // 앞 대화가 있으면 이번 요청이 그 대화를 잇는지도 함께 고른다 — 관계없는 새 요청이면 앞 대화를 버리고 새 대화로 시작한다.
+    // 앞 대화를 계속 넘기면 지난 요청·지난 결과가 섞여 엉뚱한 기간을 정리하거나 앞 요청을 이어서 처리했다.
+    // follow_up 을 intent 보다 먼저 두어 이어지는 말인지 판단한 뒤 의도를 고르게 한다.
+    const hasPast = history.some((t, i) => i < history.length - 1 && t.role !== 'tool');
+    const intentProperties = {
+      ...(hasPast ? { follow_up: { type: 'boolean' } } : {}),
+      intent: { type: 'string', enum: intents.map((i) => i.label) },
+    };
+    const { intent, follow_up: followUp } = JSON.parse(
       await ask(
         (conversation) =>
-          `## What the app can do here\n${capabilities}\n\n## Conversation\n${conversation}\n\n## Task\nClassify the kind of the user's last message.\n${intents.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}\n\nThe last message may continue the conversation:\n- If the assistant just asked a question, the message answers it — classify by the original request it completes.\n- If the user asks to retry (다시 해줘, 다시), classify by the earlier request being retried.\n- A short follow-up (e.g. 진행률도 똑같이 해줘, 그것도, 그거 말고) adjusts what the previous request just changed — classify by what it asks to do to those items (e.g. a progress change is edit_report).`,
+          `## What the app can do here\n${capabilities}\n\n## Conversation\n${conversation}\n\n## Task\nClassify the kind of the user's last message.\n${intents.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}\n\nA question about reports (how many, what, when) is read_reports, never a change to the report.\n\nThe last message may continue the conversation:\n- If the assistant just asked a question, the message answers it — classify by the original request it completes.\n- If the user asks to retry (다시 해줘, 다시), classify by the earlier request being retried.\n- If it refines the previous question or answer (e.g. 프로젝트 말고 작업 단위로 세줘, 날짜별로 보여줘), classify it like the previous request.\n- A short follow-up (e.g. 진행률도 똑같이 해줘, 그것도, 그거 말고) adjusts what the previous request just changed — classify by what it asks to do to those items (e.g. a progress change is edit_report).${hasPast ? '\n\nAlso set follow_up: true if the last message continues the earlier conversation (answers the assistant, refines, retries or refers to earlier requests, results or items); false if it is a new request that does not need the earlier conversation.' : ''}`,
         {
           type: 'object',
-          properties: { intent: { type: 'string', enum: intents.map((i) => i.label) } },
-          required: ['intent'],
+          properties: intentProperties,
+          required: Object.keys(intentProperties),
           additionalProperties: false,
         }
       )
-    ) as { intent?: string };
+    ) as { intent?: string; follow_up?: boolean };
     think('intent', `요청 이해: ${INTENT_TITLES[intent ?? ''] ?? intent}`, 'done');
+    // 이어지는 말("그거", "다시", 되묻기에 대한 답)이 보이면 모델이 새 요청이라 해도 앞 대화를 지우지 않는다
+    const lastAssistant = history.findLast((t) => t.role === 'assistant');
+    const answersQuestion =
+      !!lastAssistant && lastAssistant.role === 'assistant' && /[?？]\s*$/.test(lastAssistant.text);
+    if (hasPast && followUp === false && !answersQuestion && !FOLLOW_UP_REQUEST.test(request)) {
+      conversation = history.slice(history.findLastIndex((t) => t.role === 'user'));
+      think('fresh', '앞 대화와 관계없는 요청이라 새 대화로 시작했어요', 'done');
+      onFreshStart?.();
+    }
     if (intent === NOTES_INTENT.label) return { turns: [], route: 'notes' };
     // "할 수 없는 일"은 바로 거절하지 않고 전체 도구에서 한 번 더 찾는다 — "중복 작업 삭제해줘"를 할 수 없는 일로 고른 적이 있다
     const unsupported = intent === UNSUPPORTED_INTENT.label;
@@ -619,7 +650,7 @@ export async function runAgentChatTurn({
       const previous = added.at(-1);
       const justFailed = previous?.role === 'tool' && previous.isError && previous.changes !== undefined;
       const options = [
-        ...((step === 0 && tools.length > 0) || justFailed ? [] : [ANSWER]),
+        ...((executed.length === 0 && tools.length > 0) || justFailed ? [] : [ANSWER]),
         ASK,
         CANNOT,
         ...tools.map((t) => t.name),
@@ -644,6 +675,12 @@ export async function runAgentChatTurn({
         break;
       }
       if (decision.next === CANNOT) {
+        // 묻는 말인데 쓰기 의도로 분류됐으면 거절하지 않고 조회 도구로 다시 고른다
+        if (kind !== 'read' && kind !== 'any' && executed.length === 0 && QUESTION_REQUEST.test(request)) {
+          think(`pick-${step}`, '바꿀 일이 아니라 질문이라 조회로 다시 찾아볼게요', 'done');
+          kind = 'read';
+          continue;
+        }
         think(`pick-${step}`, '맞는 기능이 없어 바꾸지 않기로 했어요', 'done');
         cannotDo = true;
         break;
@@ -782,7 +819,7 @@ export async function runAgentChatTurn({
           .map((t) => `- ${t.title}`)
           .join('\n')}\n\n`;
     const rules = kind
-      ? '- Answer what the user asked, organized from the tool results. Use dates exactly as they appear in the tool results or the "Today" line; never guess a weekday.'
+      ? '- Answer what the user asked, organized from the tool results. Use dates exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.'
       : '- Reply to the greeting or question. If asked what you can do, answer from "What you can do on this screen".';
     think('answer', '답을 쓰는 중');
     const answer = await ask(
