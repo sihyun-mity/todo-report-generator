@@ -830,12 +830,29 @@ export const useReportAgentTools = ({
             return toolError(
               `요청에도 지금 폼에도 없는 작업입니다: ${invented.map((t) => t.content).join(', ')}. 사용자가 이번에 말한 작업이나 지금 폼에 있는 작업만 넣으세요. 금일 작업을 익일로 옮기려면 copy_today_to_tomorrow 를 쓰세요.`
             );
-          const fresh = parsed[0].tasks.filter((t) => !elsewhere.has(t.content));
+          let fresh = parsed[0].tasks.filter((t) => !elsewhere.has(t.content));
+          let target = parsed[0];
+          // 작업 이름을 프로젝트 칸에 넣고 작업 칸에는 지금 있는 작업을 베껴 넣는 실수가 잦다 —
+          // "금일 업무에 'API 연동' 작업을 70%로 추가해줘"에 project "API 연동" + 기존 작업들. 그 이름이 새 이름이고 요청에 있고
+          // 이 구역에 프로젝트가 하나뿐이면 그 프로젝트에 그 이름의 작업을 넣는다(진행률은 요청의 % 로)
+          const named = current.filter((p) => p.name.trim() !== '');
+          if (
+            fresh.length === 0 &&
+            context.request?.includes(target.name) &&
+            !named.some((p) => p.name.trim() === target.name) &&
+            named.length === 1
+          ) {
+            const percent = /(\d{1,3})\s*%/.exec(context.request)?.[1];
+            const progress = percent ? Math.min(100, Number(percent)) : 0;
+            const task = { id: createId(), content: target.name, progress, details: [] };
+            target = { ...target, name: named[0].name, tasks: [task] };
+            fresh = target.tasks;
+          }
           if (fresh.length === 0)
             return toolError(
               '이미 같은 업무의 다른 프로젝트에 있는 작업만 들어 있습니다. 사용자가 말한 새 작업만 넣어 다시 부르세요.'
             );
-          const projects = appendProjects(current, [{ ...parsed[0], tasks: fresh }]);
+          const projects = appendProjects(current, [{ ...target, tasks: fresh }]);
           return changeResult(
             await applyFormChange(
               context,

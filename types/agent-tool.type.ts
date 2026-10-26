@@ -45,6 +45,9 @@ export type AgentTool = {
   // 요청이 가리키는 대상이 없어 이 도구가 할 수 없는 경우 — 채팅은 비슷한 도구로 조용히 대신하지 않고 못 한 이유와 대안을 되묻는다
   // (보고 있던 새소식을 요약해 달라고 한 뒤 화면을 벗어나자 목록 전체를 요약했다)
   unavailable?: (request: string, scope: AgentRequestScope) => AgentToolUnavailable | null;
+  // 요청이 분명히 이 도구를 가리키면 다른 후보를 빼고 이 도구만 남긴다(가리키는 도구가 여럿이면 그것들만) —
+  // "자세히 보여줘"(방금 다룬 소식 열기)에 작성 중인 보고서 조회를 골랐다
+  preferredWhen?: (request: string, scope: AgentRequestScope) => boolean;
   // 의도 분류가 이 종류로 갈라져도 후보로 둔다(예: "이 작업 내일로 옮겨줘"가 추가로 분류됐다)
   extraKinds?: ReadonlyArray<AgentToolKind>;
   // 채팅 답변에 쓸 한 문장 — 변경 줄을 하나씩 옮기는 것보다 나을 때(프로젝트 이름 바꾸기·옮기기, 초기화). 성공했을 때만 부른다

@@ -166,7 +166,9 @@ export function useGlobalAgentTools() {
           return toolText({
             path: window.location.pathname,
             title: document.title,
-            viewer: viewer.isMember ? 'member' : 'guest',
+            // 로그인 여부를 참·거짓과 한국어로 분명히 준다 — viewer: 'guest' 만 주었더니 "로그인되어 있어요"라고 답했다
+            loggedIn: viewer.isMember,
+            user: viewer.isMember ? '회원(로그인됨)' : '게스트(비회원) — 로그인하지 않음',
             email: viewer.email,
             theme: latest.current.theme,
             pages: PAGE_KEYS.filter((key) => {
@@ -365,8 +367,12 @@ export function useGlobalAgentTools() {
         execute: async (input, context) => {
           // 모델이 id 를 지어내곤 해("가장 최근 새소식 알려줘"에 없는 id 로 불러 매번 실패했다) 받은 id 로 못 찾으면
           // 요청의 순서("가장 최근"·"두 번째")나 대화에서 다룬 소식으로 찾는다
+          // 요청이 순서("가장 최근"·"두 번째")로 집었으면 받은 id 보다 순서를 따른다 — 앞서 본 소식의 id 를 넣어
+          // "가장 최근 새소식"에 두 번째 소식을 읽었다
+          const byOrder =
+            !!context.request && (rankFromRequest(context.request) !== null || ONE_NEWS_BY_ORDER.test(context.request));
           const byId =
-            typeof input.id === 'string' && isNewsId(input.id)
+            !byOrder && typeof input.id === 'string' && isNewsId(input.id)
               ? await queryClient.fetchQuery(queries.news.detail(input.id))
               : null;
           const fallbackId = byId ? null : await newsIdFor(context.request, input.rank);
@@ -391,6 +397,8 @@ export function useGlobalAgentTools() {
         // "보여줘"는 조회로 분류되곤 해서 조회 의도에도 둔다 — 소식 하나를 순서로 집거나 방금 다룬 소식을 가리켜 열어 달라고 할 때만 후보다
         extraKinds: ['read'],
         requires: (request) => opensNews(request),
+        // 소식 하나를 열어 달라는 요청이면 다른 조회(작성 중인 보고서 등)는 후보에서 뺀다
+        preferredWhen: (request) => opensNews(request),
         focus: (_input, result) => newsFocus(resultJson(result)),
         description:
           'Open the detail screen of one news item (새소식) so the user can read it. rank 1 = the newest (가장 최근·최신), 2 = the second newest. Also opens the news just talked about in the conversation (그거 보여줘). Use this for 보여줘/열어줘 on one news item.',

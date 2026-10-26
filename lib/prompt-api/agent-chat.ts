@@ -221,6 +221,9 @@ const candidateTools = (
   scope: AgentRequestScope
 ) => {
   const tools = all.filter((t) => !t.requires || t.requires(request, scope));
+  // 요청이 분명히 가리키는 도구가 있으면 그것만 둔다(의도와 관계없이)
+  const preferred = tools.filter((t) => t.preferredWhen?.(request, scope));
+  if (preferred.length > 0) return preferred;
   if (kind === 'any') return tools;
   const matched = tools.filter((t) => t.kind === kind || t.extraKinds?.includes(kind));
   const fallback = matched.length === 0 ? tools.filter((t) => t.kind === 'navigate') : [];
@@ -244,8 +247,8 @@ const KIND_GUARDS: Partial<Record<AgentToolKind, { pattern: RegExp; fallback: Ag
 const SAVE_REQUEST = KIND_GUARDS.save!.pattern;
 const WRITE_KINDS: ReadonlyArray<AgentToolKind> = [...FORM_KINDS, 'save'];
 // 넣으라는 말 — 추가 의도는 이 말이 있을 때만 믿는다
-const ADD_REQUEST =
-  /추가|넣어|넣자|넣을|더해|적어|써\s*줘|채워|가져와|가져오|복사|그대로|반복|똑같이|옮겨|올려|등록|기록해|남겨/;
+// "그대로·똑같이·반복"은 넣으라는 말이 아니다 — "진행률도 똑같이 해줘"를 추가로 남겨 진행률 도구가 후보에 없었다
+const ADD_REQUEST = /추가|넣어|넣자|넣을|더해|적어|써\s*줘|채워|가져와|가져오|복사|옮겨|올려|등록|기록해|남겨/;
 // 지우라는 말
 const DELETE_REQUEST = /삭제|지워|지우|빼|없애|제거|날려|치워/;
 // 의도 분류를 믿지 않기로 했을 때 요청의 말로 종류를 가늠한다 — 전체 도구에서 다시 고르게 하면 엉뚱한 일을 골랐다
@@ -319,6 +322,12 @@ const QUESTION_REQUEST =
 // 옮기거나 열어 달라는 말 — 화면 이동 의도는 이 말이 있을 때만 믿는다
 const NAVIGATE_REQUEST =
   /이동|가\s*줘|가자|갈래|가고\s*싶|열어|열기|띄워|들어가|켜\s*줘|보여|화면|페이지|창|돌아가|뒤로|홈/;
+
+// 옮기거나 여는 동사 — 묻는 말("무슨 화면이야?")에 이게 없으면 화면을 옮기지 않는다
+const MOVE_VERB = /이동|가\s*줘|가자|갈래|열어|띄워|들어가|돌아가|보여\s*줘/;
+
+// 보여 달라·열어 달라는 말
+const OPEN_OR_SHOW_REQUEST = /(보여|열어|띄워)\s*(줘|주세요|줄래)/;
 
 // 앞 요청을 다시 해 달라는 말
 const RETRY_REQUEST =
@@ -396,6 +405,10 @@ const toPlainAnswer = (text: string, keepGreeting: boolean) =>
     // "네, 요청하신 새 소식 내용 보여드릴게요." 같은 군더더기 첫 문장을 뗀다(질문에 답하는 "네, 로그인돼 있어요"는 남는다)
     .replace(/^\s*(네[,.!]?\s*)?요청하신[^.!?\n]*(드릴게요|드리겠습니다|드려요)[.!]?\s*/, '')
     .replace(/새 소식/g, '새소식')
+    // 프롬프트의 머리말("Task", "Situation now" 등)을 그대로 옮겨 쓴 줄은 뗀다
+    .replace(/^\s*(#+\s*)?(Task|Situation now|Conversation|Current state|About the app|상황)\s*:?\s*$/gim, '')
+    // 마크다운 목록("*   토큰 유효성 검증")은 화면 목록 표기("- ")로 바꾼다
+    .replace(/^(\s*)[*•]\s+/gm, '$1- ')
     // 묻지 않았는데 자기소개로 시작하곤 했다
     .replace(/^\s*(저는\s*)?Nano(예요|입니다)[.!]\s*/, '')
     .replace(DATE_WITH_WEEKDAY, fixWeekday)
@@ -525,7 +538,14 @@ const namesInState = (state: unknown) => {
 // 옛 이름·새 이름을 뒤바꿨다("먹깨비 React 개발 이름을 먹깨비 웹으로"에 project 를 "먹깨비 웹"으로).
 // 입력의 이름이 지금 있는 이름이 아니거나 요청에 없고, 요청에 그대로 적힌 지금 있는 이름이 하나뿐이면 그 이름으로 바꾼다.
 // 뒤바뀐 경우면 새 이름 칸(new_name·new_text)에 원래 값을 옮긴다. 이름 일부만 말한 경우(포함 관계 찾기)는 도구가 처리하므로 건드리지 않는다
-const repairNames = (input: Record<string, unknown>, request: string, state: unknown) => {
+// recent 는 바로 앞에서 바꾼 작업 — 입력의 작업이 지금 폼에 아예 없고(이미 지운 작업 등) 요청이 이름을 말하지 않았으면
+// 그 작업으로 본다("진행률도 똑같이 해줘"에 앞서 지운 작업을 넣어 실패했다)
+const repairNames = (
+  input: Record<string, unknown>,
+  request: string,
+  state: unknown,
+  recent?: { section: string; task: string }
+) => {
   if (!state) return input;
   const names = namesInState(state);
   const fixed = { ...input };
@@ -534,6 +554,12 @@ const repairNames = (input: Record<string, unknown>, request: string, state: unk
     if (typeof value !== 'string' || value === '' || (names[key].has(value) && request.includes(value))) continue;
     const mentioned = [...names[key]].filter((n) => n.trim() !== '' && request.includes(n));
     const distinct = mentioned.filter((n) => !mentioned.some((m) => m !== n && m.includes(n)));
+    const missing = ![...names[key]].some((n) => n.includes(value) || value.includes(n));
+    if (key === 'task' && distinct.length === 0 && missing && recent && names.task.has(recent.task)) {
+      fixed.task = recent.task;
+      if (typeof fixed.section === 'string') fixed.section = recent.section;
+      continue;
+    }
     if (distinct.length !== 1 || distinct[0] === value) continue;
     for (const newKey of ['new_name', 'new_text'])
       if (fixed[newKey] === distinct[0] && request.includes(value)) fixed[newKey] = value;
@@ -611,7 +637,9 @@ export const focusAfterTool = (
   if (added) return { task: { section: added[2], project: added[3], task: added[4] } };
   const date = text('date');
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return { reportDate: date };
-  return { latest: undefined };
+  // 조회만 하는 도구(기록 날짜 보기 등)는 대화가 다루는 대상을 바꾸지 않는다 — 새소식을 읽고 이어서 기록을 조회하자
+  // "자세히 보여줘"가 그 소식을 가리키지 못했다
+  return tool.kind === 'read' ? {} : { latest: undefined };
 };
 
 // 같은 작업을 뺀 줄과 넣은 줄이 짝을 이루면 옮기기(또는 작업 내용 고치기)로 묶는다 — 줄마다 말하면
@@ -942,10 +970,19 @@ export async function runAgentChatTurn({
       kind = 'read';
       think('intent', '요청 이해: 보고서·새소식 조회', 'done');
     }
+    // 대화로 분류됐어도 보여 달라·열어 달라는 말이면 열거나 옮긴다 — "그거 보여줘"를 대화로 골라 지금 상황을 늘어놓았다
+    if (kind === null && !unsupported && OPEN_OR_SHOW_REQUEST.test(request) && !HOW_TO_QUESTION.test(request)) {
+      kind = 'navigate';
+      think('intent', '요청 이해: 화면 이동', 'done');
+    }
     // 다음 단계에 알려 줄 의도 — 분류를 믿지 않기로 했으면 요청 문장으로 고르게 한다
     let intentNote = unsupported ? 'it may be something the app cannot do' : intent;
     // 화면 이동 의도인데 옮기거나 열어 달라는 말이 없으면 묻는 말로 본다 — "가장 최근 소식 알고싶어"에 새소식 화면으로 옮겨 갔다
-    if (kind === 'navigate' && !NAVIGATE_REQUEST.test(request)) {
+    // "지금 무슨 화면이야?"처럼 화면을 묻기만 하는 말도 옮기지 않는다(옮기라는 말이 따로 없으면)
+    if (
+      kind === 'navigate' &&
+      (!NAVIGATE_REQUEST.test(request) || (QUESTION_REQUEST.test(request) && !MOVE_VERB.test(request)))
+    ) {
       kind = kindFromWords(request);
       intentNote = 'the user did not ask to move; decide only from what the request asks';
       think('intent', '요청 이해: 화면 이동이 아니라 다시 찾아볼게요', 'done');
@@ -1074,8 +1111,21 @@ export async function runAgentChatTurn({
           )
         ) as Record<string, unknown>,
         request,
-        stateOf(stateTools, scope)
+        stateOf(stateTools, scope),
+        recentTask()
       );
+
+    // 바로 앞에서 넣거나 바꾼 작업(대화 기록의 마지막 변경 줄) — "진행률도 똑같이"가 가리키는 작업
+    const recentTask = () => {
+      const lines = [...conversation, ...added].flatMap((t) => (t.role === 'tool' ? (t.changes ?? []) : []));
+      for (const line of [...lines].reverse()) {
+        const m = TASK_LINE.exec(line);
+        if (m && m[1] === '＋') return { section: m[2] === '금일' ? 'today' : 'tomorrow', task: m[4] };
+        const progress = /^(금일|익일) · .+? · (.+) \d+% → \d+%$/.exec(line);
+        if (progress) return { section: progress[1] === '금일' ? 'today' : 'tomorrow', task: progress[2] };
+      }
+      return undefined;
+    };
 
     // 도구 하나를 실행하고 결과를 대화 기록에 남긴다. 대상을 찾지 못했다고 알렸으면(toolUnavailable) 되물을 문장을 돌려준다.
     // blocked 가 있으면 실행하지 않고 실패로 남긴다(요청에 적힌 문구가 입력에 없을 때)
@@ -1505,7 +1555,7 @@ export async function runAgentChatTurn({
           .join('\n')}\n\n`;
     const rules = kind
       ? '- Answer what the user asked, organized from the tool results. Use dates and weekdays exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" (or total/byMonth) of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.\n- To summarize a period, use "tasks" (each task with its days and progress change) first, and "days" for what happened on a specific day.\n- If the tool results do not contain what was asked, say so plainly instead of guessing.'
-      : '- Reply to the greeting or question. For questions about this conversation (why something failed, what you just did), answer from the conversation in plain words. For questions about how this app works, answer only from "About the app"; if it is not there, say you are not sure. For general questions, advice, ideas or writing help (e.g. better wording for a task, how to write a good daily report), answer from your own knowledge, using the current report when relevant — but never claim you changed anything. If asked what you can do, answer from "What you can do on this screen" in 2-4 short sentences grouped by purpose (e.g. writing and editing the report, looking up saved reports, news, screen and color mode) with one or two example requests — never list every item. Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now" (loggedIn: false means a guest who is NOT logged in). Answer only what was asked — do not add other facts from the situation.';
+      : '- Reply to the greeting or question. For questions about this conversation (why something failed, what you just did), answer from the conversation in plain words. For questions about how this app works, answer only from "About the app"; if it is not there, say you are not sure. For general questions, advice, ideas or writing help (e.g. better wording for a task, how to write a good daily report), answer from your own knowledge, using the current report when relevant — but never claim you changed anything. If asked what you can do, answer from "What you can do on this screen" in 2-4 short sentences grouped by purpose (e.g. writing and editing the report, looking up saved reports, news, screen and color mode) with one or two example requests — never list every item. Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now" (loggedIn: false means a guest who is NOT logged in — if asked whether they are logged in, start with "아니요" and never say they are logged in). Answer only what was asked — do not add other facts from the situation.';
     // 조회로 답하면 그 도구가 권하는 다음 할 일을 답 끝에 붙인다 — 답을 쓰기 전에 정해 모델이 같은 질문을 또 붙이지 않게 한다
     // ("더 자세히 보시겠어요?" 뒤에 "화면에서 자세히 보시겠어요?"가 이어졌다)
     const lastRead = executed.findLast((e) => e.tool.kind === 'read' && !e.result.isError);

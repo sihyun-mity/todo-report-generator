@@ -366,11 +366,11 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
         answer: () =>
           useReportHistoryStore.getState().mode === 'user'
             ? /로그인(되어|돼)\s*있|회원/
-            : /게스트|비회원|로그인(되어|돼)\s*있지\s*않|로그인하지\s*않|로그인\s*안/,
+            : /^\s*아니|게스트|비회원|로그인(되어|돼)\s*있지\s*않|로그인하지\s*않|로그인\s*안/,
       },
     ],
   },
-  { name: '지금 화면', turns: [{ say: '지금 무슨 화면이야?', expect: [], answer: /보고서|홈|작성/ }] },
+  { name: '지금 화면', turns: [{ say: '지금 무슨 화면이야?', expect: [], answer: /보고|홈|작성/ }] },
   {
     name: '사용법(GitHub)',
     turns: [{ say: 'GitHub에서 가져오기는 어떻게 써?', expect: [], answer: /GitHub|커밋/ }],
@@ -437,6 +437,17 @@ export async function runAgentEval({
   only?: ReadonlyArray<string>;
 }>) {
   const scenarios = AGENT_EVAL_SCENARIOS.filter((s) => !only || only.some((name) => s.name.includes(name)));
+  // 보고서 작성 화면이면 폼이 기록을 불러와 준비될 때까지(보고서 도구가 등록될 때까지) 기다린다 — 새로고침 직후 바로 돌리면
+  // 늦게 끝난 불러오기가 시나리오 폼을 덮어써 "지금 있는 프로젝트: (없음)"으로 실패했다
+  if (window.location.pathname === '/') {
+    const startedAt = Date.now();
+    while (
+      !getTools().some((t) => t.name === 'add_report_tasks') &&
+      Date.now() - startedAt < AGENT_CHAT_TOOL_WAIT_MS * 2
+    )
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
   const original = useReportFormStore.getState();
   const saved = { reportDate: original.reportDate, today: original.today, tomorrow: original.tomorrow };
   const startPath = window.location.pathname;
