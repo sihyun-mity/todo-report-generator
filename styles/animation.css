@@ -86,17 +86,21 @@
     }
   }
 
+  /* 빛은 어긋남 없이(0 0) 사방으로 같은 굵기로 번지게 한다 — 아래로 치우친 그림자를 함께 숨쉬게 하면 아래 테두리만 굵어 보였다.
+     떠 있는 느낌의 옅은 그림자는 매 프레임 같은 값으로 둔다 */
   @keyframes agent-pill-glow {
     0%,
     100% {
       box-shadow:
-        0 10px 25px -8px color-mix(in oklab, var(--color-blue-500) 35%, transparent),
-        0 0 0 0 color-mix(in oklab, var(--color-blue-500) 0%, transparent);
+        0 0 0 0 color-mix(in oklab, var(--color-blue-500) 0%, transparent),
+        0 0 10px 0 color-mix(in oklab, var(--color-blue-500) 22%, transparent),
+        0 4px 14px -6px rgb(0 0 0 / 0.18);
     }
     50% {
       box-shadow:
-        0 12px 32px -6px color-mix(in oklab, var(--color-blue-500) 55%, transparent),
-        0 0 0 4px color-mix(in oklab, var(--color-blue-500) 18%, transparent);
+        0 0 0 4px color-mix(in oklab, var(--color-blue-500) 16%, transparent),
+        0 0 22px 2px color-mix(in oklab, var(--color-blue-500) 38%, transparent),
+        0 4px 14px -6px rgb(0 0 0 / 0.18);
     }
   }
 

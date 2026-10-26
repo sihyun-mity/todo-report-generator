@@ -78,10 +78,11 @@ export function AgentSuggestionPill() {
       <div
         role="status"
         className={cn(
-          'pointer-events-auto relative max-w-md min-w-0 animate-agent-pill-in rounded-full',
+          'pointer-events-auto relative max-w-md min-w-0 rounded-full',
+          // animate-* 를 둘 붙이면 뒤의 것이 앞의 것을 덮으므로(animation 한 속성) 떠오르기·숨쉬는 빛을 한 값으로 함께 돌린다
           top.emphasis
-            ? 'rainbow-glow shadow-lg'
-            : 'animate-agent-pill-glow border border-blue-300 dark:border-blue-700'
+            ? 'rainbow-glow animate-agent-pill-in shadow-lg'
+            : '[animation:var(--animate-agent-pill-in),var(--animate-agent-pill-glow)] border border-blue-300 dark:border-blue-700'
         )}
       >
         <span
