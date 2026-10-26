@@ -71,6 +71,8 @@ export function AgentInputBox({
 
   const iconButton =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-30';
+  // 막힌 상자(AI 를 쓸 수 없음)는 안내·버튼이 모두 빠져 도구 줄이 빈 높이만 남는다 — 그때는 줄을 그리지 않고 글 영역을 가운데 맞춘다
+  const hasToolbar = !disabled || !!hint || (isRunning && !!onStop);
 
   return (
     <form
@@ -103,10 +105,13 @@ export function AgentInputBox({
         rows={1}
         disabled={disabled}
         placeholder={placeholder}
-        className="block max-h-40 min-h-11 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-500"
+        className={cn(
+          'block max-h-40 min-h-11 w-full resize-none bg-transparent px-3.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed dark:text-zinc-100 dark:placeholder:text-zinc-500',
+          hasToolbar ? 'pt-3 pb-1' : 'py-3'
+        )}
         style={{ fieldSizing: 'content' } as React.CSSProperties}
       />
-      <div className="flex items-center gap-1 px-2 pb-2">
+      <div className={cn('flex items-center gap-1 px-2 pb-2', !hasToolbar && 'hidden')}>
         {/* 안내 줄도 입력칸의 label 로 둔다 — 버튼 사이 빈 곳까지 채우므로(flex-1) 이 줄을 눌러도 입력칸으로 포커스가 간다.
             입력칸 이름은 위의 sr-only label 로 충분하므로 보조기술에는 숨긴다 */}
         <label
