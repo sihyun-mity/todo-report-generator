@@ -736,8 +736,16 @@ const STAGE_ICONS: Record<StageStatus, { icon: LucideIcon; className: string }> 
   pending: { icon: CircleDashed, className: 'text-zinc-300 dark:text-zinc-600' },
 };
 
-// 분류 단계 목록. 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없으므로 단계 단위로 보여 주고,
-// 진행 중인 단계에만 그 단계 안의 개수를 붙인다. 할 일이 없던 단계는 "건너뜀"으로 둔다.
+const STAGE_STATUS_LABELS: Record<StageStatus, string> = {
+  done: '완료',
+  skipped: '건너뜀',
+  active: '진행 중',
+  pending: '대기',
+};
+
+// 분류 단계 스테퍼. 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없으므로 단계 단위로 보여 주고,
+// 진행 중인 단계의 이름과 그 단계 안의 개수만 아래에 가운데 정렬로 붙인다. 할 일이 없던 단계는 "건너뜀" 아이콘으로 둔다.
+// 상태 패널이 가운데 정렬이라 세로 목록(왼쪽 정렬 라벨 + 오른쪽 끝 개수)으로 두면 한쪽으로 치우쳐 보인다.
 function ClassifyStageList({ progress }: Readonly<{ progress: ClassifyProgress | null }>) {
   // 첫 진행 보고 전에는 준비 단계가 진행 중이다. current 가 null 이면 모든 단계가 끝났다.
   const currentIndex =
@@ -746,44 +754,64 @@ function ClassifyStageList({ progress }: Readonly<{ progress: ClassifyProgress |
       : progress.current === null
         ? COMMIT_CLASSIFY_STAGE_VALUES.length
         : COMMIT_CLASSIFY_STAGE_VALUES.indexOf(progress.current);
+  const currentStage = COMMIT_CLASSIFY_STAGE_VALUES[currentIndex];
+  const currentProgress = currentStage ? progress?.stages[currentStage] : undefined;
   return (
-    <ol className="w-full space-y-2 text-left text-xs">
-      {COMMIT_CLASSIFY_STAGE_VALUES.map((stage, index) => {
-        const stageProgress = progress?.stages[stage];
-        const status: StageStatus =
-          index > currentIndex
-            ? 'pending'
-            : index === currentIndex
-              ? 'active'
-              : stage !== COMMIT_CLASSIFY_STAGE.PREPARE && stageProgress?.total === 0
-                ? 'skipped'
-                : 'done';
-        const { icon: Icon, className } = STAGE_ICONS[status];
-        return (
-          <li key={stage} className="flex items-center gap-2">
-            <Icon size={15} className={cn('shrink-0', className)} />
-            <span
-              className={cn(
-                'flex-1',
-                status === 'active'
-                  ? 'font-semibold text-zinc-800 dark:text-zinc-100'
-                  : status === 'done'
-                    ? 'text-zinc-600 dark:text-zinc-300'
-                    : 'text-zinc-400 dark:text-zinc-500'
-              )}
+    <div className="flex w-full flex-col items-center gap-2.5">
+      <ol className="flex w-full items-center">
+        {COMMIT_CLASSIFY_STAGE_VALUES.map((stage, index) => {
+          const status: StageStatus =
+            index > currentIndex
+              ? 'pending'
+              : index === currentIndex
+                ? 'active'
+                : stage !== COMMIT_CLASSIFY_STAGE.PREPARE && progress?.stages[stage]?.total === 0
+                  ? 'skipped'
+                  : 'done';
+          const { icon: Icon, className } = STAGE_ICONS[status];
+          const label = `${CLASSIFY_STAGE_LABELS[stage]} (${STAGE_STATUS_LABELS[status]})`;
+          return (
+            <li
+              key={stage}
+              title={label}
+              aria-current={status === 'active' ? 'step' : undefined}
+              className={cn('flex items-center', index > 0 && 'flex-1')}
             >
-              {CLASSIFY_STAGE_LABELS[stage]}
+              {index > 0 && (
+                <span
+                  aria-hidden
+                  className={cn(
+                    'mx-1 h-0.5 flex-1 rounded-full transition-colors',
+                    index <= currentIndex ? 'bg-emerald-400/70 dark:bg-emerald-500/50' : 'bg-zinc-200 dark:bg-zinc-700'
+                  )}
+                />
+              )}
+              <Icon size={16} aria-hidden className={cn('shrink-0', className)} />
+              <span className="sr-only">{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p aria-live="polite" className="flex items-center gap-1.5 text-xs">
+        {currentStage ? (
+          <>
+            <span className="text-zinc-400 tabular-nums dark:text-zinc-500">
+              {currentIndex + 1}/{COMMIT_CLASSIFY_STAGE_VALUES.length}
             </span>
-            {status === 'active' && stageProgress && stageProgress.total > 0 && (
-              <span className="text-zinc-400 tabular-nums dark:text-zinc-500">
-                {Math.min(stageProgress.done, stageProgress.total)}/{stageProgress.total}
+            <span className="font-semibold text-zinc-800 dark:text-zinc-100">
+              {CLASSIFY_STAGE_LABELS[currentStage]}
+            </span>
+            {currentProgress && currentProgress.total > 0 && (
+              <span className="rounded-full bg-blue-50 px-1.5 py-px text-[11px] font-medium text-blue-600 tabular-nums dark:bg-blue-900/30 dark:text-blue-400">
+                {Math.min(currentProgress.done, currentProgress.total)}/{currentProgress.total}
               </span>
             )}
-            {status === 'skipped' && <span className="text-zinc-400 dark:text-zinc-500">건너뜀</span>}
-          </li>
-        );
-      })}
-    </ol>
+          </>
+        ) : (
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">모든 단계를 마쳤어요</span>
+        )}
+      </p>
+    </div>
   );
 }
 
