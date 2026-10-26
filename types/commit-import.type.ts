@@ -130,6 +130,8 @@ export type CommitImportMemory = {
   progressEdits: Array<ProgressEdit>;
   // 분류에서 뺄 저장소(개인 프로젝트 등) — 커밋 조회부터 건너뛴다
   excludedRepos: Array<string>;
+  // 연결한 계정 외에 커밋을 함께 가져올 작성자(GitHub 사용자 이름·이메일). 커밋 작성 이메일이 계정에 연결돼 있지 않을 때 쓴다
+  commitAuthors: Array<string>;
   // 저장소 → 그 저장소 작업을 하나도 넣지 않고 적용한 연속 횟수. 쌓이면 미리보기에서 제외를 제안한다(자동 제외는 안 한다)
   repoSkips: Record<string, number>;
   // 가져와 보고서에 넣은 새 작업(최신순) — 다시 잡히면 미리보기에서 "기존 작업과 유사"로 해제해 둔다

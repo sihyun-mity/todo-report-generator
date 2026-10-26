@@ -58,7 +58,9 @@ import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
 import {
   readCommitImportMemory,
   repoExcludeSuggestions,
+  setCommitAuthor,
   setRepoExcluded,
+  toggleCommitAuthors,
   toggleExcludedRepo,
 } from '@/lib/commit-classifier/memory';
 import {
@@ -72,7 +74,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
 import { cn } from '@/utils';
-import { ExcludedReposMenu, GithubImportPreview } from '.';
+import { CommitAuthorsMenu, ExcludedReposMenu, GithubImportPreview } from '.';
 
 type GithubImportDialogProps = {
   // 커밋 가져오기는 로그인 회원 전용 — 게스트에게는 로그인 안내만 보여주고 조회·분류를 시작하지 않는다
@@ -125,6 +127,10 @@ const omissionNotice = (result: {
 // "10월 20일 오후 06:00 이후" / 지난 날짜 보고서면 "10월 20일 오후 06:00부터 10월 21일 오전 12:00까지"
 const rangeLabel = ({ since, until }: { since: string; until: string | null }) =>
   until ? `${timeLabel(since)}부터 ${timeLabel(until)}까지` : `${timeLabel(since)} 이후`;
+
+// "@login" / 추가 작성자가 있으면 "@login 외 2명"
+const authorsLabel = ({ login, extraAuthors }: { login: string; extraAuthors: ReadonlyArray<string> }) =>
+  extraAuthors.length ? `@${login} 외 ${extraAuthors.length}명` : `@${login}`;
 
 // 미리보기에서 저장소를 제외하면 그 저장소 커밋을 빼고, 커밋이 남지 않은 작업·프로젝트는 지운다
 const removeRepoFromPlan = (plan: CommitImportPlan, repo: string): CommitImportPlan => ({
@@ -199,6 +205,8 @@ export function GithubImportDialog({
   // 커밋 조회에 쓴 제외 목록 — 미리보기에서 제외할 때는 다시 조회하지 않고 그 저장소만 빼고,
   // 제외를 해제할 때만 그 저장소의 커밋을 불러오려고 다시 조회·분류한다.
   const [fetchExcludedRepos, setFetchExcludedRepos] = useState<ReadonlyArray<string>>([]);
+  // 연결한 계정 외에 커밋을 함께 가져올 작성자(회원별 메모리). 바꾸면 다시 조회·분류한다.
+  const [commitAuthors, setCommitAuthors] = useState<ReadonlyArray<string>>([]);
   // 이번에 분류 전 AI 안내를 넘겼는지(모델을 받았거나 저장소 기준 분류로 계속)
   const [aiNoticeConfirmed, setAiNoticeConfirmed] = useState(false);
   // 분류(queryFn)가 실행 시점의 제외 목록을 보도록 ref 로도 들고 있는다. 조회 때 뺀 저장소는 커밋에 없으므로
@@ -236,11 +244,12 @@ export function GithubImportDialog({
     setMemoryReady(true);
     setExcludedRepos(memory.data.excludedRepos);
     setFetchExcludedRepos(memory.data.excludedRepos);
+    setCommitAuthors(memory.data.commitAuthors);
     setSuggestedExcludes(repoExcludeSuggestions(memory.data));
   }
 
   const commits = useQuery({
-    ...queries.github.commits(sinceMs, untilMs, fetchExcludedRepos),
+    ...queries.github.commits(sinceMs, untilMs, fetchExcludedRepos, commitAuthors),
     enabled: isConnected && memoryReady,
     staleTime: 0,
     gcTime: 0,
@@ -362,6 +371,15 @@ export function GithubImportDialog({
     }
   };
 
+  // 작성자를 바꾸면 받아 둔 커밋이 달라지므로 다시 조회한다(새 조회 결과로 다시 분류된다).
+  // 새 분류가 끝날 때까지 이전 결과가 남아 있지 않도록 미리보기를 비운다.
+  const handleChangeAuthor = (author: string, added: boolean) => {
+    void setCommitAuthor(userId, author, added);
+    setDraft(null);
+    setRetryArmed(false);
+    setCommitAuthors((current) => toggleCommitAuthors(current, [author], added));
+  };
+
   // AI 응답은 실행마다 달라, 결과가 마음에 들지 않으면 같은 커밋으로 다시 분류한다(커밋은 다시 조회하지 않는다).
   // 미리보기를 고쳤다면 그 편집이 사라지므로 한 번 더 눌러 확인받는다. 공용 confirm 모달은 이 다이얼로그의
   // 바깥 클릭 닫기에 걸려 함께 닫히므로 버튼 안에서 확인한다.
@@ -462,7 +480,7 @@ export function GithubImportDialog({
                 icon={Loader2}
                 spin
                 title="커밋을 불러오고 있어요"
-                description={`@${login} 계정에서 활동한 저장소를 살펴보는 중이에요.`}
+                description={`@${login} 계정에서 활동한 저장소를 살펴보는 중이에요.${commitAuthors.length ? ` 추가 작성자 ${commitAuthors.length}명의 커밋도 함께 찾아요.` : ''}`}
               />
             ) : commitsResult && !commitsResult.ok ? (
               <StatusPanel
@@ -488,7 +506,7 @@ export function GithubImportDialog({
               <StatusPanel
                 icon={Inbox}
                 title="가져올 커밋이 없어요"
-                description={`${rangeLabel(commitsResult)} @${commitsResult.login} 계정으로 작성한 커밋을 찾지 못했어요. 커밋 작성 이메일이 GitHub 계정에 연결돼 있는지 확인해 주세요.${commitsResult.clipped ? ` 마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일만 찾아봤어요.` : ''}${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
+                description={`${rangeLabel(commitsResult)} ${authorsLabel(commitsResult)}${commitsResult.extraAuthors.length ? '이' : ' 계정으로'} 작성한 커밋을 찾지 못했어요.${commitsResult.clipped ? ` 마지막 보고 후 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일이 넘어 최근 ${GITHUB_COMMITS_MAX_LOOKBACK_DAYS}일만 찾아봤어요.` : ''}${fetchExcludedRepos.length ? ` 제외한 저장소 ${fetchExcludedRepos.length}개는 불러오지 않았어요.` : ''}`}
               />
             ) : plan.isError ? (
               <StatusPanel
@@ -573,7 +591,7 @@ export function GithubImportDialog({
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
                     <SummaryItem icon={CalendarClock}>{rangeLabel(commitsResult)}</SummaryItem>
-                    <SummaryItem icon={Github}>@{commitsResult.login}</SummaryItem>
+                    <SummaryItem icon={Github}>{authorsLabel(commitsResult)}</SummaryItem>
                     <SummaryItem icon={FolderGit2}>저장소 {summary?.repos}개</SummaryItem>
                   </div>
                   {notice && (
@@ -619,11 +637,20 @@ export function GithubImportDialog({
 
           <div className="space-y-3 border-t border-zinc-100 p-4 sm:p-6 dark:border-zinc-800">
             {isConnected && (
-              <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+              // relative: 작성자 추가 팝오버가 이 줄 폭에 맞춰 열린다
+              <div className="relative flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span className="flex min-w-0 items-center gap-1.5 truncate">
                   <Github size={12} className="shrink-0" />
                   <span className="truncate">@{login} 계정과 연결됨</span>
                 </span>
+                <CommitAuthorsMenu
+                  login={login}
+                  authors={commitAuthors}
+                  untilMs={untilMs}
+                  excludedRepos={excludedRepos}
+                  onAdd={(author) => handleChangeAuthor(author, true)}
+                  onRemove={(author) => handleChangeAuthor(author, false)}
+                />
                 <ExcludedReposMenu repos={excludedRepos} onInclude={handleIncludeRepo} />
                 <button
                   onClick={handleDisconnect}

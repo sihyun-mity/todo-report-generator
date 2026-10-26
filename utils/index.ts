@@ -1,6 +1,7 @@
 export * from './array';
 export * from './boolean';
 export * from './class';
+export * from './commit-author';
 export * from './commit-import';
 export * from './commit-message';
 export * from './date';

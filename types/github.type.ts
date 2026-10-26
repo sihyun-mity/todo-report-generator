@@ -8,12 +8,33 @@ export type GithubCommit = {
   committedAt: string;
 };
 
+// 작성자 추가 자동완성 후보. GitHub 계정과 연결된 커밋은 login, 연결되지 않은 커밋은 작성 이메일로 모은다.
+export type GithubCommitAuthor = {
+  // `author` 필터에 넣을 값(login 또는 소문자 이메일)
+  author: string;
+  kind: 'login' | 'email';
+  // 커밋에 적힌 작성자 이름(가장 최근 커밋 기준)
+  name: string;
+  commits: number;
+  repos: Array<string>;
+  // ISO 8601 — 가장 최근 커밋 작성 시각
+  lastCommittedAt: string;
+};
+
+export type GithubCommitAuthorsResult =
+  | { ok: true; authors: Array<GithubCommitAuthor> }
+  | { ok: false; reason: GithubFailureReason; message: string };
+
+export type GithubFailureReason = 'members_only' | 'not_connected' | 'unauthorized' | 'rate_limited' | 'failed';
+
 export type GithubConnection = { connected: false } | { connected: true; login: string };
 
 export type GithubCommitsResult =
   | {
       ok: true;
       login: string;
+      // 연결한 계정 외에 함께 조회한 작성자(GitHub 사용자 이름·이메일) — 다듬고 중복을 뺀 값
+      extraAuthors: Array<string>;
       since: string;
       // null 이면 지금까지
       until: string | null;
@@ -25,7 +46,7 @@ export type GithubCommitsResult =
     }
   | {
       ok: false;
-      reason: 'members_only' | 'not_connected' | 'unauthorized' | 'rate_limited' | 'failed';
+      reason: GithubFailureReason;
       message: string;
     };
 

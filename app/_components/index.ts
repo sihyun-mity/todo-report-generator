@@ -1,5 +1,6 @@
 export * from './backdrop';
 export * from './date-picker';
+export * from './commit-authors-menu';
 export * from './excluded-repos-menu';
 export * from './github-import-dialog';
 export * from './github-import-preview';

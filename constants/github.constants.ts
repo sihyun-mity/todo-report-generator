@@ -24,6 +24,12 @@ export const GITHUB_COMMITS_CLASSIFY_LIMIT = 40;
 // 최근 push 된 저장소 중 조회할 최대 개수 / 저장소당 조회할 최대 브랜치 수
 export const GITHUB_MAX_REPOS = 20;
 export const GITHUB_MAX_BRANCHES_PER_REPO = 10;
+// 연결한 계정 외에 커밋을 함께 가져올 작성자(GitHub 사용자 이름·이메일) 최대 개수.
+// 작성자마다 브랜치별 커밋 조회가 한 번씩 늘어 GitHub API 호출 수가 비례한다.
+export const GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT = 5;
+// 작성자 추가 자동완성 후보를 모을 기간 — 보고서 범위와 관계없이 최근 이만큼의 기본 브랜치 커밋 작성자를 보여 준다
+// (저장소마다 커밋 목록 한 번만 조회하므로 기간을 늘려도 호출 수는 같다. 저장소당 최근 100건까지).
+export const GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS = 30;
 
 /** 예전 커밋 가져오기 보정 메모리 localStorage 키 접두어(`${접두어}:${회원 id}`). 지금은 DB 에 두고, 남은 기록을 옮길 때만 읽는다. */
 export const COMMIT_IMPORT_MEMORY_STORAGE_KEY = 'commit-import-memory';

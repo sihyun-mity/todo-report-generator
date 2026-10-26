@@ -7,6 +7,7 @@ import {
   COMMIT_IMPORT_PROGRESS_EDIT_LIMIT,
   COMMIT_IMPORT_REPO_SKIP_SUGGEST_COUNT,
   COMMIT_IMPORT_STYLE_SAMPLE_LIMIT,
+  GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT,
 } from '@/constants';
 import type {
   CommitImportLink,
@@ -19,7 +20,7 @@ import type {
   ReportHistoryItem,
   StyleSample,
 } from '@/types';
-import { commitScopeKey } from '@/utils';
+import { commitScopeKey, sameCommitAuthor } from '@/utils';
 import { createClient } from '@/lib/supabase/client';
 
 // 커밋 가져오기의 사용자별 보정 메모리(Supabase `commit_import_memories` 에 회원당 한 행, JSONB).
@@ -31,6 +32,7 @@ import { createClient } from '@/lib/supabase/client';
 // 4) 진행률: 새 작업에 제안한 진행률 → 사용자가 고친 진행률 쌍을 예시로 넘겨 다음 유추가 사용자 성향을 따르게 한다.
 // 5) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
 //    매번 작업을 하나도 넣지 않고 적용하는 저장소는 횟수를 세 두었다가 미리보기에서 제외를 제안한다.
+// 5-1) 추가 작성자: 연결한 계정 외에 함께 조회할 커밋 작성자(GitHub 사용자 이름·이메일). 다음 가져오기에도 그대로 쓴다.
 // 6) 가져온 작업(등록 기록): 가져와 보고서에 넣은 새 작업의 보고서 날짜·AI 원래 이름·사용자 최종 이름·커밋을 남겨 두고,
 //    같은 날짜 보고서로 다시 가져올 때 같은 작업이 잡히면 "기존 작업과 유사"로 가져오기를 해제해 둔다(`registered-tasks.ts`).
 // 보정은 미리보기에서 확정할 때 한 번(사용자가 고친 것만), 폼에서 더 고친 뒤 보고서를 저장(복사)할 때 다시 읽어 반영한다.
@@ -43,6 +45,7 @@ const emptyMemory = (): CommitImportMemory => ({
   detailFeedback: { removed: 0, kept: 0, added: 0 },
   progressEdits: [],
   excludedRepos: [],
+  commitAuthors: [],
   repoSkips: {},
   importedTasks: [],
   pendingLinks: [],
@@ -85,6 +88,7 @@ const normalizeMemory = (raw: Partial<CommitImportMemory> | null | undefined): C
   detailFeedback: { removed: 0, kept: 0, added: 0, ...raw?.detailFeedback },
   progressEdits: raw?.progressEdits ?? [],
   excludedRepos: raw?.excludedRepos ?? [],
+  commitAuthors: raw?.commitAuthors ?? [],
   repoSkips: raw?.repoSkips ?? {},
   importedTasks: raw?.importedTasks ?? [],
   pendingLinks: raw?.pendingLinks ?? [],
@@ -132,6 +136,7 @@ const mergeMemories = (remote: CommitImportMemory, local: CommitImportMemory): C
         },
     progressEdits: pushProgressEdits(local.progressEdits, remote.progressEdits),
     excludedRepos: [...new Set([...remote.excludedRepos, ...local.excludedRepos])].sort(),
+    commitAuthors: toggleCommitAuthors(remote.commitAuthors, local.commitAuthors, true),
     repoSkips: maxCounts(remote.repoSkips, local.repoSkips),
     importedTasks: pushImportedTasks(local.importedTasks, remote.importedTasks),
     pendingLinks: [...remote.pendingLinks, ...local.pendingLinks.filter((l) => !linkKeys.has(JSON.stringify(l)))].slice(
@@ -450,6 +455,27 @@ export const setRepoExcluded = (userId: string | null, repo: string, excluded: b
     delete repoSkips[repo];
     return { ...memory, excludedRepos: toggleExcludedRepo(memory.excludedRepos, repo, excluded), repoSkips };
   });
+
+// 추가 작성자 목록에 작성자를 넣거나 뺀 결과(대소문자만 다른 값은 같은 작성자). 넣을 때는 상한까지만 받는다.
+export const toggleCommitAuthors = (
+  authors: ReadonlyArray<string>,
+  changes: ReadonlyArray<string>,
+  added: boolean
+): Array<string> => {
+  if (!added) return authors.filter((a) => !changes.some((c) => sameCommitAuthor(a, c)));
+  const next = [...authors];
+  for (const author of changes) {
+    if (!next.some((a) => sameCommitAuthor(a, author))) next.push(author);
+  }
+  return next.slice(0, GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT);
+};
+
+// 추가 작성자를 넣거나 뺀다. 화면은 `toggleCommitAuthors` 로 바로 반영하고 저장은 뒤에서 한다.
+export const setCommitAuthor = (userId: string | null, author: string, added: boolean) =>
+  updateMemory(userId, (memory) => ({
+    ...memory,
+    commitAuthors: toggleCommitAuthors(memory.commitAuthors, [author], added),
+  }));
 
 // 작업을 하나도 넣지 않고 적용한 일이 연속으로 쌓인 저장소 — 미리보기에서 제외를 제안한다
 export const repoExcludeSuggestions = (memory: CommitImportMemory): Array<string> =>
