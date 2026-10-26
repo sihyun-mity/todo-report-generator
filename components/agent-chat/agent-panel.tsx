@@ -1,7 +1,7 @@
 'use client';
 
-import { type KeyboardEvent, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUp, ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles, Square } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
 import type { AgentAction, AgentChatMessage, AgentQuickAction, AgentSuggestion } from '@/types';
 import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLES } from '@/constants';
 import { useDismissLayer, useSignalEffect } from '@/hooks';
@@ -12,11 +12,10 @@ import {
   AgentActionChip,
   AgentAvailabilityNotice,
   AgentMessage,
-  AgentMicButton,
+  AgentInputBox,
   AgentSuggestionCard,
   AgentSuggestionHeading,
   ReportLivePreview,
-  useSpeechInput,
 } from '.';
 
 type Props = {
@@ -98,8 +97,6 @@ export function AgentPanel({
   const panelRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const inputId = useId();
-  const [draft, setDraft] = useState('');
   const baseSeed = useSyncExternalStore(subscribeNever, getClientExampleSeed, getServerExampleSeed);
   // "다른 예시"를 누를 때마다 더해 다시 섞는다
   const [seedOffset, setSeedOffset] = useState(0);
@@ -120,32 +117,11 @@ export function AgentPanel({
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // 받아쓰기는 입력칸에 이어 붙인다(시작할 때 있던 글은 그대로 두고 뒤에)
-  const speechBase = useRef('');
-  const speech = useSpeechInput((transcript) => {
-    setDraft(speechBase.current ? `${speechBase.current} ${transcript}` : transcript);
-  });
-  const toggleSpeech = () => {
-    if (speech.isListening) {
-      speech.stop();
-      return;
-    }
-    speechBase.current = draft.trim();
-    void speech.start();
-  };
-
   const isReady = availability === 'available';
+  // 예시 칩은 바로 보낸다
   const submit = (text: string) => {
-    if (isRunning || !isReady || text.trim() === '') return;
-    speech.stop();
+    if (isRunning || !isReady) return;
     onSend(text);
-    setDraft('');
-  };
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // 한글 조합 중 Enter 는 조합 확정이므로 보내지 않는다
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    submit(draft);
   };
 
   const examples = isReady
@@ -318,59 +294,23 @@ export function AgentPanel({
           </div>
         )}
 
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(draft);
-          }}
-          className="flex shrink-0 items-end gap-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
-        >
-          <label htmlFor={inputId} className="sr-only">
-            AI 도우미에게 보낼 메시지
-          </label>
-          <textarea
-            ref={inputRef}
-            id={inputId}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            disabled={!isReady}
+        <div className="shrink-0 border-t border-zinc-200 p-3 dark:border-zinc-800">
+          <AgentInputBox
+            textareaRef={inputRef}
             placeholder={
               isReady
                 ? canWriteFromNotes
-                  ? '부탁하거나 오늘 한 일을 편하게 적어 보세요 (⌘K)'
-                  : '무엇이든 부탁해 보세요 (⌘K)'
+                  ? '부탁하거나 오늘 한 일을 적어 보세요'
+                  : '무엇이든 부탁해 보세요'
                 : '위의 추천과 빠른 작업을 눌러 보세요'
             }
-            className="max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-blue-400 disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:disabled:bg-zinc-900/50"
-            style={{ fieldSizing: 'content' } as React.CSSProperties}
+            hint={isReady ? 'Enter 보내기 · Shift+Enter 줄바꿈 · ⌘K' : undefined}
+            disabled={!isReady}
+            isRunning={isRunning}
+            onSubmit={onSend}
+            onStop={onStop}
           />
-          {isReady && speech.isSupported && !isRunning && (
-            <AgentMicButton isListening={speech.isListening} disabled={isRunning} onClick={toggleSpeech} />
-          )}
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={onStop}
-              aria-label="멈추기"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-200 text-zinc-700 transition-colors hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
-            >
-              <Square size={14} fill="currentColor" aria-hidden />
-            </button>
-          ) : (
-            isReady && (
-              <button
-                type="submit"
-                disabled={draft.trim() === ''}
-                aria-label="보내기"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-              >
-                <ArrowUp size={16} aria-hidden />
-              </button>
-            )
-          )}
-        </form>
+        </div>
       </div>
     </aside>
   );
