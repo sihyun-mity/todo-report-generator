@@ -282,6 +282,18 @@ const deleteTargetOk = (input: Record<string, unknown>, request: string, recent:
     .some((word) => request.includes(word));
 };
 
+// 세부 항목이 요청에서 가리켜졌는지 — 작업 이름에도 있는 낱말("토큰")은 세지 않는다.
+// 세지 않으면 "토큰 로그인 작업 아래에 세부 항목 추가"가 "구앱 토큰 만료 확인"을 가리킨 것으로 보였다
+const detailMentioned = (input: Record<string, unknown>, request: string, recent: string) => {
+  if (typeof input.detail !== 'string' || input.detail === '') return true;
+  if (POINTING_WORDS.test(request) || recent.includes(input.detail)) return true;
+  const taskWords = typeof input.task === 'string' ? input.task : '';
+  return input.detail
+    .split(/[^0-9A-Za-z가-힣]+/)
+    .filter((word) => word.length >= 2 && !taskWords.includes(word))
+    .some((word) => request.includes(word));
+};
+
 // 바꾸지 않았는데 바꿨다고 하는 말 — 도구 없이 답할 때 이런 말이 나오면 지어낸 것이라 정해진 문구로 돌린다
 const CLAIMED_CHANGE = /(바꿨|추가했|넣었|지웠|삭제했|저장했|옮겼|복사했|열었|불러왔|내보냈)(어요|습니다|다)/;
 
@@ -300,6 +312,16 @@ const ACTION_GROUPS: ReadonlyArray<RegExp> = [
   /불러|가져와|가져오/,
   /정리|요약/,
 ];
+// 쓰기 도구가 ACTION_GROUPS 의 어느 동작인지 — 여러 동작 중 마친 동작의 도구를 다시 고르지 않게 한다
+const TOOL_ACTION_GROUP: ReadonlyArray<RegExp> = [
+  /^(add_|fill_|carry_over|copy_today|import_)/,
+  /^remove_/,
+  /^(rename_|set_|edit_|replace_)/,
+  /^move_/,
+  /^(save_|copy_report|export_)/,
+  /^load_/,
+];
+const toolActionGroup = (name: string) => TOOL_ACTION_GROUP.findIndex((pattern) => pattern.test(name));
 const isMultiStep = (request: string) =>
   STEP_CONNECTOR.test(request) && ACTION_GROUPS.filter((group) => group.test(request)).length >= 2;
 
@@ -378,6 +400,16 @@ const todayLine = (withPeriods = true) => {
 
 // 프롬프트로 막아도 Nano 가 마크다운 강조·코드 표기·이모지를 섞곤 해 표시 전에 걷어 낸다
 // 대화 의도가 아니면 Nano 가 습관처럼 붙이는 "안녕하세요!" 도 뗀다
+// 길이 묶음에 닿은 답변을 마지막 문장 끝(마침표·물음표·느낌표 뒤, 또는 줄바꿈)에서 자른다. 뒤쪽 절반 안에 문장 끝이 없으면
+// 줄바꿈이나 띄어쓰기에서 자른다(문장 하나가 아주 길 때)
+const cutAtSentenceEnd = (text: string) => {
+  const ends = [...text.matchAll(/[.!?。](?=\s|$)|\n/g)].map((m) => (m.index ?? 0) + m[0].length);
+  const end = ends.findLast((index) => index >= text.length / 2);
+  if (end) return text.slice(0, end).trimEnd();
+  const space = text.lastIndexOf(' ');
+  return (space > text.length / 2 ? text.slice(0, space) : text).trimEnd();
+};
+
 // 답에 쓴 날짜의 요일을 실제 요일로 고친다 — 도구 결과에 "10/26(월)"을 줘도 "2026년 10월 26일 금요일"로 옮겨 쓰며 요일을 지어냈다.
 // 연도가 없으면 올해로 본다
 // "X요일" 이나 "(X)" 꼴만 요일로 본다 — 날짜 뒤의 "일정"·"월간" 같은 낱말을 요일로 고치지 않게
@@ -464,6 +496,11 @@ const describeInputs = (schema: WebMcpJsonSchema) => {
 
 // 계획 세우기용 짧은 목록(이름: 설명 첫 문장) — 모든 도구의 전체 설명을 넘기면 프롬프트가 수천 토큰이 되어
 // 컨텍스트 재기·응답이 수십 초씩 걸리고 화면이 멈췄다
+// 계획용 목록을 짧게(이름 + 설명 첫 문장) 줄지 전체(설명 + 입력)로 줄지 — 회귀 실행기가 A/B 로 견줄 때만 바꾼다
+let planCatalogMode: 'short' | 'full' = 'short';
+export const setPlanCatalogMode = (mode: 'short' | 'full') => {
+  planCatalogMode = mode;
+};
 const shortCatalog = (tools: ReadonlyArray<AgentTool>) =>
   tools
     .map((t) => {
@@ -552,9 +589,18 @@ const repairNames = (
   for (const key of ['project', 'task', 'detail'] as const) {
     const value = fixed[key];
     if (typeof value !== 'string' || value === '' || (names[key].has(value) && request.includes(value))) continue;
-    const mentioned = [...names[key]].filter((n) => n.trim() !== '' && request.includes(n));
+    const exact = [...names[key]].filter((n) => n.trim() !== '' && request.includes(n));
+    // 그대로 적힌 이름이 없으면 낱말 절반 이상이 적힌 이름을 본다("토큰 로그인 진행률 100%로" → "토큰 로그인 안정성 검증")
+    const loose = [...names[key]].filter((n) => {
+      const words = n.split(/[^0-9A-Za-z가-힣]+/).filter((w) => w.length >= 2);
+      return words.length > 0 && words.filter((w) => request.includes(w)).length * 2 >= words.length;
+    });
+    const mentioned = exact.length > 0 ? exact : loose;
     const distinct = mentioned.filter((n) => !mentioned.some((m) => m !== n && m.includes(n)));
     const missing = ![...names[key]].some((n) => n.includes(value) || value.includes(n));
+    // 지금 있는 이름의 일부("토큰 로그인" → "토큰 로그인 안정성 검증")를 말했으면 도구의 포함 관계 찾기에 맡긴다 —
+    // 요청에 그대로 적힌 다른 이름("API 연동")으로 바꿔 엉뚱한 작업의 진행률을 바꿨다
+    if (!missing && !names[key].has(value)) continue;
     if (key === 'task' && distinct.length === 0 && missing && recent && names.task.has(recent.task)) {
       fixed.task = recent.task;
       if (typeof fixed.section === 'string') fixed.section = recent.section;
@@ -849,14 +895,18 @@ export async function runAgentChatTurn({
         }
 
         const prompt = render(dropped, cap);
-        return onText
-          ? // 답변(응답 제약 없음)은 길이를 묶는다 — 구조화 출력은 스키마가 끝을 정한다
-            await readPromptStream(
-              session.promptStreaming(prompt, options),
-              onText,
-              schema ? Infinity : AGENT_CHAT_ANSWER_MAX_CHARS
-            )
-          : await session.prompt(prompt, options);
+        if (!onText) return await session.prompt(prompt, options);
+        // 답변(응답 제약 없음)은 길이를 묶는다 — 구조화 출력은 스키마가 끝을 정한다.
+        // 묶음에 닿으면 문장 중간이 아니라 마지막 문장 끝에서 자르고 잘렸다고 알린다
+        const text = await readPromptStream(
+          session.promptStreaming(prompt, options),
+          onText,
+          schema ? Infinity : AGENT_CHAT_ANSWER_MAX_CHARS
+        );
+        if (schema || text.length < AGENT_CHAT_ANSWER_MAX_CHARS) return text;
+        const cut = `${cutAtSentenceEnd(text)}\n(길어서 여기까지 보여 드렸어요. 더 필요한 부분을 말해 주시면 이어서 알려 드릴게요.)`;
+        onText(cut);
+        return cut;
       } finally {
         session.destroy();
       }
@@ -1099,7 +1149,15 @@ export async function runAgentChatTurn({
     const capabilityTitles = () => [...new Set(getTools().map((t) => `- ${t.title}`))].join('\n');
 
     // 도구 입력을 만든다 — 도구 고르기 단계와 여러 단계 계획이 함께 쓴다. stateTools 가 주는 지금 상태(작성 중인 폼 등)를 넣는다
-    const makeToolInput = async (tool: AgentTool, stateTools: ReadonlyArray<AgentTool>, key: string, must = '') =>
+    // nameSource 는 이름을 바로잡을 때 견줄 문장 — 계획의 한 단계면 그 단계 설명(요청 전체에는 여러 항목 이름이 섞여 있어
+    // 앞 단계에서 넣은 "API 연동"으로 다음 단계의 진행률을 바꿨다)
+    const makeToolInput = async (
+      tool: AgentTool,
+      stateTools: ReadonlyArray<AgentTool>,
+      key: string,
+      must = '',
+      nameSource = request
+    ) =>
       repairNames(
         JSON.parse(
           await ask(
@@ -1110,7 +1168,7 @@ export async function runAgentChatTurn({
             (text) => think(key, `${tool.title} 내용을 정하는 중`, 'running', text.slice(-120))
           )
         ) as Record<string, unknown>,
-        request,
+        nameSource,
         stateOf(stateTools, scope),
         recentTask()
       );
@@ -1188,7 +1246,7 @@ export async function runAgentChatTurn({
       const plan = JSON.parse(
         await ask(
           (conversation) =>
-            `## Available tools\n${shortCatalog(planTools)}\n\n${situationBlock}${reportState()}## Conversation\n${conversation}\n\n## Task\n${wantsLine}The user's last request asks for several things at once. Split it into the ordered steps needed to do exactly what was asked, one tool per step, using only the tools above.\n- "does" is a short Korean description of that step for the user (e.g. "'토큰 로그인' 진행률 80%로", "익일로 옮기기").\n- Use as few steps as possible. Do not add steps the user did not ask for (no saving unless asked).\n- 금일 = today, 익일 = tomorrow.`,
+            `## Available tools\n${planCatalogMode === 'full' ? toolCatalog(planTools) : shortCatalog(planTools)}\n\n${situationBlock}${reportState()}## Conversation\n${conversation}\n\n## Task\n${wantsLine}The user's last request asks for several things at once. Split it into the ordered steps needed to do exactly what was asked, one tool per step, using only the tools above.\n- "does" is a short Korean description of that step for the user (e.g. "'토큰 로그인' 진행률 80%로", "익일로 옮기기").\n- Use as few steps as possible. Do not add steps the user did not ask for (no saving unless asked).\n- Items the user asks to add (추가, 넣어) do not exist yet: use the adding tool for them, even when a progress is given ("API 연동 50%로 추가" is one adding step). Change tools (progress, rename, move, delete) are only for items already in the current state.\n- 금일 = today, 익일 = tomorrow.`,
           {
             type: 'object',
             properties: {
@@ -1282,11 +1340,35 @@ export async function runAgentChatTurn({
                 tool,
                 [tool],
                 key,
-                `\n- This is step ${i + 1} of ${steps.length} of the plan the user approved: ${s.does}. Write the input for this step only.`
+                `\n- This is step ${i + 1} of ${steps.length} of the plan the user approved: ${s.does}. Write the input for this step only — use the item this step names, not the items of other steps.`,
+                s.does
               )
             : {};
           think(key, `${i + 1}/${steps.length} ${s.does}`, 'done', describeInput(input));
-          const { result, question } = await runTool(tool, input);
+          let { result, question } = await runTool(tool, input);
+          // 고치는 단계가 대상을 못 찾았는데 요청이 넣으라는 말이면 그 단계는 새로 넣는 일이었다 — 추가 도구로 한 번 다시 한다
+          // (계획이 "API 연동 50%로 추가"를 진행률 바꾸기로 골랐다)
+          const adder = getTools().find((t) => t.kind === 'add' && t.name === 'add_report_tasks');
+          if (
+            result.isError &&
+            tool.kind === 'edit' &&
+            /찾지 못했습니다/.test(resultText(result)) &&
+            // 넣는 단계가 계획에 따로 없을 때만 — 있으면 이 단계는 넣은 항목이 아니라 기존 항목을 고치려다 틀린 것이라
+            // 다시 넣으면 같은 작업이 둘이 됐다("추가하고 진행률 바꿔줘"의 진행률 단계가 프로젝트를 틀려 실패했다)
+            ADD_REQUEST.test(request) &&
+            !steps.some((other) => toolActionGroup(other.tool) === 0) &&
+            adder
+          ) {
+            think(key, `${i + 1}/${steps.length} ${s.does} — 없는 항목이라 새로 넣을게요`);
+            const addInput = await makeToolInput(
+              adder,
+              [adder],
+              key,
+              `\n- This is step ${i + 1} of ${steps.length} of the plan the user approved: ${s.does}. The item does not exist yet, so add it as a new task. Write the input for this step only.`,
+              s.does
+            );
+            ({ result, question } = await runTool(adder, addInput));
+          }
           if (question) {
             onAnswer(question);
             added.push({ role: 'assistant', text: question });
@@ -1300,10 +1382,18 @@ export async function runAgentChatTurn({
       }
     }
 
+    let continuing = false;
     for (let step = 0; kind && !planRan && step < AGENT_CHAT_MAX_TOOL_STEPS; step++) {
       if (step > 0) await goHomeIfNeeded(kind);
       // 정정이면 앞에서 틀린 도구는 후보에서 뺀다(다른 방법을 찾게)
-      const tools = candidateTools(getTools(), kind, request, scope).filter((t) => !avoidTools.has(t.name));
+      // 여러 동작 중 일부를 마쳤으면 남은 동작이 다른 종류일 수 있어 추가·수정 도구를 함께 둔다
+      // — "세부 항목 추가하고 진행률 바꿔줘"가 추가로 분류돼, 추가를 마친 뒤 진행률 바꾸기를 고를 수 없어 그대로 끝났다
+      const kinds: ReadonlyArray<AgentToolKind | 'any'> = continuing
+        ? [...new Set([kind, 'add', 'edit'] as const)]
+        : [kind];
+      const tools = kinds
+        .flatMap((k) => candidateTools(getTools(), k, request, scope))
+        .filter((t, i, all) => !avoidTools.has(t.name) && all.findIndex((o) => o.name === t.name) === i);
       const planned = replay.shift();
       const plannedTool = planned ? getTools().find((t) => t.name === planned.name) : undefined;
       const state = currentState(tools, scope);
@@ -1312,8 +1402,9 @@ export async function runAgentChatTurn({
       // 쓰기가 막 실패했어도 빼 둔다 — 남겨 두면 오류를 고쳐 다시 부르지 않고 그대로 끝냈다
       const previous = added.at(-1);
       const justFailed = previous?.role === 'tool' && previous.isError && previous.changes !== undefined;
-      const options = [
-        ...((executed.length === 0 && tools.length > 0) || justFailed ? [] : [ANSWER]),
+      const options: Array<string> = [
+        // 여러 동작 중 일부만 마쳤으면 답하기도 빼 둔다 — 남은 동작(진행률 바꾸기)을 두고 "찾은 내용으로 답하기"를 골랐다
+        ...((executed.length === 0 && tools.length > 0) || justFailed || continuing ? [] : [ANSWER]),
         ASK,
         CANNOT,
         ...tools.map((t) => t.name),
@@ -1421,11 +1512,23 @@ export async function runAgentChatTurn({
         break;
 
       // 지울 대상이 요청에 없으면 지우지 않는다(deleteTargetOk) — 바로 앞 대화(답변·변경 줄)에 나온 대상은 허용한다
+      const recent = conversation
+        .slice(-4)
+        .map((t) => (t.role === 'tool' ? (t.changes ?? []).join('\n') : t.text))
+        .join('\n');
+      // 넣어 달라는 요청에서 요청에 없는 세부 항목을 고치려 하면 고치지 않고 다른 도구를 고르게 한다
+      // — "세부 항목 추가하고 진행률 바꿔줘"에 있던 세부 항목 문구를 새 문구로 덮어썼다
+      if (
+        !planned &&
+        tool.name === 'edit_task_detail' &&
+        ADD_REQUEST.test(request) &&
+        !detailMentioned(input, request, recent)
+      ) {
+        think(`pick-${step}`, '요청에 없는 세부 항목이라 고치지 않고 다른 방법을 찾을게요', 'done');
+        avoidTools.add(tool.name);
+        continue;
+      }
       if (!planned && tool.name.startsWith('remove_')) {
-        const recent = conversation
-          .slice(-4)
-          .map((t) => (t.role === 'tool' ? (t.changes ?? []).join('\n') : t.text))
-          .join('\n');
         if (!deleteTargetOk(input, request, recent)) {
           think(`pick-${step}`, '요청에 없는 항목이라 지우지 않기로 했어요', 'done');
           cannotDo = true;
@@ -1448,7 +1551,15 @@ export async function runAgentChatTurn({
       const done = executed.filter((e) => e.tool.kind !== 'read' && !e.result.isError && !isNoop(e.result)).length;
       const wanted = isMultiStep(request) ? ACTION_GROUPS.filter((group) => group.test(request)).length : 1;
       if (tool.kind !== 'read' && !result.isError && !isNoop(result) && done >= wanted) break;
-      if (done > 0 && done < wanted)
+      continuing = done > 0 && done < wanted;
+      // 남은 동작은 다른 동작이라 방금 마친 동작의 도구는 다시 고르지 않게 한다
+      // — 세부 항목을 넣은 뒤 같은 추가나 작업 추가를 다시 골라 진행률 바꾸기가 빠졌다
+      if (continuing && !result.isError && !isNoop(result)) {
+        const group = toolActionGroup(tool.name);
+        for (const t of getTools())
+          if (t.name === tool.name || (group >= 0 && toolActionGroup(t.name) === group)) avoidTools.add(t.name);
+      }
+      if (continuing)
         pickNote = `\n- The request asks for several different actions and ${done} of them is done (see the latest [tool … changed] lines). Do the next one that is not done yet; pick "${ANSWER}" only when all are done.`;
     }
 

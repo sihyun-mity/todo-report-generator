@@ -2,7 +2,7 @@ import type { AgentChange, AgentChatTurn, AgentRequestScope, AgentTool, Project 
 import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
 import { useAgentChatStore, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
-import { runAgentChatTurn } from '.';
+import { runAgentChatTurn, setPlanCatalogMode } from '.';
 
 // Nano 회귀 시나리오 — 프롬프트·도구 설명·kind 를 바꾸면 실제 모델(Chrome, available)로 다시 돌린다.
 // 개발 모드에서 `await window.__nanoEval({ runs: 3 })` (콘솔 또는 chrome-devtools-mcp 의 evaluate_script).
@@ -259,6 +259,66 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
       return moved?.progress === 80 ? null : `익일 토큰 로그인 ${moved ? `${moved.progress}%` : '없음'}`;
     },
   },
+  // 여러 단계 — 계획(planSteps)이 도구를 고르는 정확도를 본다(계획용 도구 목록 짧게/전체 A/B)
+  {
+    name: '여러 단계: 추가하고 진행률',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '금일에 "API 연동" 작업을 50%로 추가하고 토큰 로그인 작업은 100%로 바꿔줘',
+        expect: ['add_report_tasks', 'set_task_progress'],
+      },
+    ],
+    check: (form) => {
+      const tasks = form.today.flatMap((p) => p.tasks);
+      const api = tasks.find((t) => t.content.includes('API 연동'));
+      const token = tasks.find((t) => t.content === TOKEN);
+      return api?.progress === 50 && token?.progress === 100
+        ? null
+        : `API 연동 ${api ? `${api.progress}%` : '없음'}, 토큰 로그인 ${token?.progress}%`;
+    },
+  },
+  {
+    name: '여러 단계: 지우고 추가',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '모니터링 작업은 지우고 익일에 "QA" 프로젝트 "회귀 테스트" 작업 추가해줘',
+        expect: ['remove_report_task', 'add_report_tasks'],
+      },
+    ],
+    check: (form) =>
+      !has(form.today, MONITOR) && has(form.tomorrow, '회귀 테스트')
+        ? null
+        : `모니터링 ${has(form.today, MONITOR) ? '남음' : '지움'}, 회귀 테스트 ${has(form.tomorrow, '회귀 테스트') ? '있음' : '없음'}`,
+  },
+  {
+    name: '여러 단계: 세부 항목 넣고 진행률',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '토큰 로그인 작업 아래에 "신앱 재현 테스트" 세부 항목 추가하고 진행률은 60%로 바꿔줘',
+        expect: ['add_task_details', 'set_task_progress'],
+      },
+    ],
+    check: (form) => {
+      const token = form.today.flatMap((p) => p.tasks).find((t) => t.content === TOKEN);
+      return token?.progress === 60 && token.details?.includes('신앱 재현 테스트')
+        ? null
+        : `토큰 로그인 ${token?.progress}%, 세부 항목 ${token?.details?.join(', ')}`;
+    },
+  },
+  {
+    name: '여러 단계: 이름 바꾸고 옮기기',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '토큰 로그인 안정성 검증 작업 이름을 "토큰 로그인 재현"으로 고치고 내일로 옮겨줘',
+        expect: ['rename_report_task', 'move_report_task'],
+      },
+    ],
+    check: (form) => (has(form.tomorrow, '토큰 로그인 재현') ? null : '익일에 토큰 로그인 재현이 없다'),
+  },
   // 정정하면 그 말대로 다시 처리한다
   {
     name: '정정',
@@ -423,6 +483,8 @@ export type AgentEvalResult = {
   pass: boolean;
   problems: Array<string>;
   turns: Array<TurnLog>;
+  // 시나리오 한 번에 걸린 시간 — 프롬프트를 바꿨을 때 빨라지거나 느려졌는지 본다
+  ms: number;
 };
 
 export async function runAgentEval({
@@ -430,12 +492,16 @@ export async function runAgentEval({
   getSituation,
   runs = 1,
   only,
+  planCatalog = 'short',
 }: Readonly<{
   getTools: () => ReadonlyArray<AgentTool>;
   getSituation?: (scope: AgentRequestScope) => Promise<Record<string, unknown>>;
   runs?: number;
   only?: ReadonlyArray<string>;
+  // 여러 단계 계획에 넘기는 도구 목록 — 짧게(기본)·전체를 A/B 로 견줄 때 바꾼다
+  planCatalog?: 'short' | 'full';
 }>) {
+  setPlanCatalogMode(planCatalog);
   const scenarios = AGENT_EVAL_SCENARIOS.filter((s) => !only || only.some((name) => s.name.includes(name)));
   // 보고서 작성 화면이면 폼이 기록을 불러와 준비될 때까지(보고서 도구가 등록될 때까지) 기다린다 — 새로고침 직후 바로 돌리면
   // 늦게 끝난 불러오기가 시나리오 폼을 덮어써 "지금 있는 프로젝트: (없음)"으로 실패했다
@@ -457,6 +523,7 @@ export async function runAgentEval({
   try {
     for (const scenario of scenarios) {
       for (let run = 1; run <= runs; run++) {
+        const runStartedAt = performance.now();
         const store = useReportFormStore.getState();
         if (scenario.form) {
           store.setBucket('today', toProjects(scenario.form.today));
@@ -493,7 +560,9 @@ export async function runAgentEval({
                 if (result.isError) failed.push(tool.name);
               },
               onThinking: (step) => {
-                if (step.status === 'done') thinking.set(step.key, step.label);
+                // 도구 입력 요약(detail)도 남긴다 — 고른 도구는 맞는데 입력(대상 작업 등)이 틀린 경우를 가려낸다
+                if (step.status === 'done')
+                  thinking.set(step.key, step.detail ? `${step.label} [${step.detail}]` : step.label);
               },
               onAnswer: (text) => {
                 answer = text;
@@ -529,7 +598,14 @@ export async function runAgentEval({
             ...logs.flatMap((l) => (l.problem ? [l.problem] : [])),
             ...(formProblem ? [formProblem] : []),
           ];
-          results.push({ scenario: scenario.name, run, pass: problems.length === 0, problems, turns: logs });
+          results.push({
+            scenario: scenario.name,
+            run,
+            pass: problems.length === 0,
+            problems,
+            turns: logs,
+            ms: Math.round(performance.now() - runStartedAt),
+          });
         } catch (error) {
           results.push({
             scenario: scenario.name,
@@ -537,6 +613,7 @@ export async function runAgentEval({
             pass: false,
             problems: [`오류: ${String(error)}`],
             turns: logs,
+            ms: Math.round(performance.now() - runStartedAt),
           });
         } finally {
           // 화면 모드 등 폼 밖의 변경도 되돌린다(늦게 바뀐 것부터)
@@ -553,6 +630,7 @@ export async function runAgentEval({
     store.setReportDate(saved.reportDate);
     store.setBucket('today', saved.today);
     store.setBucket('tomorrow', saved.tomorrow);
+    setPlanCatalogMode('short');
   }
 
   const summary = scenarios.map((s) => {

@@ -107,7 +107,9 @@ export function AgentAssistant() {
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return;
     Object.assign(window, {
-      __nanoEval: async (options: Readonly<{ runs?: number; only?: ReadonlyArray<string> }> = {}) => {
+      __nanoEval: async (
+        options: Readonly<{ runs?: number; only?: ReadonlyArray<string>; planCatalog?: 'short' | 'full' }> = {}
+      ) => {
         const { runAgentEval } = await import('@/lib/prompt-api/agent-eval');
         return runAgentEval({
           ...options,

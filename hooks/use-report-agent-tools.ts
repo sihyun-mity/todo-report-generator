@@ -382,10 +382,26 @@ const resolveTaskInput = (input: Record<string, unknown>) => {
   const other: ProjectsBucket = section === 'today' ? 'tomorrow' : 'today';
   const otherRefs = findTasks(store[other], input.project, task);
   if (typeof otherRefs !== 'string') return { section: other, projects: store[other], refs: otherRefs };
+  // 프로젝트를 틀렸으면 작업 이름만으로 찾는다 — 여러 단계 요청에서 앞 단계의 프로젝트("API 연동")를 넣어 작업을 찾지 못했다
+  if (typeof input.project === 'string' && input.project !== '') {
+    const anyProject = findTasks(projects, undefined, task);
+    if (typeof anyProject !== 'string') return { section, projects, refs: anyProject };
+  }
   // 빈 구역을 고치려 했다면 새로 넣는 요청이다 — "익일 업무를 '배포 준비' 하나로 바꿔줘"에 빈 익일에서 작업 이름 바꾸기를 골랐다
   if (!projects.some(hasProjectContent))
     return `${BUCKET_LABEL[section]}가 비어 있어 고칠 작업이 없습니다. 여기에 새로 넣으려면 replace_report_section 이나 add_report_tasks 를 쓰세요.`;
   return refs;
+};
+
+// 프로젝트 하나 — 받은 구역에서 찾고, 없으면 다른 구역에서 찾는다(작업 찾기와 같은 규칙). 모델이 "사내 위키"(금일)를
+// 익일에서 찾으라고 넘겨 "지금 있는 프로젝트: (없음)"으로 끝났다
+const findProjectInSections = (section: ProjectsBucket, name: string) => {
+  const store = useReportFormStore.getState();
+  const index = findProject(store[section], name);
+  if (typeof index !== 'string') return { section, index };
+  const other: ProjectsBucket = section === 'today' ? 'tomorrow' : 'today';
+  const otherIndex = findProject(store[other], name);
+  return typeof otherIndex === 'string' ? index : { section: other, index: otherIndex };
 };
 
 // 세부 항목 하나 — 받은 작업 아래에서 찾고, 없으면 구역(→ 다른 구역)에서 그 문구와 똑같은 세부 항목이 하나뿐일 때 그 줄로 본다.
@@ -1201,13 +1217,14 @@ export const useReportAgentTools = ({
           const newName = parseTextInput(input.new_name, 'new_name');
           if (typeof name !== 'string') return toolError(name.error);
           if (typeof newName !== 'string') return toolError(newName.error);
-          const projects = useReportFormStore.getState()[section];
-          const index = findProject(projects, name);
-          if (typeof index === 'string') return toolError(index);
+          const found = findProjectInSections(section, name);
+          if (typeof found === 'string') return toolError(found);
+          const { section: at, index } = found;
+          const projects = useReportFormStore.getState()[at];
           return changeResult(
             await applyFormChange(
               context,
-              { [section]: renameProject(projects, index, newName) },
+              { [at]: renameProject(projects, index, newName) },
               { success: '에이전트가 프로젝트 이름을 바꿨습니다.' }
             ),
             '이미 같은 이름입니다.'
@@ -1233,14 +1250,15 @@ export const useReportAgentTools = ({
           if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
           const name = parseTextInput(input.project, 'project');
           if (typeof name !== 'string') return toolError(name.error);
-          const projects = useReportFormStore.getState()[section];
-          const index = findProject(projects, name);
-          if (typeof index === 'string') return toolError(index);
+          const found = findProjectInSections(section, name);
+          if (typeof found === 'string') return toolError(found);
+          const { section: at, index } = found;
+          const projects = useReportFormStore.getState()[at];
           return changeResult(
             await applyFormChange(
               context,
-              { [section]: removeProject(projects, index) },
-              { success: `에이전트가 ${BUCKET_LABEL[section]}에서 프로젝트를 지웠습니다.` }
+              { [at]: removeProject(projects, index) },
+              { success: `에이전트가 ${BUCKET_LABEL[at]}에서 프로젝트를 지웠습니다.` }
             ),
             '지울 프로젝트가 없습니다.'
           );
@@ -1278,14 +1296,14 @@ export const useReportAgentTools = ({
           const position = parsePositionInput(input.position);
           if (typeof position === 'object') return toolError(position.error);
           const { today, tomorrow } = useReportFormStore.getState();
-          const index = findProject({ today, tomorrow }[section], name);
-          if (typeof index === 'string') return toolError(index);
-          const next = moveProject({ today, tomorrow }, section, index, toSection, position);
+          const found = findProjectInSections(section, name);
+          if (typeof found === 'string') return toolError(found);
+          const next = moveProject({ today, tomorrow }, found.section, found.index, toSection, position);
           if (typeof next === 'string') return toolError(next);
           return changeResult(
             await applyFormChange(context, next, {
               success: '에이전트가 프로젝트를 옮겼습니다.',
-              moved: { today, tomorrow }[section][index].id,
+              moved: { today, tomorrow }[found.section][found.index].id,
             }),
             '이미 그 자리에 있습니다.'
           );

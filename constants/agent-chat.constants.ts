@@ -23,8 +23,11 @@ export const AGENT_SITUATION_NEWS_STALE_MS = 5 * 60_000;
 /** `navigate` 뒤 주소가 바뀔 때까지 기다리는 최대 시간 — 넘기면 이동 중인 것으로 보고 결과를 돌려준다 */
 export const AGENT_NAVIGATE_WAIT_MS = 5_000;
 
-/** 채팅 답변의 최대 길이(글자) — 넘으면 생성을 멈춘다. 작은 모델이 끝없이 이어 쓰며 몇 분씩 붙잡았다 */
-export const AGENT_CHAT_ANSWER_MAX_CHARS = 1_200;
+/**
+ * 채팅 답변의 최대 길이(글자) — 넘으면 생성을 멈추고 마지막 문장 끝에서 자른다. 작은 모델이 끝없이 이어 쓰며 몇 분씩 붙잡았다.
+ * 한 달치 기록 요약(작업 20~30개를 한 줄씩)도 들어가게 넉넉히 둔다 — 1,200자일 때 긴 기간 요약이 잘렸다
+ */
+export const AGENT_CHAT_ANSWER_MAX_CHARS = 2_400;
 
 /** 여러 단계를 한 번에 부탁한 요청을 계획으로 나눌 때 최대 단계 수 — 넘는 요청은 나눠서 부탁하게 한다 */
 export const AGENT_CHAT_MAX_PLAN_STEPS = 4;
@@ -35,8 +38,9 @@ export const AGENT_CHAT_MAX_TOOL_STEPS = 5;
 /** 대화 기록은 컨텍스트 창에 맞춰 자른다. measureContextUsage 가 없는 브라우저에서만 이 개수로 자른다 */
 export const AGENT_CHAT_FALLBACK_HISTORY_TURNS = 12;
 
-/** 프롬프트를 맞출 때 응답을 위해 남겨 두는 토큰 — 구조화 출력(도구 선택·입력)과 답변 */
-export const AGENT_CHAT_OUTPUT_RESERVE_TOKENS = { structured: 768, answer: 1_024 } as const;
+/** 프롬프트를 맞출 때 응답을 위해 남겨 두는 토큰 — 구조화 출력(도구 선택·입력)과 답변.
+ * 답변은 AGENT_CHAT_ANSWER_MAX_CHARS(한국어 2,400자 ≈ 1,600~2,400 토큰)가 들어가게 둔다 */
+export const AGENT_CHAT_OUTPUT_RESERVE_TOKENS = { structured: 768, answer: 2_048 } as const;
 
 /** 모델에게 넘기는 도구 결과 한 건의 최대 길이(글자). 컨텍스트가 모자라면 MIN 까지 반씩 줄인다 */
 export const AGENT_CHAT_TOOL_RESULT_MAX_CHARS = 6_000;
