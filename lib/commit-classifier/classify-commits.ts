@@ -301,33 +301,81 @@ export async function classifyCommits({
       return { scores: result?.scores ?? [], thought, names };
     };
 
-    // 같은 `저장소#scope` 묶음을 전에 사용자가 어떤 작업명으로 남겼는지(보정 메모리)
+    // 같은 `저장소#scope` 묶음을 전에 사용자가 어떤 작업명으로 남겼는지(보정 메모리).
+    // scope 는 기능 영역 단위로 넓게 쓰이기도 해(`store` 아래 서로 다른 작업 여럿) 기억한 이름을 그대로 쓰면 무관한 커밋까지
+    // 그 작업으로 묶였다. 기억한 작업명을 후보 하나로 두고 기존 작업 판정처럼 묶음 채점 → 커밋마다 재채점해 두 점수가 모두
+    // 임계값 이상인 커밋만 그 이름으로 보내고, 나머지는 평소 판정으로 넘긴다. AI 를 쓸 수 없으면 기억대로 둔다.
     const rememberedTaskNames = new Map<GithubCommit, string>();
+    const REMEMBERED_TASK_ID = 'remembered';
+    const confirmRememberedTask = async (
+      scopeKey: string,
+      name: string,
+      group: ReadonlyArray<GithubCommit>
+    ): Promise<ReadonlyArray<GithubCommit>> => {
+      if (!ask) return group;
+      const candidate: Project = {
+        id: REMEMBERED_TASK_ID,
+        name: '',
+        tasks: [{ id: REMEMBERED_TASK_ID, content: name, progress: 0, details: [] }],
+      };
+      const scoreOf = (scores: TaskScoreResult['scores']) =>
+        scores.find((s) => s.taskId === REMEMBERED_TASK_ID)?.score ?? 0;
+      // 이 확인 호출은 묶음 한 칸과 별도로 센다 — 떨어진 커밋은 이어서 평소 판정에서 다시 센다
+      grow(1);
+      const first = await scoreTasks(
+        candidate,
+        group.map((c) => c.message),
+        `${scopeKey} 커밋 ${group.length}건이 전에 정한 ${quote(name)} 작업인지 보고 있어요`
+      );
+      if (scoreOf(first.scores) < COMMIT_TASK_MATCH_THRESHOLD) {
+        first.thought.conclude('전에 정한 작업과 달라 다시 판정해요');
+        return [];
+      }
+      first.thought.conclude(`${quote(name)} 작업일 가능성이 높아요 — 커밋마다 다시 확인해요`);
+      grow(group.length);
+      const confirmed: Array<GithubCommit> = [];
+      for (const commit of group) {
+        const recheck = await scoreTasks(
+          candidate,
+          [commit.message],
+          `${quote(stripCommitPrefix(commit.message))} 커밋이 ${quote(name)} 작업인지 확인하고 있어요`
+        );
+        if (scoreOf(recheck.scores) >= COMMIT_TASK_MATCH_THRESHOLD) {
+          recheck.thought.conclude(`전에 정한 대로 ${quote(name)} 작업으로 정리해요`);
+          confirmed.push(commit);
+        } else {
+          recheck.thought.conclude('점수가 낮아 다시 판정해요');
+        }
+      }
+      return confirmed;
+    };
+
     const groups = groupByScope(commits);
     startStage(COMMIT_CLASSIFY_STAGE.TASK, groups.length);
-    for (const group of groups) {
-      const plan = planFor(group[0].repo);
-      const target = repoTargets.get(group[0].repo)!;
-      const scopeKey = commitScopeKey(group[0]);
+    for (const scopeGroup of groups) {
+      const plan = planFor(scopeGroup[0].repo);
+      const target = repoTargets.get(scopeGroup[0].repo)!;
+      const scopeKey = commitScopeKey(scopeGroup[0]);
       const rememberedTask = scopeKey ? memory.scopeTasks[scopeKey] : undefined;
-      if (rememberedTask) {
-        // 폼에 같은 이름의 작업이 있으면 그 작업에, 없으면 그 이름의 새 작업으로 — AI 판정을 건너뛴다
+      let group: ReadonlyArray<GithubCommit> = scopeGroup;
+      if (scopeKey && rememberedTask) {
+        const confirmed = await confirmRememberedTask(scopeKey, rememberedTask, scopeGroup);
+        // 폼에 같은 이름의 작업이 있으면 그 작업에, 없으면 그 이름의 새 작업으로
         const sameTask =
           target.kind === 'existing'
             ? target.project.tasks.find((t) => t.content.trim() === rememberedTask)
             : undefined;
-        think(`${scopeKey} 커밋 ${group.length}건`).conclude(
-          `전에 정한 대로 ${quote(rememberedTask)} 작업으로 정리해요`
-        );
         if (target.kind === 'existing' && sameTask) {
-          group.forEach((commit) => attach(plan, target.project, sameTask.id, commit));
+          confirmed.forEach((commit) => attach(plan, target.project, sameTask.id, commit));
         } else {
-          group.forEach((commit) => rememberedTaskNames.set(commit, rememberedTask));
-          keepUnmatched(plan, group);
+          confirmed.forEach((commit) => rememberedTaskNames.set(commit, rememberedTask));
+          keepUnmatched(plan, confirmed);
         }
-        // AI 에 묻지 않고 넘어가는 묶음도 한 칸으로 센다
-        tick();
-        continue;
+        group = scopeGroup.filter((commit) => !confirmed.includes(commit));
+        if (!group.length) {
+          tick();
+          continue;
+        }
       }
       if (target.kind !== 'existing' || !target.project.tasks.some((t) => t.content.trim())) {
         keepUnmatched(plan, group);
