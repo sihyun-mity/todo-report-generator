@@ -159,7 +159,12 @@ export function AgentPanel({
       ref={panelRef}
       aria-label="Nano"
       className={cn(
-        'z-45 flex-col bg-white dark:bg-zinc-950',
+        // 배경만 살짝 비치게 — 불투명하면 화면이 좁아 보인다는 피드백. 배치는 그대로라 본문·고정 요소는 예전처럼 패널 너비만큼 비켜 있다.
+        // 데스크톱 패널 뒤에는 바깥 틀의 배경색과 화면 전체에 깔린 배경 이펙트(CommitConstellation)만 있어 점·선이 보이게 약하게만 흐리고,
+        // 폼 위를 덮는 모바일 시트는 뒤 글이 겹쳐 읽히지 않게 강하게 흐린다. 패널 안에는 fixed 자식이 없어(다이얼로그는 Portal)
+        // backdrop-filter 가 fixed 기준 상자가 되어도 영향이 없다 — fixed 자식을 새로 넣으면 Portal 로 뺀다
+        'z-45 flex-col bg-white/85 backdrop-blur-xl dark:bg-zinc-950/85',
+        'lg:bg-white/70 lg:backdrop-blur-xs lg:dark:bg-zinc-950/70',
         isOpen ? 'fixed inset-0 flex h-dvh' : 'hidden',
         // 데스크톱: 펼쳤을 때만 오른쪽 400px 열. 접으면 자리를 비우고 상단바의 AgentLauncher 로 다시 연다
         expanded
