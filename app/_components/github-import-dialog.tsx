@@ -54,7 +54,7 @@ import {
 } from '@/constants';
 import { Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
-import { useOnClickOutside } from '@/hooks';
+import { useDismissLayer } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
 import {
   readCommitImportMemory,
@@ -212,7 +212,8 @@ export function GithubImportDialog({
   // 이번 미리보기에서 바꾼 것만 담기면 된다(핸들러에서 갱신).
   const excludedRef = useRef<ReadonlyArray<string>>([]);
 
-  useOnClickOutside(modalRef, onClose);
+  // Esc 로는 닫지 않는다(분류·편집 중 실수로 닫히지 않게). 층은 차지해 Esc 가 아래로 내려가지 않는다.
+  useDismissLayer(modalRef, onClose, { escape: false });
   useDismissOnBack(true, onClose);
 
   useEffect(() => {
@@ -384,8 +385,7 @@ export function GithubImportDialog({
   };
 
   // AI 응답은 실행마다 달라, 결과가 마음에 들지 않으면 같은 커밋으로 다시 분류한다(커밋은 다시 조회하지 않는다).
-  // 미리보기를 고쳤다면 그 편집이 사라지므로 한 번 더 눌러 확인받는다. 공용 confirm 모달은 이 다이얼로그의
-  // 바깥 클릭 닫기에 걸려 함께 닫히므로 버튼 안에서 확인한다.
+  // 미리보기를 고쳤다면 그 편집이 사라지므로 버튼을 한 번 더 눌러 확인받는다.
   const handleRetry = () => {
     if (draft !== draftSource && !retryArmed) {
       setRetryArmed(true);

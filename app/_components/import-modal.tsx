@@ -7,7 +7,7 @@ import { useScrollLock } from 'usehooks-ts';
 import type { Project, ReportDate } from '@/types';
 import { cn, inferReportYear, parseReportText } from '@/utils';
 import { Portal, useDismissOnBack } from '@/components';
-import { useOnClickOutside } from '@/hooks';
+import { useDismissLayer } from '@/hooks';
 import { DatePicker, ProjectPreview } from '.';
 
 type ImportDate = ReportDate & { year: number };
@@ -50,7 +50,7 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
     onClose();
   };
 
-  useOnClickOutside(modalRef, handleClose);
+  useDismissLayer(modalRef, handleClose, { enabled: isOpen, escape: false });
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 모달이 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(isOpen, handleClose);

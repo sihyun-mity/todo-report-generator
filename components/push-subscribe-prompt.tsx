@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { BellRing, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
@@ -9,6 +9,7 @@ import { isGuestMode } from '@/lib/guest';
 import { getExistingSubscription, isPushSupported, subscribeToPush } from '@/lib/push/push-client';
 import Link from 'next/link';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
+import { useDismissLayer } from '@/hooks';
 import { Portal, useDismissOnBack } from '.';
 
 // 로그인 직후 홈에서 한 번 뜨는 작성 알림 구독 권유 다이얼로그.
@@ -64,14 +65,8 @@ export function PushSubscribePrompt() {
 
   useDismissOnBack(isActive, dismiss);
 
-  useEffect(() => {
-    if (!isActive) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismiss();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isActive, dismiss]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDismissLayer(panelRef, dismiss, { enabled: isActive });
 
   const handleEnable = async () => {
     if (subscribing) return;
@@ -108,11 +103,10 @@ export function PushSubscribePrompt() {
         aria-modal="true"
         aria-labelledby="push-prompt-title"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6"
-        onClick={dismiss}
       >
         <div
+          ref={panelRef}
           className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { useDismissOnBack } from '@/components';
 
 type DatePickerProps = {
@@ -71,23 +71,13 @@ export const DatePicker = ({ value, onChange, year, side = 'bottom', align = 'st
     openPicker();
   };
 
-  useOnClickOutside(containerRef, () => setIsOpen(false));
+  useDismissLayer(containerRef, () => setIsOpen(false), { enabled: isOpen });
 
   // 열린 채 다른 화면으로 이동하면 닫아 둔다 — 복귀 시 열린 popover 가 BackStack 에 재등록되며 history 가 꼬이는 것을 막는다.
   useResetOnHide(() => setIsOpen(false));
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 popover 가 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(isOpen, () => setIsOpen(false));
-
-  // ESC로 닫기
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen]);
 
   const cells = useMemo(() => buildCells(viewYear, viewMonth), [viewYear, viewMonth]);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Monitor, Moon, Sun, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import {
@@ -10,7 +10,7 @@ import {
   THEME_PROMPT_SEEN_KEY,
   THEME_STORAGE_KEY,
 } from '@/constants';
-import { useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import type { Theme } from '@/types';
 import { cn } from '@/utils';
@@ -96,14 +96,8 @@ export function ThemePromptDialog() {
 
   useDismissOnBack(isActive, cancelAndClose);
 
-  useEffect(() => {
-    if (!isActive) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cancelAndClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isActive, cancelAndClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDismissLayer(panelRef, cancelAndClose, { enabled: isActive });
 
   // 선택은 화면에만 반영한다 — 저장은 "시작하기" 를 눌렀을 때만.
   const handleSelect = (theme: Theme) => {
@@ -120,11 +114,10 @@ export function ThemePromptDialog() {
         aria-modal="true"
         aria-labelledby="theme-prompt-title"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6"
-        onClick={cancelAndClose}
       >
         <div
+          ref={panelRef}
           className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"

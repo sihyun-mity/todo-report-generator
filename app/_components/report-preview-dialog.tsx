@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Check, Copy, Maximize2, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
 import { Portal, useDismissOnBack } from '@/components';
+import { useDismissLayer } from '@/hooks';
 
 type ReportPreviewDialogProps = {
   isOpen: boolean;
@@ -32,14 +33,8 @@ export function ReportPreviewDialog({
   const charCount = text.length;
   const hasDate = reportDate.month.trim() !== '' && reportDate.day.trim() !== '';
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDismissLayer(dialogRef, onClose, { enabled: isOpen });
 
   // 브라우저 back(안드 하드웨어 back 포함)으로도 다이얼로그가 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(isOpen, onClose);
@@ -57,14 +52,13 @@ export function ReportPreviewDialog({
     <Portal>
       <div
         role="presentation"
-        onClick={onClose}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6"
       >
         <div
           role="dialog"
           aria-modal="true"
+          ref={dialogRef}
           aria-labelledby="report-preview-dialog-title"
-          onClick={(e) => e.stopPropagation()}
           className="flex max-h-[90%] w-full max-w-3xl flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div className="flex items-center justify-between gap-2 border-b border-zinc-100 p-5 dark:border-zinc-800">

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { ChevronDown, Github, Home, LogIn, LogOut, Megaphone, Settings, Trash2, User, UserRound } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { clearGuestLocalData, isGuestMode } from '@/lib/guest';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import Link from 'next/link';
 import { hardNavigate } from '@/utils';
@@ -48,7 +48,7 @@ export function AppTopBar() {
       });
   }, [isGuest]);
 
-  useOnClickOutside(menuRef, () => setIsOpen(false));
+  useDismissLayer(menuRef, () => setIsOpen(false), { enabled: isOpen });
   // (app) ↔ (auth) 그룹 전환 시 layout 째로 숨겨지므로, 열려 있던 사용자 메뉴를 닫아 둔다
   useResetOnHide(() => setIsOpen(false));
 

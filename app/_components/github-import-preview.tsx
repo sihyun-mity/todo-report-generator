@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { CommitImportPlan, PlannedProject, PlannedTask, Project } from '@/types';
 import { useDismissOnBack } from '@/components';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { cn, createId } from '@/utils';
 import { ProgressInput } from '.';
 
@@ -407,22 +407,9 @@ function ProjectTargetDropdown({ value, projects, onChange }: Readonly<ProjectTa
   const containerRef = useRef<HTMLDivElement>(null);
   const selected = projects.find((p) => p.id === value);
 
-  useOnClickOutside(containerRef, () => setIsOpen(false));
+  useDismissLayer(containerRef, () => setIsOpen(false), { enabled: isOpen });
   useResetOnHide(() => setIsOpen(false));
   useDismissOnBack(isOpen, () => setIsOpen(false));
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // 다이얼로그까지 닫히지 않게 드롭다운에서 멈춘다
-        e.stopPropagation();
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [isOpen]);
 
   const pick = (projectId: string | null) => {
     setIsOpen(false);

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { EyeOff, FolderGit2, Undo2 } from 'lucide-react';
 import { useDismissOnBack } from '@/components';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { cn } from '@/utils';
 
 type ExcludedReposMenuProps = {
@@ -17,21 +17,9 @@ export function ExcludedReposMenu({ repos, onInclude }: Readonly<ExcludedReposMe
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useOnClickOutside(containerRef, () => setIsOpen(false));
+  useDismissLayer(containerRef, () => setIsOpen(false), { enabled: isOpen });
   useResetOnHide(() => setIsOpen(false));
   useDismissOnBack(isOpen, () => setIsOpen(false));
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [isOpen]);
 
   if (repos.length === 0) return null;
 

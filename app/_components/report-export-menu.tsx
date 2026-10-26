@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Download, FileJson, FileText, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { ReportExportFormat } from '@/types';
 import { useDismissOnBack } from '@/components';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { useReportHistoryStore } from '@/stores';
 import { downloadReportHistory } from '@/utils';
 
@@ -31,21 +31,12 @@ export function ReportExportMenu({ disabled }: Readonly<Props>) {
   const [isExporting, setIsExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useOnClickOutside(containerRef, () => setIsOpen(false));
+  useDismissLayer(containerRef, () => setIsOpen(false), { enabled: isOpen });
 
   // 열린 채 다른 화면으로 이동하면 닫아 둔다 — 복귀 시 BackStack 재등록으로 history 가 꼬이는 것을 막는다.
   useResetOnHide(() => setIsOpen(false));
 
   useDismissOnBack(isOpen, () => setIsOpen(false));
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen]);
 
   const handleExport = async (format: ReportExportFormat) => {
     setIsOpen(false);

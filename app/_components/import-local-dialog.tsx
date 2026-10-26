@@ -1,7 +1,9 @@
 'use client';
 
+import { useRef } from 'react';
 import { HardDriveDownload } from 'lucide-react';
 import { Portal, useDismissOnBack } from '@/components';
+import { useDismissLayer } from '@/hooks';
 
 type Props = {
   isOpen: boolean;
@@ -13,13 +15,19 @@ type Props = {
 export function ImportLocalDialog({ isOpen, onConfirm, onDismiss }: Readonly<Props>) {
   // 브라우저 back(안드 하드웨어 back 포함)은 "나중에"(dismiss)와 동일하게 다이얼로그를 닫는다.
   useDismissOnBack(isOpen, onDismiss);
+  // 바깥 클릭·Esc 로는 닫지 않는다(가져올지 고르게 한다). 층은 차지해 아래 창까지 내려가지 않는다.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDismissLayer(panelRef, onDismiss, { enabled: isOpen, outsideClick: false, escape: false });
 
   if (!isOpen) return null;
 
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6">
-        <div className="flex w-full max-w-md flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div
+          ref={panelRef}
+          className="flex w-full max-w-md flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        >
           <div className="flex items-center gap-2 border-b border-zinc-100 p-5 dark:border-zinc-800">
             <HardDriveDownload className="h-5 w-5 text-blue-500" />
             <h2 className="text-base font-bold sm:text-lg">기존 로컬 기록을 가져올까요?</h2>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type KeyboardEvent, type Ref } from 'react';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { cn } from '@/utils';
 
 const PRESETS: ReadonlyArray<number> = [20, 40, 60, 80, 100];
@@ -24,8 +24,8 @@ export function ProgressInput({ value, onChange, onEnter, ref, ariaLabel = '진�
   const [isPresetOpen, setIsPresetOpen] = useState(false);
 
   // 진행률 input + 빠른 선택 팝업을 하나의 그룹으로 보고, 그룹 바깥 클릭 시에만 팝업을 닫는다.
-  // input.onBlur로 닫으면 팝업 버튼 클릭이 blur로 먼저 인식돼 클릭 자체가 무시되므로 useOnClickOutside를 사용한다.
-  useOnClickOutside(groupRef, () => setIsPresetOpen(false));
+  // input.onBlur로 닫으면 팝업 버튼 클릭이 blur로 먼저 인식돼 클릭 자체가 무시되므로 useDismissLayer를 사용한다(Esc 도 여기서 닫힌다).
+  useDismissLayer(groupRef, () => setIsPresetOpen(false), { enabled: isPresetOpen });
   // 진행률 빠른 선택 팝업이 열린 채 다른 화면으로 이동하면 닫아 둔다
   useResetOnHide(() => setIsPresetOpen(false));
 
@@ -42,10 +42,6 @@ export function ProgressInput({ value, onChange, onEnter, ref, ariaLabel = '진�
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      setIsPresetOpen(false);
-      return;
-    }
     if (e.key !== 'Enter' || isComposingKey(e)) return;
     e.preventDefault();
     onEnter?.();

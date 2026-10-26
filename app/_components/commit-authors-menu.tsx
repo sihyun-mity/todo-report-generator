@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { GithubCommitAuthor } from '@/types';
 import { GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS, GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT } from '@/constants';
 import { useDismissOnBack } from '@/components';
-import { useOnClickOutside, useResetOnHide } from '@/hooks';
+import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { queries } from '@/providers';
 import { cn, isCommitAuthorEmail, normalizeCommitAuthor, sameCommitAuthor } from '@/utils';
 
@@ -64,21 +64,12 @@ export function CommitAuthorsMenu({
     setActiveIndex(-1);
   };
 
-  useOnClickOutside(containerRef, close);
+  useDismissLayer(containerRef, close, { enabled: isOpen });
   useResetOnHide(close);
   useDismissOnBack(isOpen, close);
 
   useEffect(() => {
-    if (!isOpen) return;
-    inputRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
+    if (isOpen) inputRef.current?.focus();
   }, [isOpen]);
 
   // 처음 열 때 불러오고, 다이얼로그가 열려 있는 동안은 다시 열어도 받아 둔 목록을 쓴다
@@ -161,10 +152,23 @@ export function CommitAuthorsMenu({
           aria-label="추가 작성자"
           className="absolute inset-x-0 bottom-full z-20 mb-1 flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
         >
-          <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-            @{login} 계정이 볼 수 있는 저장소에서 이 작성자의 커밋도 함께 가져와요. 바꾸면 다시 불러와
-            분류해요(미리보기에서 고친 내용은 초기화돼요).
-          </p>
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">추가 작성자</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                @{login} 계정이 볼 수 있는 저장소에서 이 작성자의 커밋도 함께 가져와요. 바꾸면 다시 불러와
+                분류해요(미리보기에서 고친 내용은 초기화돼요).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={close}
+              aria-label="닫기"
+              className="-mt-1 -mr-1 shrink-0 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              <X size={14} aria-hidden />
+            </button>
+          </div>
 
           {authors.length > 0 && (
             <ul className="flex flex-wrap gap-1.5" aria-label="추가한 작성자">

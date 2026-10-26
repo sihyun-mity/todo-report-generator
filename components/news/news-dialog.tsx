@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import Link from 'next/link';
 import { Portal, useDismissOnBack } from '..';
 import { NewsAudienceBadge, NewsMarkdown } from '.';
+import { useDismissLayer } from '@/hooks';
 import { markNewsAsReadUpTo } from '@/lib/news';
 import { createClient } from '@/lib/supabase/client';
 import { DIALOG_NEWS, DIALOG_PRIORITY_NEWS, NEWS_GUEST_STORAGE_KEY } from '@/constants';
@@ -98,14 +99,8 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
   // 브라우저 back(안드 하드웨어 back 포함)으로도 새소식 다이얼로그가 닫히도록 BackStack 에 등록한다.
   useDismissOnBack(isActive, () => void markReadAndClose());
 
-  useEffect(() => {
-    if (!isActive) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') void markReadAndClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isActive, markReadAndClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDismissLayer(panelRef, () => void markReadAndClose(), { enabled: isActive });
 
   if (!isActive || !latestNews) return null;
 
@@ -122,11 +117,10 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
         aria-modal="true"
         aria-labelledby="news-dialog-title"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6"
-        onClick={() => void markReadAndClose()}
       >
         <div
+          ref={panelRef}
           className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-start justify-between gap-3 border-b border-zinc-100 p-5 dark:border-zinc-800">
             <div className="flex min-w-0 flex-1 items-start gap-3">
