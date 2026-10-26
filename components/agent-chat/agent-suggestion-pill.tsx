@@ -82,7 +82,7 @@ export function AgentSuggestionPill() {
           // animate-* 를 둘 붙이면 뒤의 것이 앞의 것을 덮으므로(animation 한 속성) 떠오르기·숨쉬는 빛을 한 값으로 함께 돌린다
           top.emphasis
             ? 'rainbow-glow animate-agent-pill-in shadow-lg'
-            : '[animation:var(--animate-agent-pill-in),var(--animate-agent-pill-glow)] border border-blue-300 dark:border-blue-700'
+            : '[animation:var(--animate-agent-pill-in),var(--animate-agent-pill-glow)]'
         )}
       >
         <span
@@ -91,13 +91,15 @@ export function AgentSuggestionPill() {
           className="pointer-events-none absolute inset-0 animate-agent-attention-ring rounded-full"
         />
         {/* 알약 전체가 실행 영역이다 — 실행 버튼을 알약 전체에 깔고(inset-0), 글은 그 위에 클릭을 통과시키며 얹고,
-            넘기기(X)는 그 영역 안에 따로 올린다(버튼 안에 버튼을 넣을 수 없어서) */}
+            넘기기(X)는 그 영역 안에 따로 올린다(버튼 안에 버튼을 넣을 수 없어서).
+            흐림 배경(backdrop-blur)은 따로 합성되는 층이라 테두리를 바깥 요소에 두면, 높이가 소수점일 때 이 층이 반 픽셀 반올림되며
+            테두리 한쪽을 덮어 네 방향 굵기가 달라 보였다 — 테두리는 배경과 같은 요소에 두고, 글줄 높이를 정수로 고정해 알약 높이도 정수로 맞춘다 */}
         <div
           className={cn(
             'relative flex min-w-0 items-center gap-2.5 rounded-full py-2 pr-10 pl-2 transition-colors',
             top.emphasis
               ? 'bg-white/75 backdrop-blur-sm hover:bg-white/60 dark:bg-zinc-900/65 dark:hover:bg-zinc-900/50'
-              : 'bg-white/95 backdrop-blur-md hover:bg-blue-50 dark:bg-zinc-900/95 dark:hover:bg-blue-950/40'
+              : 'border border-blue-300 bg-white/95 backdrop-blur-md hover:bg-blue-50 dark:border-blue-700 dark:bg-zinc-900/95 dark:hover:bg-blue-950/40'
           )}
         >
           <button
@@ -116,12 +118,14 @@ export function AgentSuggestionPill() {
             <Icon size={15} />
           </span>
           <span className="pointer-events-none relative min-w-0" aria-hidden>
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+            <span className="flex items-center gap-1 text-[10px] leading-[14px] font-semibold text-blue-600 dark:text-blue-400">
               <Sparkles size={10} />
               Nano 추천
             </span>
-            <span className="block truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">{top.title}</span>
-            <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">{top.reason}</span>
+            <span className="block truncate text-xs leading-4 font-semibold text-zinc-900 dark:text-zinc-100">
+              {top.title}
+            </span>
+            <span className="block truncate text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{top.reason}</span>
           </span>
           <button
             type="button"
