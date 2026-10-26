@@ -1,4 +1,5 @@
 import type { AgentChange, AgentChatTurn, AgentTool, Project } from '@/types';
+import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
 import { useReportFormStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
 import { runAgentChatTurn } from '.';
@@ -239,7 +240,24 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
   { name: '이번 주 기록 정리', turns: [{ say: '이번 주에 쓴 보고서 정리해줘', expect: ['search_reports'] }] },
   { name: '화면 모드', turns: [{ say: '다크 모드로 바꿔줘', expect: ['set_theme'] }] },
   { name: '새소식', turns: [{ say: '최근 새소식 알려줘', expect: ['list_news'] }] },
+  // 소식 하나를 순서로 집어 "보여줘"는 상세 화면으로 연다 — 화면 모드로 분류돼 목록을 읽고 "11가지가 있어요"라고 답했다
+  {
+    name: '새소식 열기',
+    turns: [{ say: '가장 최근 새소식 보여줘', expect: ['open_news'], forbid: ['list_news', 'set_theme'] }],
+  },
 ];
+
+// 화면을 옮기는 시나리오(새소식 열기) 뒤에는 시작 화면으로 돌아와 그 화면의 도구가 다시 등록될 때까지 기다린다
+const returnTo = async (path: string, getTools: () => ReadonlyArray<AgentTool>, toolNames: ReadonlyArray<string>) => {
+  if (window.location.pathname === path) return;
+  window.history.back();
+  const startedAt = Date.now();
+  while (
+    (window.location.pathname !== path || !toolNames.every((name) => getTools().some((t) => t.name === name))) &&
+    Date.now() - startedAt < AGENT_CHAT_TOOL_WAIT_MS
+  )
+    await new Promise((resolve) => setTimeout(resolve, 100));
+};
 
 const toProjects = (projects: ReadonlyArray<EvalProject>): Array<Project> =>
   projects.length === 0
@@ -284,6 +302,8 @@ export async function runAgentEval({
   const scenarios = AGENT_EVAL_SCENARIOS.filter((s) => !only || only.some((name) => s.name.includes(name)));
   const original = useReportFormStore.getState();
   const saved = { reportDate: original.reportDate, today: original.today, tomorrow: original.tomorrow };
+  const startPath = window.location.pathname;
+  const startTools = getTools().map((t) => t.name);
   const results: Array<AgentEvalResult> = [];
 
   try {
@@ -360,6 +380,7 @@ export async function runAgentEval({
         } finally {
           // 화면 모드 등 폼 밖의 변경도 되돌린다(늦게 바뀐 것부터)
           for (const undo of undos.reverse()) undo();
+          await returnTo(startPath, getTools, startTools);
         }
         console.info(
           `[nano-eval] ${scenario.name} #${run}: ${results.at(-1)!.pass ? '통과' : results.at(-1)!.problems.join(' / ')}`

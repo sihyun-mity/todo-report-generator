@@ -31,6 +31,25 @@ const pointsAtOneNews = (request: string) =>
   /새\s*소식|소식|공지/.test(request) && CURRENT_NEWS_REQUEST.test(request) && !NEWS_LIST_REQUEST.test(request);
 // 방금 본 소식을 분명히 가리키는 말 — 이때는 되묻지 않고 그 소식을 읽는다
 const LAST_NEWS_REQUEST = /아까|방금|보던|봤던|본\s*(새\s*소식|소식|공지)/;
+// 소식 하나를 순서로 집어 화면으로 열어 달라는 요청("가장 최근 새소식 보여줘") — 목록 조회를 후보로 두면 목록을 읽고
+// "새 소식 11가지가 있어요"로 답했다. 이때는 목록·본문 조회를 빼고 상세 화면을 여는 open_news 만 남긴다.
+// 요약·질문("최근 새소식 알려줘", "무슨 내용이야?")은 채팅 답변이 맞으므로 열지 않는다.
+const ONE_NEWS_BY_ORDER =
+  /가장|제일|최신|마지막|맨\s*(위|처음|앞)|첫\s*번째|첫\s*(새\s*소식|소식|공지)|\d+\s*번째|(두|세|네|다섯)\s*번째|새로\s*(나온|올라온|올린)/;
+const OPEN_REQUEST = /보여|열어|띄워|가\s*줘|가자|이동|들어가|보고\s*싶|볼래|읽을래|읽고\s*싶/;
+const NOT_OPEN_REQUEST = /요약|정리|알려|몇|무슨|뭐|어떤|설명|목록|전체|모든|여러|\d+\s*개/;
+const opensOneNews = (request: string) =>
+  /새\s*소식|소식|공지/.test(request) &&
+  ONE_NEWS_BY_ORDER.test(request) &&
+  OPEN_REQUEST.test(request) &&
+  !NOT_OPEN_REQUEST.test(request);
+const ORDINALS: Record<string, number> = { 첫: 1, 두: 2, 세: 3, 네: 4, 다섯: 5 };
+const rankFromRequest = (request: string) => {
+  const digits = /(\d+)\s*번째/.exec(request);
+  if (digits) return Number(digits[1]);
+  const word = /(첫|두|세|네|다섯)\s*번째/.exec(request) ?? /(첫)\s*(새\s*소식|소식|공지)/.exec(request);
+  return word ? ORDINALS[word[1]] : null;
+};
 
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
 
@@ -107,7 +126,7 @@ export function useGlobalAgentTools() {
         kind: 'navigate',
         // 지금 화면을 알아야 "이미 이 화면"·"뒤로" 같은 요청을 판단한다
         inputContext: () => ({ currentPath: window.location.pathname }),
-        description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news). settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
+        description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news); to open the newest or the n-th news use open_news instead. settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
         inputSchema: {
           type: 'object',
           properties: {
@@ -187,9 +206,10 @@ export function useGlobalAgentTools() {
         // 보고 있는(방금 본) 소식을 가리키면 get_news 가 그 소식을 바로 읽는다 — 목록도 함께 가리킬 때만 남긴다.
         // 가리킬 소식이 없으면 get_news 의 unavailable 이 되묻는다(목록으로 조용히 대신하지 않는다)
         requires: (request, scope) =>
-          newsIdFromPath(scope.path)
+          !opensOneNews(request) &&
+          (newsIdFromPath(scope.path)
             ? !CURRENT_NEWS_REQUEST.test(request) || NEWS_LIST_REQUEST.test(request)
-            : !pointsAtOneNews(request),
+            : !pointsAtOneNews(request)),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
@@ -211,6 +231,8 @@ export function useGlobalAgentTools() {
         kind: 'read',
         description:
           'Return the body (markdown) of one news item. id comes from list_news, currentNewsId when the user is reading one (이 소식), or lastViewedNewsId for the news the user just read (아까 본 소식).',
+        // "가장 최근 새소식 보여줘"는 화면으로 연다(open_news) — 본문을 읽어 채팅으로 답하지 않는다
+        requires: (request) => !opensOneNews(request),
         // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다.
         // 요청할 때의 화면 기준이라 응답을 기다리는 사이 화면을 옮겨도 그 소식을 읽는다. 상세 화면 밖이면 마지막으로 본 소식을 넘긴다.
         inputContext: (scope) => {
@@ -259,6 +281,39 @@ export function useGlobalAgentTools() {
             publishedAt: item.published_at.slice(0, 10),
             content: item.content.slice(0, AGENT_NEWS_CONTENT_MAX_CHARS),
           });
+        },
+      },
+      {
+        name: 'open_news',
+        title: '새소식 열기',
+        kind: 'navigate',
+        // "보여줘"는 조회로 분류되곤 해서 조회 의도에도 둔다 — 소식 하나를 순서로 집어 열어 달라고 할 때만 후보다
+        extraKinds: ['read'],
+        requires: (request) => opensOneNews(request),
+        description:
+          'Open the detail screen of one news item (새소식) so the user can read it. rank 1 = the newest (가장 최근·최신), 2 = the second newest. Use this for 보여줘/열어줘 on one news item.',
+        inputSchema: {
+          type: 'object',
+          properties: { rank: { type: 'integer', minimum: 1, description: '1 = newest, 2 = second newest' } },
+        },
+        execute: async (input, context) => {
+          // 채팅에서는 순서를 요청 문장에서 읽는다 — 모델이 채운 값보다 정확하다. "가장 최근"·"최신"·"마지막"은 가장 새 소식이다
+          const rank = context.request ? (rankFromRequest(context.request) ?? 1) : Number(input.rank ?? 1);
+          if (!Number.isInteger(rank) || rank < 1) return toolError('rank 는 1 이상의 정수여야 합니다.');
+          const { items } = await queryClient.fetchQuery(queries.news.list());
+          if (items.length === 0) return toolText({ moved: false, message: '지금 볼 수 있는 새소식이 없어요.' });
+          if (rank > items.length)
+            return toolUnavailable({
+              reason: `지금 볼 수 있는 새소식은 ${items.length}개예요.`,
+              offer: '대신 가장 최근 새소식을 열까요?',
+            });
+          const item = items[rank - 1];
+          const path = `/whats-new/${item.id}`;
+          if (window.location.pathname === path)
+            return toolText({ moved: false, path, id: item.id, message: `이미 '${item.title}' 새소식을 보고 있어요.` });
+          latest.current.router.push(path);
+          const arrived = await waitForPath(path);
+          return toolText({ moved: true, path, arrived, id: item.id, message: `'${item.title}' 새소식을 열었어요.` });
         },
       },
     ],
