@@ -592,7 +592,7 @@ export function AgentAssistant() {
       await downloadPromptModel(setDownloadProgress);
       useAgentChatStore.getState().setAvailability(await getPromptApiAvailability());
     } catch {
-      toast.error('AI 모델을 내려받지 못했어요. 잠시 후 다시 시도해 주세요.');
+      toast.error('온디바이스 AI 모델을 내려받지 못했습니다.');
     } finally {
       setDownloadProgress(null);
     }
