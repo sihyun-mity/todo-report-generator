@@ -22,6 +22,8 @@ type EvalTurn = {
   // 답변이 이 패턴에 맞아야 한다 — 지금 상황(회원 여부·화면 등)을 알고 답하는지 본다
   // 함수면 실행할 때 정한다(로그인 여부처럼 돌리는 환경에 따라 맞는 답이 다를 때)
   answer?: RegExp | (() => RegExp);
+  // 답변에 이 패턴이 있으면 실패 — 정해진 거절 문구로 끝나지 않고 스스로 답하는지 본다
+  answerNot?: RegExp;
 };
 
 export type AgentEvalScenario = {
@@ -47,6 +49,9 @@ const BASE_FORM: EvalForm = {
   ],
   tomorrow: [],
 };
+
+// 정해진 거절 문구(UNSUPPORTED_ANSWER·CANNOT_ANSWER)
+const FIXED_REFUSAL = /아직 Nano가 할 수 없는 일이에요|그대로 처리할 기능이 없어/;
 
 const tasksOf = (projects: ReadonlyArray<EvalProject>) => projects.flatMap((p) => p.tasks.map((t) => t.content));
 const has = (projects: ReadonlyArray<EvalProject>, content: string) => tasksOf(projects).includes(content);
@@ -227,8 +232,57 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
   {
     name: '할 수 없는 일',
     form: BASE_FORM,
-    turns: [{ say: '지난주 저장된 보고서 기록 삭제해줘', expect: [], forbid: ['reset_report_form'] }],
+    // 할 수 없는 일도 정해진 거절 문구 대신 이유와 대안을 스스로 말한다
+    turns: [
+      {
+        say: '지난주 저장된 보고서 기록 삭제해줘',
+        expect: [],
+        forbid: ['reset_report_form'],
+        answer: /기록|삭제|지우/,
+        answerNot: FIXED_REFUSAL,
+      },
+    ],
     check: (form) => (has(form.today, MONITOR) ? null : '폼이 바뀌었다'),
+  },
+  // 여러 가지를 한 번에 부탁하면 계획을 세워(확인 카드) 차례로 한다 — 예전에는 앞의 하나만 했다
+  {
+    name: '여러 단계 한 번에',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '토큰 로그인 작업 진행률 80%로 바꾸고 내일로 옮겨줘',
+        expect: ['set_task_progress', 'move_report_task'],
+      },
+    ],
+    check: (form) => {
+      const moved = form.tomorrow.flatMap((p) => p.tasks).find((t) => t.content === TOKEN);
+      return moved?.progress === 80 ? null : `익일 토큰 로그인 ${moved ? `${moved.progress}%` : '없음'}`;
+    },
+  },
+  // 정정하면 그 말대로 다시 처리한다
+  {
+    name: '정정',
+    turns: [
+      { say: '다크 모드로 바꿔줘', expect: ['set_theme'] },
+      { say: '아니 그게 아니라 라이트 모드로 해줘', expect: ['set_theme'] },
+    ],
+  },
+  // 바꾸지 않는 부탁(문장 다듬기·조언)은 거절하지 않고 스스로 답한다
+  {
+    name: '문장 다듬기 제안',
+    form: BASE_FORM,
+    turns: [
+      {
+        say: '토큰 로그인 안정성 검증이라는 작업 이름, 보고서에 어울리게 다른 표현 추천해 줄래?',
+        expect: [],
+        answerNot: FIXED_REFUSAL,
+      },
+    ],
+    check: (form) => (has(form.today, TOKEN) ? null : '폼이 바뀌었다'),
+  },
+  {
+    name: '보고서 잘 쓰는 법',
+    turns: [{ say: '일일 업무 보고 잘 쓰는 팁 알려줘', expect: [], answerNot: FIXED_REFUSAL }],
   },
   {
     name: '작성 중 보고서 요약',
@@ -453,6 +507,8 @@ export async function runAgentEval({
             const expected = typeof turn.answer === 'function' ? turn.answer() : turn.answer;
             if (!problem && expected && !expected.test(answer))
               problem = `답변이 ${expected} 에 맞지 않음: ${answer.slice(0, 80)}`;
+            if (!problem && turn.answerNot?.test(answer))
+              problem = `답변에 ${turn.answerNot} 가 있음: ${answer.slice(0, 80)}`;
             logs.push({ say: turn.say, tools, answer, thinking: [...thinking.values()], problem });
           }
           const state = useReportFormStore.getState();

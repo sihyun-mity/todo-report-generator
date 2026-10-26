@@ -52,7 +52,13 @@ export const otherModelOwner = (self: ModelOwner): ModelOwner | null =>
   [...modelHolders].find(([owner, count]) => owner !== self && count > 0)?.[0] ?? null;
 
 // 스트리밍 응답을 끝까지 읽는다. 청크는 직전 청크 이후 새로 생성된 부분(delta)이라 이어 붙이고, 지금까지의 원문을 매번 넘긴다.
-export const readPromptStream = async (stream: ReadableStream<string>, onText: (text: string) => void) => {
+// maxChars 를 넘으면 생성을 멈추고 거기까지 돌려준다 — 길이 제한 없는 답변에서 작은 모델이 수천 토큰을 이어 쓰며
+// 몇 분씩 모델을 붙잡고 화면이 멈췄다
+export const readPromptStream = async (
+  stream: ReadableStream<string>,
+  onText: (text: string) => void,
+  maxChars = Infinity
+) => {
   const reader = stream.getReader();
   let text = '';
   for (;;) {
@@ -60,6 +66,10 @@ export const readPromptStream = async (stream: ReadableStream<string>, onText: (
     if (done) return text;
     text += value;
     onText(text);
+    if (text.length >= maxChars) {
+      await reader.cancel();
+      return text;
+    }
   }
 };
 

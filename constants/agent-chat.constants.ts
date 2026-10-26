@@ -23,6 +23,12 @@ export const AGENT_SITUATION_NEWS_STALE_MS = 5 * 60_000;
 /** `navigate` 뒤 주소가 바뀔 때까지 기다리는 최대 시간 — 넘기면 이동 중인 것으로 보고 결과를 돌려준다 */
 export const AGENT_NAVIGATE_WAIT_MS = 5_000;
 
+/** 채팅 답변의 최대 길이(글자) — 넘으면 생성을 멈춘다. 작은 모델이 끝없이 이어 쓰며 몇 분씩 붙잡았다 */
+export const AGENT_CHAT_ANSWER_MAX_CHARS = 1_200;
+
+/** 여러 단계를 한 번에 부탁한 요청을 계획으로 나눌 때 최대 단계 수 — 넘는 요청은 나눠서 부탁하게 한다 */
+export const AGENT_CHAT_MAX_PLAN_STEPS = 4;
+
 /** 채팅 한 번의 요청에서 모델이 고를 수 있는 도구 호출 수. 넘기면 지금까지의 결과로 답하게 한다. */
 export const AGENT_CHAT_MAX_TOOL_STEPS = 5;
 
