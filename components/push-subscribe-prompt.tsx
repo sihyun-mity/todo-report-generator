@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { BellRing, X } from 'lucide-react';
+import { BellRing } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import { DIALOG_PRIORITY_PUSH_SUBSCRIBE, DIALOG_PUSH_SUBSCRIBE, PUSH_PROMPT_DISMISSED_KEY } from '@/constants';
 import { isGuestMode } from '@/lib/guest';
@@ -10,7 +10,7 @@ import { getExistingSubscription, isPushSupported, subscribeToPush } from '@/lib
 import Link from 'next/link';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import { useDismissLayer } from '@/hooks';
-import { Portal, useDismissOnBack } from '.';
+import { CloseButton, Portal, useDismissOnBack } from '.';
 
 // 로그인 직후 홈에서 한 번 뜨는 작성 알림 구독 권유 다이얼로그.
 // 노출 조건: 로그인 계정 + 푸시 지원 + 권한 거부 안 함 + 이 기기 미구독 + "나중에"로 닫은 적 없음.
@@ -108,14 +108,7 @@ export function PushSubscribePrompt() {
           ref={panelRef}
           className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <button
-            type="button"
-            onClick={dismiss}
-            aria-label="닫기"
-            className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton onClick={dismiss} className="absolute top-3 right-3" />
 
           <div className="flex flex-col items-center px-6 pt-8 pb-2 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">

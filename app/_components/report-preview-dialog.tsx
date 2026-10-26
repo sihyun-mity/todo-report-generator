@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Check, Copy, Maximize2, X } from 'lucide-react';
+import { Check, Copy, Maximize2 } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import type { ReportDate } from '@/types';
 import { cn } from '@/utils';
-import { Portal, useDismissOnBack } from '@/components';
+import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { useDismissLayer } from '@/hooks';
 
 type ReportPreviewDialogProps = {
@@ -73,14 +73,7 @@ export function ReportPreviewDialog({
                 </span>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="닫기"
-              className="rounded-full p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <CloseButton onClick={onClose} />
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">

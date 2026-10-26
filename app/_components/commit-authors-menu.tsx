@@ -5,7 +5,7 @@ import { AtSign, Check, Loader2, Mail, Plus, Search, UserPlus, X } from 'lucide-
 import { useQuery } from '@tanstack/react-query';
 import type { GithubCommitAuthor } from '@/types';
 import { GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS, GITHUB_COMMIT_EXTRA_AUTHORS_LIMIT } from '@/constants';
-import { useDismissOnBack } from '@/components';
+import { CloseButton, useDismissOnBack } from '@/components';
 import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { queries } from '@/providers';
 import { cn, isCommitAuthorEmail, normalizeCommitAuthor, sameCommitAuthor } from '@/utils';
@@ -160,14 +160,7 @@ export function CommitAuthorsMenu({
                 분류해요(미리보기에서 고친 내용은 초기화돼요).
               </p>
             </div>
-            <button
-              type="button"
-              onClick={close}
-              aria-label="닫기"
-              className="-mt-1 -mr-1 shrink-0 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            >
-              <X size={14} aria-hidden />
-            </button>
+            <CloseButton size="sm" onClick={close} className="-mt-1 -mr-1" />
           </div>
 
           {authors.length > 0 && (

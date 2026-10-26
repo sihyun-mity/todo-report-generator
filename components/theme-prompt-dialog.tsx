@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Monitor, Moon, Sun, X } from 'lucide-react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import {
   DEFAULT_THEME,
@@ -14,7 +14,7 @@ import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { useDialogQueueStore, useIsActiveDialog } from '@/stores';
 import type { Theme } from '@/types';
 import { cn } from '@/utils';
-import { Portal, useDismissOnBack, useTheme } from '.';
+import { CloseButton, Portal, useDismissOnBack, useTheme } from '.';
 
 // 화면 모드 선택지 — ThemeToggle 과 같은 라이트 → 다크 → 자동 순서를 유지한다.
 const THEME_OPTIONS = [
@@ -119,14 +119,7 @@ export function ThemePromptDialog() {
           ref={panelRef}
           className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <button
-            type="button"
-            onClick={cancelAndClose}
-            aria-label="닫기"
-            className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton onClick={cancelAndClose} className="absolute top-3 right-3" />
 
           <div className="flex flex-col items-center px-6 pt-8 pb-2 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">

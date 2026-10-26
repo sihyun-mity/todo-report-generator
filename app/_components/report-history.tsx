@@ -1,9 +1,10 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Copy, History, RotateCcw, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, History, RotateCcw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import type { ReportHistoryItem, ReportHistoryMode } from '@/types';
+import { CloseButton } from '@/components';
 import { MAX_HISTORY_ITEMS } from '@/constants';
 import { ReportCalendar, ReportExportMenu, getItemDateKey } from '.';
 import { getChunkedArray } from '@/utils';
@@ -217,15 +218,11 @@ export function ReportHistory({
             <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
               {selectedItem.month}월 {selectedItem.day}일 보고서
             </span>
-            <button
-              type="button"
+            <CloseButton
+              size="sm"
               onClick={() => setSelectedDateKey(null)}
-              className="rounded p-1 text-zinc-400 hover:bg-white hover:text-zinc-600 dark:hover:bg-zinc-800"
-              title="닫기"
-              aria-label="닫기"
-            >
-              <X size={14} />
-            </button>
+              className="-my-1 -mr-1.5 hover:bg-white dark:hover:bg-zinc-800"
+            />
           </div>
           <pre className="mb-3 max-h-60 overflow-auto rounded-md border border-blue-100 bg-white p-3 text-[11px] whitespace-pre-wrap text-zinc-700 dark:border-blue-900/40 dark:bg-background/50 dark:text-zinc-200">
             {selectedItem.content}

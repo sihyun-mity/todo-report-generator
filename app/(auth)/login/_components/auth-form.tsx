@@ -2,9 +2,10 @@
 
 import { FormEvent, ReactNode, useEffect, useId, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { ClipboardList, Github, KeyRound, Mail, X } from 'lucide-react';
+import { ClipboardList, Github, KeyRound, Mail } from 'lucide-react';
 import { WebAuthnAbortService } from '@simplewebauthn/browser';
 import Link from 'next/link';
+import { CloseIcon, closeButtonClassName } from '@/components';
 import { useSearchParams } from 'next/navigation';
 import { useWebAuthnSupported } from '@/hooks';
 import { createClient } from '@/lib/supabase/client';
@@ -415,12 +416,8 @@ function AuthCard({ title, children }: Readonly<AuthCardProps>) {
             <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white">{title}</h2>
             {/* 로그인은 첫 화면이 아닌 선택 단계 — 작성 화면으로 돌아가는 닫기 버튼을 항상 노출한다.
                 '/' 는 prefix 관계로 nav-back 이 자동 추론되어 복귀 슬라이드로 전환된다. */}
-            <Link
-              href="/"
-              aria-label="닫고 작성 화면으로 돌아가기"
-              className="-m-1.5 rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <X size={18} />
+            <Link href="/" aria-label="닫고 작성 화면으로 돌아가기" className={closeButtonClassName('md', '-m-2')}>
+              <CloseIcon />
             </Link>
           </div>
           {children}

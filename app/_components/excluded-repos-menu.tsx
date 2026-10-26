@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { EyeOff, FolderGit2, Undo2 } from 'lucide-react';
-import { useDismissOnBack } from '@/components';
+import { CloseButton, useDismissOnBack } from '@/components';
 import { useDismissLayer, useResetOnHide } from '@/hooks';
 import { cn } from '@/utils';
 
@@ -45,9 +45,12 @@ export function ExcludedReposMenu({ repos, onInclude }: Readonly<ExcludedReposMe
           aria-label="제외한 저장소"
           className="absolute bottom-full left-0 z-20 mb-1 w-80 max-w-[calc(100vw-3rem)] rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
         >
-          <p className="px-3 pt-2 pb-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            이 저장소의 커밋은 불러오지 않아요. 해제하면 다시 불러와 분류해요(미리보기에서 고친 내용은 초기화돼요).
-          </p>
+          <div className="flex items-start gap-2 pt-2 pb-1 pl-3">
+            <p className="min-w-0 flex-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              이 저장소의 커밋은 불러오지 않아요. 해제하면 다시 불러와 분류해요(미리보기에서 고친 내용은 초기화돼요).
+            </p>
+            <CloseButton size="sm" onClick={() => setIsOpen(false)} className="-mt-1.5" />
+          </div>
           <ul className="max-h-56 overflow-y-auto">
             {repos.map((repo) => (
               <li

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
-import { CloudUpload, X } from 'lucide-react';
+import { CloudUpload } from 'lucide-react';
+import { CloseButton } from '.';
 import { isGuestMode } from '@/lib/guest';
 import { GUEST_LOGIN_BANNER_DISMISS_KEY } from '@/constants';
 import Link from 'next/link';
@@ -53,14 +54,7 @@ export function GuestLoginBanner() {
             </button>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="닫기"
-          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
-          <X size={14} />
-        </button>
+        <CloseButton size="sm" onClick={handleDismiss} />
       </div>
     </div>
   );

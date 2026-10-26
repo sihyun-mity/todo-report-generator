@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { KeyRound, X } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
+import { CloseButton } from '.';
 import { isWebAuthnSupported, registerPasskey } from '@/lib/webauthn/client';
 import { isGuestMode } from '@/lib/guest';
 import { PASSKEY_BANNER_DISMISS_KEY } from '@/constants';
@@ -95,14 +96,7 @@ export function PasskeyRegisterBanner() {
             </button>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="닫기"
-          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
-          <X size={14} />
-        </button>
+        <CloseButton size="sm" onClick={handleDismiss} />
       </div>
     </div>
   );

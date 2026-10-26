@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { Megaphone, X } from 'lucide-react';
+import { Megaphone } from 'lucide-react';
 import { useScrollLock } from 'usehooks-ts';
 import Link from 'next/link';
-import { Portal, useDismissOnBack } from '..';
+import { CloseButton, Portal, useDismissOnBack } from '..';
 import { NewsAudienceBadge, NewsMarkdown } from '.';
 import { useDismissLayer } from '@/hooks';
 import { markNewsAsReadUpTo } from '@/lib/news';
@@ -139,14 +139,7 @@ export function NewsDialog({ latestNews, userId, alreadyReadByUser }: Readonly<P
                 <time className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{formattedDate}</time>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void markReadAndClose()}
-              aria-label="닫기"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <CloseButton onClick={() => void markReadAndClose()} />
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pt-2 pb-5">

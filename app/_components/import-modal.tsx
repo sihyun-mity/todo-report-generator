@@ -1,12 +1,12 @@
 'use client';
 
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CalendarDays, Check, Clipboard, Info, X } from 'lucide-react';
+import { AlertCircle, CalendarDays, Check, Clipboard, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
 import type { Project, ReportDate } from '@/types';
 import { cn, inferReportYear, parseReportText } from '@/utils';
-import { Portal, useDismissOnBack } from '@/components';
+import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { useDismissLayer } from '@/hooks';
 import { DatePicker, ProjectPreview } from '.';
 
@@ -107,12 +107,7 @@ export function ImportModal({ isOpen, onClose, onApply }: Readonly<ImportModalPr
               <Clipboard className="h-5 w-5 text-blue-500" />
               텍스트로 가져오기
             </h2>
-            <button
-              onClick={handleClose}
-              className="rounded-full p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <CloseButton onClick={handleClose} />
           </div>
 
           <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">

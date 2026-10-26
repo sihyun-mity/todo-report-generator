@@ -297,4 +297,5 @@ Next.js 기본 파일명이 아니다. 동작:
 - **바깥 클릭·Esc 닫기는 `useDismissLayer`(`hooks/use-dismiss-layer.ts`) 한 곳에서만 한다** — 모달·다이얼로그·팝오버·드롭다운 모두. 열린 순서대로 쌓은 층 중 **맨 위 층 하나만** 닫는다(모달 안 팝오버가 열린 채 모달 밖을 누르거나 Esc 를 누르면 팝오버만 닫힌다, back 키의 BackStack 과 같은 규칙). 배경 `onClick` + `stopPropagation` 이나 개별 `keydown` 리스너로 닫지 말 것 — 층을 거치지 않으면 겹친 창이 함께 닫힌다.
   - `ref` 는 창 본문(배경이 아니라 패널)에 단다. 바깥 클릭은 누른 곳과 뗀 곳이 모두 바깥일 때만 인정한다(창 안에서 드래그하다 밖에서 놓아도 닫히지 않게).
   - 토글 메뉴·팝오버·조건부 다이얼로그는 `{ enabled: isOpen }` 로 **열려 있는 동안만** 등록한다 — 닫힌 창이 등록돼 있으면 맨 위 자리를 차지해 아래 창의 닫기를 가로챈다.
+  - 창·팝오버·배너의 X 닫기 버튼은 `CloseButton`(`components/close-button.tsx`, 팝오버·배너·인라인 패널은 `size="sm"`, 모달은 기본 `md`)으로 통일한다. 버튼이 아닌 요소(Link 등)는 `closeButtonClassName` + `CloseIcon` 을 쓴다.
   - 바깥 클릭·Esc 로 닫지 않을 창도 `outsideClick: false` / `escape: false` 로 등록한다 — 층을 차지해야 클릭·Esc 가 아래 창까지 내려가지 않는다(예: `ImportLocalDialog`, Esc 로 닫지 않는 GitHub 가져오기·텍스트 복원 모달).

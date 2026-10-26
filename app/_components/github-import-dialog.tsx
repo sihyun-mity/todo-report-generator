@@ -29,7 +29,6 @@ import {
   ShieldCheck,
   Sparkles,
   Unplug,
-  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useScrollLock } from 'usehooks-ts';
@@ -52,7 +51,7 @@ import {
   GITHUB_COMMITS_MAX_LOOKBACK_DAYS,
   GITHUB_IMPORT_OAUTH_SCOPES,
 } from '@/constants';
-import { Portal, useDismissOnBack } from '@/components';
+import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import { useDismissLayer } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
@@ -461,13 +460,7 @@ export function GithubImportDialog({
                 마지막 보고서 이후 작성한 커밋을 금일 업무 진행 현황에 정리해요.
               </p>
             </div>
-            <button
-              onClick={onClose}
-              aria-label="닫기"
-              className="shrink-0 rounded-full p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <CloseButton onClick={onClose} />
           </div>
 
           {/* flex 열: 자식은 기본적으로 내용 높이를 지키고(넘치면 본문이 스크롤), min-h-0 을 준 자식만 남은 높이에 맞춰 줄어든다 */}
