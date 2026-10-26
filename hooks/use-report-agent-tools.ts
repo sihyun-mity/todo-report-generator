@@ -34,6 +34,10 @@ const MAX_SEARCH_RESULTS = 62;
 
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+// search_reports 의 query 로 들어오면 무시하는 말 — 기간이나 "보고서" 자체를 가리킬 뿐 프로젝트·작업 키워드가 아니다
+const QUERY_STOP_WORDS_REGEX =
+  /^(지난\s?주|이번\s?주|저번\s?주|지난\s?달|이번\s?달|저번\s?달|오늘|어제|최근|전체|모두|보고서|기록|업무|요약|정리)(\s*(보고서|기록|업무|요약|정리))*$/;
+
 const BUCKET_LABEL: Record<ProjectsBucket, string> = { today: '금일 업무 구역', tomorrow: '익일 업무 구역' };
 
 // ───────────── 에이전트에게 보여주는 형태 ─────────────
@@ -345,7 +349,9 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           if (to !== null && typeof to !== 'string') return toolError(to.error);
           if (input.query !== undefined && typeof input.query !== 'string')
             return toolError('query 는 문자열이어야 합니다.');
-          const query = (input.query ?? '').trim().toLowerCase();
+          // 기간·대상을 가리키는 말("지난주", "보고서")은 검색어가 아니다 — 작은 모델이 이런 말을 query 로 넣어 0건이 됐다
+          const rawQuery = (input.query ?? '').trim().toLowerCase();
+          const query = QUERY_STOP_WORDS_REGEX.test(rawQuery) ? '' : rawQuery;
 
           const all = await useReportHistoryStore.getState().fetchAllHistory();
           if (!all) return toolError('보고서 기록을 불러오지 못했습니다.');
@@ -362,12 +368,13 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
             )
             .filter((r) => !query || r.today.length > 0 || r.tomorrow.length > 0);
 
-          // 에이전트가 요청 문장을 통째로 키워드로 넣어 0건이 되는 경우가 있어, 기간 안 보고서 수와 함께 다시 찾는 법을 알린다
+          // 키워드로 하나도 안 나오면 기간 전체를 돌려준다 — "query 를 빼고 다시 부르라"고 알려도 모델이 같은 호출을 되풀이했다
           if (query && reports.length === 0 && inPeriod.length > 0)
             return toolText({
-              total: 0,
-              reportsInPeriod: inPeriod.length,
-              hint: '키워드와 일치하는 프로젝트가 없습니다. 기간 전체를 보려면 query 를 빼고 다시 부르세요.',
+              total: inPeriod.length,
+              note: `"${rawQuery}" 와 일치하는 프로젝트가 없어 기간 안의 보고서 전체를 돌려줍니다.`,
+              truncated: inPeriod.length > MAX_SEARCH_RESULTS,
+              reports: inPeriod.slice(-MAX_SEARCH_RESULTS),
             });
 
           return toolText({

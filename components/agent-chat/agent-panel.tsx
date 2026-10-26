@@ -1,19 +1,9 @@
 'use client';
 
 import { type KeyboardEvent, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import {
-  ArrowUp,
-  ChevronsRight,
-  Lightbulb,
-  Loader2,
-  NotebookPen,
-  RotateCcw,
-  Shuffle,
-  Sparkles,
-  Square,
-} from 'lucide-react';
+import { ArrowUp, ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles, Square } from 'lucide-react';
 import type { AgentAction, AgentChatMessage, AgentQuickAction, AgentSuggestion } from '@/types';
-import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLES, AGENT_NOTES_MAX_CHARS } from '@/constants';
+import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLES } from '@/constants';
 import { useDismissLayer, useSignalEffect } from '@/hooks';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
@@ -40,10 +30,7 @@ type Props = {
   suggestions: ReadonlyArray<AgentSuggestion>;
   quickActions: ReadonlyArray<AgentQuickAction>;
   canWriteFromNotes: boolean;
-  isNotesMode: boolean;
-  onNotesModeChange: (isNotesMode: boolean) => void;
   onSend: (text: string) => void;
-  onSubmitNotes: (notes: string) => void;
   onRunAction: (action: AgentAction) => void;
   onRunSuggestion: (suggestion: AgentSuggestion) => void;
   onDismissSuggestion: (suggestion: AgentSuggestion) => void;
@@ -93,10 +80,7 @@ export function AgentPanel({
   suggestions,
   quickActions,
   canWriteFromNotes,
-  isNotesMode,
-  onNotesModeChange,
   onSend,
-  onSubmitNotes,
   onRunAction,
   onRunSuggestion,
   onDismissSuggestion,
@@ -116,7 +100,6 @@ export function AgentPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const inputId = useId();
   const [draft, setDraft] = useState('');
-  const [notes, setNotes] = useState('');
   const baseSeed = useSyncExternalStore(subscribeNever, getClientExampleSeed, getServerExampleSeed);
   // "다른 예시"를 누를 때마다 더해 다시 섞는다
   const [seedOffset, setSeedOffset] = useState(0);
@@ -137,33 +120,26 @@ export function AgentPanel({
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // 받아쓰기는 지금 쓰는 칸(채팅 입력 / 메모)에 이어 붙인다
+  // 받아쓰기는 입력칸에 이어 붙인다(시작할 때 있던 글은 그대로 두고 뒤에)
   const speechBase = useRef('');
   const speech = useSpeechInput((transcript) => {
-    const next = speechBase.current ? `${speechBase.current} ${transcript}` : transcript;
-    if (isNotesMode) setNotes(next.slice(0, AGENT_NOTES_MAX_CHARS));
-    else setDraft(next);
+    setDraft(speechBase.current ? `${speechBase.current} ${transcript}` : transcript);
   });
   const toggleSpeech = () => {
     if (speech.isListening) {
       speech.stop();
       return;
     }
-    speechBase.current = (isNotesMode ? notes : draft).trim();
+    speechBase.current = draft.trim();
     void speech.start();
   };
 
   const isReady = availability === 'available';
   const submit = (text: string) => {
     if (isRunning || !isReady || text.trim() === '') return;
+    speech.stop();
     onSend(text);
     setDraft('');
-  };
-  const submitNotes = () => {
-    if (isRunning || notes.trim() === '') return;
-    speech.stop();
-    onSubmitNotes(notes);
-    setNotes('');
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // 한글 조합 중 Enter 는 조합 확정이므로 보내지 않는다
@@ -320,7 +296,7 @@ export function AgentPanel({
         </div>
 
         {/* 대화 중에도 다음 할 일을 바로 고를 수 있게 — 상황 제안·빠른 작업을 입력칸 위 한 줄로 둔다 */}
-        {messages.length > 0 && !isNotesMode && !isRunning && (suggestions.length > 0 || quickActions.length > 0) && (
+        {messages.length > 0 && !isRunning && (suggestions.length > 0 || quickActions.length > 0) && (
           <div className="flex shrink-0 [scrollbar-width:none] gap-2 overflow-x-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
             {suggestions.map((s) => (
               <button
@@ -342,121 +318,59 @@ export function AgentPanel({
           </div>
         )}
 
-        {isNotesMode ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitNotes();
-            }}
-            className="shrink-0 space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
-          >
-            <div className="flex items-center justify-between">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                <NotebookPen size={14} aria-hidden />
-                메모로 보고서 쓰기
-              </p>
-              <span className="text-[11px] text-zinc-400 tabular-nums">
-                {notes.length}/{AGENT_NOTES_MAX_CHARS}
-              </span>
-            </div>
-            <label htmlFor={`${inputId}-notes`} className="sr-only">
-              보고서로 정리할 메모
-            </label>
-            <textarea
-              id={`${inputId}-notes`}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value.slice(0, AGENT_NOTES_MAX_CHARS))}
-              rows={6}
-              autoFocus
-              placeholder={
-                '오늘 한 일, 내일 할 일을 편하게 적어 주세요.\n예) 로그인 오류 고침, 결제 리팩터링 절반 진행, 내일은 QA 회귀 테스트'
-              }
-              className="w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-            />
-            <div className="flex items-center gap-2">
-              {speech.isSupported && (
-                <AgentMicButton isListening={speech.isListening} disabled={isRunning} onClick={toggleSpeech} />
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  speech.stop();
-                  onNotesModeChange(false);
-                }}
-                className="ml-auto rounded-lg px-3 py-2 text-xs font-semibold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                취소
-              </button>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit(draft);
+          }}
+          className="flex shrink-0 items-end gap-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
+        >
+          <label htmlFor={inputId} className="sr-only">
+            AI 도우미에게 보낼 메시지
+          </label>
+          <textarea
+            ref={inputRef}
+            id={inputId}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            disabled={!isReady}
+            placeholder={
+              isReady
+                ? canWriteFromNotes
+                  ? '부탁하거나 오늘 한 일을 편하게 적어 보세요 (⌘K)'
+                  : '무엇이든 부탁해 보세요 (⌘K)'
+                : '위의 추천과 빠른 작업을 눌러 보세요'
+            }
+            className="max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-blue-400 disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:disabled:bg-zinc-900/50"
+            style={{ fieldSizing: 'content' } as React.CSSProperties}
+          />
+          {isReady && speech.isSupported && !isRunning && (
+            <AgentMicButton isListening={speech.isListening} disabled={isRunning} onClick={toggleSpeech} />
+          )}
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="멈추기"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-200 text-zinc-700 transition-colors hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+            >
+              <Square size={14} fill="currentColor" aria-hidden />
+            </button>
+          ) : (
+            isReady && (
               <button
                 type="submit"
-                disabled={isRunning || notes.trim() === ''}
-                className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                disabled={draft.trim() === ''}
+                aria-label="보내기"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
               >
-                보고서로 정리
+                <ArrowUp size={16} aria-hidden />
               </button>
-            </div>
-          </form>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit(draft);
-            }}
-            className="flex shrink-0 items-end gap-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
-          >
-            {canWriteFromNotes && isReady && (
-              <button
-                type="button"
-                onClick={() => onNotesModeChange(true)}
-                disabled={isRunning}
-                aria-label="메모로 보고서 쓰기"
-                title="메모로 보고서 쓰기"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              >
-                <NotebookPen size={16} aria-hidden />
-              </button>
-            )}
-            <label htmlFor={inputId} className="sr-only">
-              AI 도우미에게 보낼 메시지
-            </label>
-            <textarea
-              ref={inputRef}
-              id={inputId}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={1}
-              disabled={!isReady}
-              placeholder={isReady ? '무엇이든 부탁해 보세요 (⌘K)' : '위의 추천과 빠른 작업을 눌러 보세요'}
-              className="max-h-32 min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-blue-400 disabled:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:disabled:bg-zinc-900/50"
-              style={{ fieldSizing: 'content' } as React.CSSProperties}
-            />
-            {isReady && speech.isSupported && !isRunning && (
-              <AgentMicButton isListening={speech.isListening} disabled={isRunning} onClick={toggleSpeech} />
-            )}
-            {isRunning ? (
-              <button
-                type="button"
-                onClick={onStop}
-                aria-label="멈추기"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-200 text-zinc-700 transition-colors hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
-              >
-                <Square size={14} fill="currentColor" aria-hidden />
-              </button>
-            ) : (
-              isReady && (
-                <button
-                  type="submit"
-                  disabled={draft.trim() === ''}
-                  aria-label="보내기"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                >
-                  <ArrowUp size={16} aria-hidden />
-                </button>
-              )
-            )}
-          </form>
-        )}
+            )
+          )}
+        </form>
       </div>
     </aside>
   );

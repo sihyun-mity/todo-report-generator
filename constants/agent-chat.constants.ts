@@ -42,6 +42,8 @@ export const AGENT_NEWS_CONTENT_MAX_CHARS = 3_000;
 /** AI 도우미 사용 예시 — 지금 화면에 tool 이 등록돼 있을 때만 보여 주고, 무작위로 돌려 가며 할 수 있는 일을 알린다 */
 export const AGENT_CHAT_EXAMPLES: ReadonlyArray<{ text: string; tool: string }> = [
   { text: '지금 작성 중인 보고서를 요약해줘', tool: 'get_current_report' },
+  // 부탁이 아니라 업무 메모 — 도우미가 메모로 알아보고 보고서 초안을 만든다(입력창 하나로 둘 다 받는다는 걸 보여 주는 예시)
+  { text: '오늘 로그인 오류 고쳤고 결제 페이지 리팩터링 절반 했어. 내일은 QA 회귀 테스트', tool: 'add_report_tasks' },
   { text: '오늘 할 일에 "주간 회의" 프로젝트 "안건 정리" 작업 추가해줘', tool: 'add_report_tasks' },
   { text: '금일 업무에 "API 연동" 작업을 진행률 70%로 추가해줘', tool: 'add_report_tasks' },
   { text: '내일 할 일에 "QA" 프로젝트 "회귀 테스트" 넣어줘', tool: 'add_report_tasks' },

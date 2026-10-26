@@ -4,7 +4,7 @@ import { Github, Lightbulb, NotebookPen, Sparkles, X, Zap } from 'lucide-react';
 import type { AgentAction, AgentQuickAction, AgentSuggestion } from '@/types';
 import { cn } from '@/utils';
 
-// 할 일 종류별 아이콘 — GitHub 가져오기·메모로 쓰기는 고유 아이콘, AI 에게 묻는 일은 반짝이, 도구를 바로 실행하는 일은 번개
+// 할 일 종류별 아이콘 — GitHub 가져오기·업무 메모 정리는 고유 아이콘, AI 에게 묻는 일은 반짝이, 도구를 바로 실행하는 일은 번개
 function ActionIcon({
   action,
   id,

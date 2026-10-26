@@ -36,7 +36,8 @@ export type AgentChatTurn =
     };
 
 // 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 AI 도우미에 넘긴다.
-// prompt 는 AI(Gemini Nano)에게 묻고, tool 은 모델 없이 도구를 바로 실행하며, notes 는 메모로 보고서 쓰기를 연다(text 가 있으면 바로 정리).
+// prompt 는 AI(Gemini Nano)에게 묻고(부탁인지 업무 메모인지는 도우미가 가른다), tool 은 모델 없이 도구를 바로 실행하며,
+// notes 는 업무 메모를 보고서 초안으로 정리한다(text 가 없으면 입력칸으로 데려가 적게 한다).
 export type AgentAction =
   | { type: 'prompt'; text: string }
   | { type: 'tool'; tool: string; title: string; input?: Record<string, unknown> }

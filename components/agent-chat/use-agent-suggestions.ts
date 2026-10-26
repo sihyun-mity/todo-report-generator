@@ -81,8 +81,8 @@ export function useAgentSuggestions(): {
     if (has('fill_report') && !todayFilled)
       all.push({
         id: 'notes',
-        title: '메모로 오늘 보고서 쓰기',
-        reason: '오늘 한 일을 편하게 적으면 보고서로 정리해 드려요',
+        title: '오늘 한 일 적어서 보고서 쓰기',
+        reason: '입력창에 편하게 적으면 보고서로 정리해 드려요',
         action: { type: 'notes' },
         needsAi: true,
       });
@@ -162,7 +162,6 @@ export function useAgentSuggestions(): {
         false,
         true
       );
-    if (has('fill_report')) quick('notes', '메모로 쓰기', { type: 'notes' }, true);
     if (has('carry_over_incomplete_tasks'))
       quick('carry', '미완료 → 내일', {
         type: 'tool',

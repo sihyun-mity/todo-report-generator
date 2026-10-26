@@ -37,7 +37,17 @@ const ANSWER = 'answer';
 // 의도 분류 — 라벨은 모델이 고르는 값, kind 는 후보로 남길 도구 종류(null 이면 도구 없이 답한다)
 // 라벨은 서로 헷갈리지 않게 대상까지 붙이고 한국어 표현을 함께 적는다 — "replace"/"setting" 이던 때 "다크 모드로 바꿔줘"를
 // "바꾸기(replace)"로 골라 보고서 날짜를 바꿨다.
-const INTENTS: ReadonlyArray<{ label: string; kind: AgentToolKind | null; hint: string }> = [
+type Intent = { label: string; kind: AgentToolKind | null; hint: string };
+
+// 입력창 하나로 부탁과 업무 메모를 함께 받으므로, 메모인지도 의도로 가른다(보고서 작성 화면에서만).
+// 규칙(looksLikeWorkNotes)이 먼저 분명한 메모를 거르고, 애매한 글만 여기서 모델이 고른다.
+const NOTES_INTENT: Intent = {
+  label: 'work_notes',
+  kind: null,
+  hint: 'the user describes work they did or plan to do, like a diary note, not asking for anything (e.g. "로그인 오류 고쳤고 결제 리팩터링 절반 했어, 내일은 QA")',
+};
+
+const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'chat',
     kind: null,
@@ -125,7 +135,12 @@ type RunOptions = {
   onAnswer: (text: string) => void;
   // 컨텍스트 창에 맞추느라 이번 요청에서 빼야 했던 가장 오래된 대화 턴 수(0 이면 전부 들어갔다)
   onContextTrim?: (droppedTurns: number) => void;
+  // 업무 메모를 보고서 초안으로 정리할 수 있는 화면인지 — 그럴 때만 의도에 "업무 메모"를 넣는다
+  canWriteFromNotes: boolean;
 };
+
+// 이번 요청의 결과. route 가 'notes' 면 부탁이 아니라 업무 메모라서 대화 대신 메모 정리(structureNotes)로 넘긴다.
+export type AgentChatTurnResult = { turns: Array<AgentChatTurn>; route: 'notes' | null };
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…(truncated)` : text);
 
@@ -170,7 +185,8 @@ export async function runAgentChatTurn({
   onToolEnd,
   onAnswer,
   onContextTrim,
-}: Readonly<RunOptions>): Promise<Array<AgentChatTurn>> {
+  canWriteFromNotes,
+}: Readonly<RunOptions>): Promise<AgentChatTurnResult> {
   const base = await withModelLock(() =>
     LanguageModel.create({
       ...PROMPT_API_OPTIONS,
@@ -249,18 +265,20 @@ export async function runAgentChatTurn({
   try {
     // ① 요청 의도를 먼저 고른다. 모델이 의도는 잘 알아봐도(교체) 도구는 비슷한 것(덧붙이기)을 고르곤 해서,
     // 다음 단계 후보를 그 의도의 도구로 좁힌다. 대화(인사·사용법)면 도구 없이 바로 답한다.
+    const intents = canWriteFromNotes ? [...INTENTS, NOTES_INTENT] : INTENTS;
     const { intent } = JSON.parse(
       await ask(
         (conversation) =>
-          `## Conversation\n${conversation}\n\n## Task\nClassify the kind of the user's last request.\n${INTENTS.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}`,
+          `## Conversation\n${conversation}\n\n## Task\nClassify the kind of the user's last message.\n${intents.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}`,
         {
           type: 'object',
-          properties: { intent: { type: 'string', enum: INTENTS.map((i) => i.label) } },
+          properties: { intent: { type: 'string', enum: intents.map((i) => i.label) } },
           required: ['intent'],
           additionalProperties: false,
         }
       )
     ) as { intent?: string };
+    if (intent === NOTES_INTENT.label) return { turns: [], route: 'notes' };
     const kind = INTENTS.find((i) => i.label === intent)?.kind ?? null;
 
     for (let step = 0; kind && step < AGENT_CHAT_MAX_TOOL_STEPS; step++) {
@@ -338,7 +356,7 @@ export async function runAgentChatTurn({
     if (fixed) {
       onAnswer(fixed);
       added.push({ role: 'assistant', text: fixed });
-      return added;
+      return { turns: added, route: null };
     }
 
     // 대화(인사·사용법)일 때만 할 수 있는 일 목록을 넘긴다 — 늘 넘기면 묻지 않아도 목록을 늘어놓았다
@@ -361,7 +379,7 @@ export async function runAgentChatTurn({
       (text) => onAnswer(toPlainAnswer(text, !kind))
     );
     added.push({ role: 'assistant', text: toPlainAnswer(answer, !kind).trim() });
-    return added;
+    return { turns: added, route: null };
   } finally {
     base.destroy();
   }

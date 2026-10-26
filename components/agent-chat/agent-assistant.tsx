@@ -11,7 +11,14 @@ import type {
   AgentToolContext,
 } from '@/types';
 import { useResetOnHide } from '@/hooks';
-import { downloadPromptModel, getPromptApiAvailability, runAgentChatTurn, structureNotes } from '@/lib/prompt-api';
+import {
+  downloadPromptModel,
+  getPromptApiAvailability,
+  hasRequestExpression,
+  looksLikeWorkNotes,
+  runAgentChatTurn,
+  structureNotes,
+} from '@/lib/prompt-api';
 import { agentToolsFor } from '@/lib/webmcp';
 import { useAgentChatStore, useAgentToolsStore, useReportFormStore } from '@/stores';
 import { createId } from '@/utils';
@@ -43,7 +50,6 @@ export function AgentAssistant() {
   const [messages, setMessages] = useState<Array<AgentChatMessage>>([]);
   const [turns, setTurns] = useState<Array<AgentChatTurn>>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [isNotesMode, setIsNotesMode] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   // 컨텍스트 창에 맞추느라 앞부분 대화를 모델에게 넘기지 못한 적이 있는지
   const [isContextTrimmed, setIsContextTrimmed] = useState(false);
@@ -102,7 +108,6 @@ export function AgentAssistant() {
   // 화면 밖으로 나가면(로그인 화면 등으로 이동해 레이아웃째 숨겨짐) 진행 중인 응답을 멈추고 패널을 닫아 둔다
   useResetOnHide(() => {
     stop();
-    setIsNotesMode(false);
     useAgentChatStore.getState().hide();
   });
 
@@ -138,8 +143,14 @@ export function AgentAssistant() {
     if (abortRef.current === controller) abortRef.current = null;
   };
 
+  // 입력창 하나로 부탁과 업무 메모를 함께 받는다. 분명한 메모는 규칙(looksLikeWorkNotes)으로 바로 메모 정리로 보내고,
+  // 그 밖에는 채팅으로 보내 의도 분류가 메모(work_notes)라고 하면 거기서 메모 정리로 넘긴다.
   const send = async (text: string) => {
     if (isRunning || text.trim() === '') return;
+    if (canWriteFromNotes && looksLikeWorkNotes(text)) {
+      void submitNotes(text);
+      return;
+    }
     const controller = begin();
 
     const history: Array<AgentChatTurn> = [...turns, { role: 'user', text: text.trim() }];
@@ -151,8 +162,11 @@ export function AgentAssistant() {
     // 도구가 실행 중에 알린 변경 — 도구가 끝나면 그 메시지에 붙인다
     let pendingChange: AgentChange | null = null;
     try {
-      const added = await runAgentChatTurn({
+      const { turns: added, route } = await runAgentChatTurn({
         history,
+        // 부탁 표현("~해줘" 등)이 있으면 업무 메모 의도를 아예 후보에서 뺀다 — 앞 대화가 메모 위주면 모델이
+        // "지난주 보고서 요약해줘"까지 메모로 골랐다
+        canWriteFromNotes: canWriteFromNotes && !hasRequestExpression(text),
         getTools: () => agentToolsFor(useAgentToolsStore.getState().tools, 'chat'),
         context: {
           confirm: requestConfirm,
@@ -187,7 +201,11 @@ export function AgentAssistant() {
           setMessages((prev) => [...prev, { id, role: 'assistant', text: answer, streaming: true }]);
         },
       });
-      setTurns([...history, ...added]);
+      if (route === 'notes') {
+        // 부탁이 아니라 업무 메모였다 — 메모 정리가 대화 기록을 메모 턴으로 남기므로 방금 넣은 사용자 턴은 되돌린다
+        setTurns(turns);
+        await showNotesDraft(text, controller);
+      } else setTurns([...history, ...added]);
     } catch (error) {
       if (toolMessageId) patchMessage(toolMessageId, { status: 'error' });
       if (!controller.signal.aborted) {
@@ -200,12 +218,8 @@ export function AgentAssistant() {
     }
   };
 
-  // 메모로 보고서 쓰기: 메모를 정리해 초안 카드로 보여 준다. 폼에는 사용자가 "폼에 추가"를 눌러야 들어간다.
-  const submitNotes = async (notes: string) => {
-    if (isRunning || notes.trim() === '') return;
-    setIsNotesMode(false);
-    const controller = begin();
-    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: `메모로 보고서 쓰기\n${notes.trim()}` }]);
+  // 업무 메모를 정리해 보고서 초안 카드로 보여 준다. 폼에는 사용자가 "폼에 추가"를 눌러야 들어간다.
+  const showNotesDraft = async (notes: string, controller: AbortController) => {
     try {
       const { today, tomorrow } = useReportFormStore.getState();
       const projectNames = [...new Set([...today, ...tomorrow].map((p) => p.name.trim()).filter((n) => n !== ''))];
@@ -216,7 +230,7 @@ export function AgentAssistant() {
           {
             id: createId(),
             role: 'error',
-            text: '메모에서 보고서에 넣을 작업을 찾지 못했어요. 조금 더 자세히 적어 주세요.',
+            text: '메모에서 보고서에 넣을 작업을 찾지 못했어요. 조금 더 자세히 적거나, 하고 싶은 일을 "~해줘"처럼 부탁해 주세요.',
           },
         ]);
         return;
@@ -232,6 +246,16 @@ export function AgentAssistant() {
         console.error('[agent-notes]', error);
         setMessages((prev) => [...prev, { id: createId(), role: 'error', text: errorMessage(error) }]);
       }
+    }
+  };
+
+  // 메모로 보고서 쓰기(규칙으로 메모라고 본 글·메모가 담긴 할 일)
+  const submitNotes = async (notes: string) => {
+    if (isRunning || notes.trim() === '') return;
+    const controller = begin();
+    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: notes.trim() }]);
+    try {
+      await showNotesDraft(notes, controller);
     } finally {
       end(controller);
     }
@@ -366,10 +390,8 @@ export function AgentAssistant() {
     if (action.type === 'prompt') void send(action.text);
     else if (action.type === 'tool') void runTool(action.tool, action.title, action.input);
     else if (action.text) void submitNotes(action.text);
-    else {
-      setIsNotesMode(true);
-      useAgentChatStore.getState().reveal();
-    }
+    // 메모 내용 없이 온 할 일(예: "오늘 한 일 적어서 보고서 쓰기" 제안)은 입력칸으로 데려간다 — 적으면 메모로 알아본다
+    else useAgentChatStore.getState().reveal();
   };
 
   // 제안을 실행하면 이번 세션에서는 다시 권하지 않는다
@@ -415,10 +437,7 @@ export function AgentAssistant() {
       suggestions={suggestions}
       quickActions={quickActions}
       canWriteFromNotes={canWriteFromNotes}
-      isNotesMode={isNotesMode}
-      onNotesModeChange={setIsNotesMode}
       onSend={send}
-      onSubmitNotes={submitNotes}
       onRunAction={runAction}
       onRunSuggestion={runSuggestion}
       onDismissSuggestion={(suggestion) => useAgentChatStore.getState().dismiss(suggestion.id)}

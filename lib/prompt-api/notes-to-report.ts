@@ -89,3 +89,18 @@ export async function structureNotes(
     }
   });
 }
+
+// 부탁 표현 — 이런 말이 있으면 메모가 아니라 부탁으로 본다("~해줘", "~알려", 물음표 등). "했어"·"함" 같은 서술은 걸리지 않는다.
+const REQUEST_PATTERN = /(줘|주세요|주라|해라|할래|할까|하자|알려|보여|열어|가자|어때|뭐야|뭐지|\?)/;
+
+// 입력창 하나로 부탁과 업무 메모를 함께 받는다. 분명한 메모(여러 줄이거나 길고, 부탁 표현이 없는 글)는 모델의 의도 분류를
+// 거치지 않고 바로 메모 정리로 보낸다 — 호출을 아끼고, 모델이 메모를 "작업 추가" 부탁으로 잘못 고르는 일을 줄인다.
+// 애매한 글은 채팅의 의도 분류(work_notes)가 가른다. 잘못 메모로 보내도 초안 카드만 뜨고 폼은 바뀌지 않는다.
+export const hasRequestExpression = (text: string) => REQUEST_PATTERN.test(text.trim());
+
+export const looksLikeWorkNotes = (text: string) => {
+  const value = text.trim();
+  if (hasRequestExpression(value)) return false;
+  const lines = value.split('\n').filter((line) => line.trim() !== '').length;
+  return lines >= 2 || value.length >= 25;
+};
