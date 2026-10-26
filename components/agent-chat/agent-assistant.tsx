@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import type { AgentChatMessage, AgentChatTurn, AgentToolContext } from '@/types';
 import { useResetOnHide } from '@/hooks';
 import { downloadPromptModel, getPromptApiAvailability, runAgentChatTurn } from '@/lib/prompt-api';
+import { agentToolsFor } from '@/lib/webmcp';
 import { useAgentChatStore, useAgentToolsStore } from '@/stores';
 import { createId } from '@/utils';
 import { AgentChatPanel, useGlobalAgentTools } from '.';
@@ -25,7 +26,10 @@ export function AgentAssistant() {
 
   const isOpen = useAgentChatStore((s) => s.isOpen);
   const setOpen = useAgentChatStore((s) => s.setOpen);
-  const tools = useAgentToolsStore((s) => s.tools);
+  const tools = agentToolsFor(
+    useAgentToolsStore((s) => s.tools),
+    'chat'
+  );
 
   const [messages, setMessages] = useState<Array<AgentChatMessage>>([]);
   const [turns, setTurns] = useState<Array<AgentChatTurn>>([]);
@@ -103,7 +107,7 @@ export function AgentAssistant() {
     try {
       const added = await runAgentChatTurn({
         history,
-        getTools: () => useAgentToolsStore.getState().tools,
+        getTools: () => agentToolsFor(useAgentToolsStore.getState().tools, 'chat'),
         context: { confirm: requestConfirm },
         signal: controller.signal,
         onToolStart: (tool) => {

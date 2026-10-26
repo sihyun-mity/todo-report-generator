@@ -1,4 +1,11 @@
-import type { AgentTool, AgentToolContext, WebMcpModelContext, WebMcpTool, WebMcpToolResult } from '@/types';
+import type {
+  AgentTool,
+  AgentToolContext,
+  AgentToolSurface,
+  WebMcpModelContext,
+  WebMcpTool,
+  WebMcpToolResult,
+} from '@/types';
 import { confirm } from '@/stores';
 
 // 최신 스펙(`document.modelContext`)을 우선하고 초기 프리뷰(`navigator.modelContext`)로 폴백한다.
@@ -7,6 +14,10 @@ export function getModelContext(): WebMcpModelContext | null {
   if (typeof document === 'undefined') return null;
   return document.modelContext ?? navigator.modelContext ?? null;
 }
+
+// 경로(WebMCP / 채팅)에 노출할 도구만 고른다. surfaces 를 생략한 도구는 둘 다에 노출된다.
+export const agentToolsFor = (tools: ReadonlyArray<AgentTool>, surface: AgentToolSurface) =>
+  tools.filter((tool) => !tool.surfaces || tool.surfaces.includes(surface));
 
 // WebMCP 로 부른 도구는 화면의 확인 다이얼로그로 승인을 받는다 (채팅은 대화 안 카드로 따로 묻는다).
 const WEBMCP_CONTEXT: AgentToolContext = { confirm };
@@ -27,7 +38,7 @@ export function registerWebMcpTools(tools: ReadonlyArray<AgentTool>, signal: Abo
   const modelContext = getModelContext();
   if (!modelContext) return;
 
-  for (const tool of tools) {
+  for (const tool of agentToolsFor(tools, 'webmcp')) {
     try {
       const registration = modelContext.registerTool(toWebMcpTool(tool), { signal });
       if (registration instanceof Promise) {
