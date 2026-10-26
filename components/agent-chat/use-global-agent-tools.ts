@@ -24,8 +24,10 @@ const currentNewsId = () => {
   return id && NEWS_ID_REGEX.test(id) ? id : null;
 };
 
-// 상세 화면에서 목록까지 볼 이유가 있는 요청 — 없으면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다
-const NEWS_LIST_REQUEST = /목록|최근|다른|전체|모든|모두|지난|이전|여러|\d+\s*개/;
+// 상세 화면에서 보고 있는 소식을 가리키는 요청 — 목록을 후보로 두면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다.
+// 반대로 목록이 있어야 하는 요청("다음 소식 열어줘" — 이동할 id 가 목록에 있다)까지 막지 않게, 가리키는 말이 있을 때만 뺀다.
+const CURRENT_NEWS_REQUEST = /지금|현재|보고\s*있|보는|여기|이거|이\s*(새\s*소식|소식|글|공지|내용)/;
+const NEWS_LIST_REQUEST = /목록|최근|다른|다음|이전|전체|모든|모두|지난|여러|\d+\s*개/;
 
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
 
@@ -168,8 +170,9 @@ export function useGlobalAgentTools() {
         title: '새소식 목록 조회',
         kind: 'read',
         description: `Return up to ${AGENT_NEWS_LIST_LIMIT} service news/updates (새소식), newest first (id, title, date). Members and guests see different news. Read the body with get_news.`,
-        // 소식 하나를 보고 있으면 그 소식은 get_news 가 바로 읽는다 — 목록을 가리키는 말이 있을 때만 후보로 둔다
-        requires: (request) => !currentNewsId() || NEWS_LIST_REQUEST.test(request),
+        // 보고 있는 소식을 가리키면 get_news 가 그 소식을 바로 읽는다 — 목록도 함께 가리킬 때만 남긴다
+        requires: (request) =>
+          !currentNewsId() || !CURRENT_NEWS_REQUEST.test(request) || NEWS_LIST_REQUEST.test(request),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
