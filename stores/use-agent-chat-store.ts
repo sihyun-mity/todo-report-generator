@@ -24,12 +24,24 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
     set({ expanded });
     saveExpanded(expanded);
   },
-  reveal: () => {
+  reveal: ({ attention = 'input' } = {}) => {
     if (isDesktop()) get().setExpanded(true);
     else set({ isOpen: true });
-    set((s) => ({ focusSignal: s.focusSignal + 1 }));
+    if (attention === 'input') set((s) => ({ focusSignal: s.focusSignal + 1 }));
+    if (attention !== 'none') get().attend(attention);
   },
   focusSignal: 0,
+  attention: null,
+  attend: (target, messageId) =>
+    set((s) => ({ attention: { nonce: (s.attention?.nonce ?? 0) + 1, target, messageId } })),
+  followUpCount: 0,
+  followUpId: null,
+  setFollowUp: (followUpCount, followUpId) => set({ followUpCount, followUpId }),
+  showFollowUp: () => {
+    const { followUpId } = get();
+    get().reveal({ attention: 'none' });
+    if (followUpId) get().attend('message', followUpId);
+  },
   isRunning: false,
   setRunning: (isRunning) => set({ isRunning }),
   availability: null,
@@ -39,7 +51,8 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   request: null,
   submit: (action, { reveal = true } = {}) => {
     set((s) => ({ request: { id: (s.request?.id ?? 0) + 1, action } }));
-    if (reveal) get().reveal();
+    // 작업을 시작하는 할 일이라 입력칸이 아니라 패널(처리 과정)로 눈을 끈다
+    if (reveal) get().reveal({ attention: 'panel' });
   },
   dismissed: new Set(),
   dismiss: (id) => set((s) => ({ dismissed: new Set([...s.dismissed, id]) })),

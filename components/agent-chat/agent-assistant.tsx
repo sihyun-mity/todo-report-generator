@@ -60,6 +60,14 @@ export function AgentAssistant() {
   // 변경 카드의 되돌리기 — 도구 메시지 id → undo
   const undoFns = useRef(new Map<string, NonNullable<AgentChange['undo']>>());
 
+  // 처리하지 않은 후속 동작 수를 store 에 알린다 — 패널을 접어 두었을 때 상단바가 "확인 필요"를 띄운다
+  const followUps = messages.filter((m) => (m.role === 'confirm' || m.role === 'draft') && m.status === 'pending');
+  const followUpCount = followUps.length;
+  const followUpId = followUps.at(-1)?.id ?? null;
+  useEffect(() => {
+    useAgentChatStore.getState().setFollowUp(followUpCount, followUpId);
+  }, [followUpCount, followUpId]);
+
   // 데스크톱 패널을 접어 두었으면 그대로 — SSR·첫 렌더는 기본값(펼침)으로 맞추고 마운트 뒤에 적용한다
   useEffect(() => {
     useAgentChatStore.getState().restore();
@@ -117,7 +125,10 @@ export function AgentAssistant() {
       const id = createId();
       pendingConfirms.current.set(id, resolve);
       setMessages((prev) => [...prev, { id, role: 'confirm', options, status: 'pending' }]);
-      useAgentChatStore.getState().reveal();
+      // 사용자가 눌러야 진행된다 — 도우미를 보여 주고 이 카드로 눈을 끈다
+      const store = useAgentChatStore.getState();
+      store.reveal({ attention: 'none' });
+      store.attend('message', id);
     });
 
   const answerConfirm = (id: string, ok: boolean) => {
@@ -235,7 +246,10 @@ export function AgentAssistant() {
         ]);
         return;
       }
-      setMessages((prev) => [...prev, { id: createId(), role: 'draft', draft, status: 'pending' }]);
+      const draftId = createId();
+      setMessages((prev) => [...prev, { id: draftId, role: 'draft', draft, status: 'pending' }]);
+      // "폼에 추가"를 눌러야 들어간다 — 초안 카드로 눈을 끈다
+      useAgentChatStore.getState().attend('message', draftId);
       setTurns((prev) => [
         ...prev,
         { role: 'user', text: `[The user wrote work notes to turn into a report]\n${notes.trim()}` },

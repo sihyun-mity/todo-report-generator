@@ -14,6 +14,8 @@ type AgentInputBoxProps = {
   onSubmit: (text: string) => void;
   onStop?: () => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+  // 도우미로 넘어와 여기를 봐야 할 때 — 값이 바뀔 때마다 바깥으로 퍼지는 링을 다시 띄운다
+  attentionKey?: number | null;
   className?: string;
 };
 
@@ -30,6 +32,7 @@ export function AgentInputBox({
   onSubmit,
   onStop,
   textareaRef,
+  attentionKey,
   className,
 }: Readonly<AgentInputBoxProps>) {
   const inputId = useId();
@@ -70,11 +73,18 @@ export function AgentInputBox({
         submit();
       }}
       className={cn(
-        'rounded-2xl border border-zinc-200 bg-white transition-colors focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-500',
+        'relative rounded-2xl border border-zinc-200 bg-white transition-colors focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-500',
         disabled && 'bg-zinc-50 dark:bg-zinc-900/50',
         className
       )}
     >
+      {attentionKey != null && (
+        <span
+          key={attentionKey}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-agent-attention-ring rounded-2xl"
+        />
+      )}
       <label htmlFor={inputId} className="sr-only">
         {placeholder}
       </label>

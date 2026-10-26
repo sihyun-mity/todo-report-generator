@@ -110,6 +110,18 @@ export function AgentPanel({
   // ⌘K·홈 입력창 등에서 도우미를 부르면 입력칸으로 포커스를 옮긴다
   useSignalEffect(focusSignal > 0 ? String(focusSignal) : null, () => inputRef.current?.focus());
 
+  // 눈을 끌 곳 — 후속 동작이 필요한 카드면 그 카드까지 스크롤한다(효과는 아래 오버레이가 nonce 마다 다시 그린다)
+  const attention = useAgentChatStore((s) => s.attention);
+  useSignalEffect(attention ? String(attention.nonce) : null, () => {
+    if (attention?.target !== 'message' || !attention.messageId) return;
+    scrollRef.current
+      ?.querySelector(`[data-message-id="${attention.messageId}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+
+  // 아직 처리하지 않은 후속 동작 중 가장 최근 것 — 입력칸 위에 "무엇을 해야 하는지"를 고정해 보여 준다
+  const followUp = messages.findLast((m) => (m.role === 'confirm' || m.role === 'draft') && m.status === 'pending');
+
   // 새 내용이 오면 맨 아래로 따라간다 — 위로 올려 읽는 중이면(바닥에서 멀면) 그대로 둔다
   useEffect(() => {
     const el = scrollRef.current;
@@ -145,6 +157,14 @@ export function AgentPanel({
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
+      {/* 도우미로 넘어왔음을 알리는 테두리 빛 — nonce 를 key 로 다시 그려 매번 처음부터 재생한다(빈 장식 요소라 다시 그려도 상태가 없다) */}
+      {attention && (
+        <div
+          key={attention.nonce}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 animate-agent-attention-edge"
+        />
+      )}
       <div className="flex min-h-0 flex-1 flex-col">
         {/* 상단바와 같은 높이(h-14 + 아래 테두리) — 데스크톱에서 두 헤더의 줄이 이어진다 */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2.5 pl-4 dark:border-zinc-800">
@@ -250,7 +270,14 @@ export function AgentPanel({
                 </li>
               )}
               {messages.map((message) => (
-                <li key={message.id}>
+                <li key={message.id} data-message-id={message.id} className="relative">
+                  {attention?.target === 'message' && attention.messageId === message.id && (
+                    <span
+                      key={attention.nonce}
+                      aria-hidden
+                      className="pointer-events-none absolute -inset-1 animate-agent-attention-ring rounded-2xl"
+                    />
+                  )}
                   <AgentMessage
                     message={message}
                     isRunning={isRunning}
@@ -271,8 +298,25 @@ export function AgentPanel({
           )}
         </div>
 
-        {/* 대화 중에도 다음 할 일을 바로 고를 수 있게 — 상황 제안·빠른 작업을 입력칸 위 한 줄로 둔다 */}
-        {messages.length > 0 && !isRunning && (suggestions.length > 0 || quickActions.length > 0) && (
+        {/* 후속 동작 안내 — 확인 카드·초안이 기다리고 있으면 무엇을 해야 하는지 입력칸 위에 고정한다. 누르면 그 카드로 데려간다 */}
+        {followUp && (
+          <button
+            type="button"
+            onClick={() => useAgentChatStore.getState().attend('message', followUp.id)}
+            className="mx-3 mt-2 flex shrink-0 items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-left text-xs text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60"
+          >
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">
+              {followUp.role === 'confirm'
+                ? `${followUp.options.title} — 위 카드에서 ${followUp.options.confirmText ?? '확인'} 또는 취소를 눌러 주세요`
+                : '보고서 초안 — 확인하고 "폼에 추가"를 눌러 주세요'}
+            </span>
+            <span className="shrink-0 font-semibold">보기</span>
+          </button>
+        )}
+
+        {/* 대화 중에도 다음 할 일을 바로 고를 수 있게 — 상황 제안·빠른 작업을 입력칸 위 한 줄로 둔다(후속 동작이 기다릴 때는 안내만 둔다) */}
+        {messages.length > 0 && !isRunning && !followUp && (suggestions.length > 0 || quickActions.length > 0) && (
           <div className="flex shrink-0 [scrollbar-width:none] gap-2 overflow-x-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
             {suggestions.map((s) => (
               <button
@@ -297,6 +341,7 @@ export function AgentPanel({
         <div className="shrink-0 border-t border-zinc-200 p-3 dark:border-zinc-800">
           <AgentInputBox
             textareaRef={inputRef}
+            attentionKey={attention?.target === 'input' ? attention.nonce : null}
             placeholder={
               isReady
                 ? canWriteFromNotes

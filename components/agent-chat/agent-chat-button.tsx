@@ -13,7 +13,11 @@ export function AgentChatButton() {
   const isOpen = useAgentChatStore((s) => s.isOpen);
   const expanded = useAgentChatStore((s) => s.expanded);
   const suggestionCount = useAgentSuggestions().suggestions.length;
-  const reveal = () => useAgentChatStore.getState().reveal();
+  // 승인·초안처럼 사용자가 눌러야 할 일이 남아 있으면 추천보다 먼저 알린다
+  const followUpCount = useAgentChatStore((s) => s.followUpCount);
+  // 기다리는 후속 동작이 있으면 그 카드로, 아니면 입력칸으로 데려간다
+  const reveal = () =>
+    followUpCount > 0 ? useAgentChatStore.getState().showFollowUp() : useAgentChatStore.getState().reveal();
 
   return (
     <>
@@ -21,15 +25,27 @@ export function AgentChatButton() {
         <button
           type="button"
           onClick={reveal}
-          aria-label={`AI 도우미에게 부탁하기${suggestionCount > 0 ? `, 추천 ${suggestionCount}개` : ''}`}
+          aria-label={`AI 도우미에게 부탁하기${
+            followUpCount > 0
+              ? `, 확인 필요 ${followUpCount}개`
+              : suggestionCount > 0
+                ? `, 추천 ${suggestionCount}개`
+                : ''
+          }`}
           className="hidden h-9 w-72 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs text-zinc-500 transition-colors hover:border-zinc-300 hover:bg-zinc-50 lg:flex dark:border-zinc-700/50 dark:bg-card/50 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-[#2c2e33]"
         >
           <Sparkles size={14} className="shrink-0 text-blue-500" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">AI 도우미에게 부탁하기</span>
-          {suggestionCount > 0 && (
-            <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
-              추천 {suggestionCount}
+          {followUpCount > 0 ? (
+            <span className="shrink-0 animate-pulse rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+              확인 필요 {followUpCount}
             </span>
+          ) : (
+            suggestionCount > 0 && (
+              <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+                추천 {suggestionCount}
+              </span>
+            )
           )}
           <kbd className="shrink-0 rounded border border-zinc-200 px-1 font-sans text-[10px] text-zinc-400 dark:border-zinc-700">
             ⌘K
@@ -51,8 +67,13 @@ export function AgentChatButton() {
       >
         <Sparkles size={16} />
         <span className="hidden sm:inline">AI 도우미</span>
-        {suggestionCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-500 dark:border-zinc-950" />
+        {(followUpCount > 0 || suggestionCount > 0) && (
+          <span
+            className={cn(
+              'absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-zinc-950',
+              followUpCount > 0 ? 'animate-pulse bg-amber-500' : 'bg-blue-500'
+            )}
+          />
         )}
       </button>
     </>

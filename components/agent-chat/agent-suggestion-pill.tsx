@@ -28,6 +28,30 @@ export function AgentSuggestionPill() {
     return () => clearTimeout(timer);
   }, [topId]);
 
+  const followUpCount = useAgentChatStore((s) => s.followUpCount);
+
+  // 사용자가 눌러야 할 일(초안의 "폼에 추가" 등)이 도우미에 남아 있는데 도우미가 가려져 있으면 추천보다 먼저 알린다
+  if (followUpCount > 0 && !isOpen && !isRunning)
+    return (
+      <div
+        className={cn(
+          'pointer-events-none fixed inset-x-0 z-35 flex justify-center px-4',
+          'bottom-[calc(env(safe-area-inset-bottom)+5rem)] lg:bottom-6',
+          expanded && 'lg:hidden'
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => useAgentChatStore.getState().showFollowUp()}
+          className="pointer-events-auto flex animate-agent-pill-in items-center gap-2 rounded-full bg-amber-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg transition-colors hover:bg-amber-600"
+        >
+          <span className="h-2 w-2 animate-pulse rounded-full bg-white" aria-hidden />
+          AI 도우미에 확인할 일이 {followUpCount}개 있어요
+          <span className="underline underline-offset-2">보기</span>
+        </button>
+      </div>
+    );
+
   if (!top || shownId !== top.id || isOpen || isRunning) return null;
 
   const run = (suggestion: AgentSuggestion) => {

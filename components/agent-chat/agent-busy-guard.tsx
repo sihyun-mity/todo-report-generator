@@ -12,6 +12,9 @@ import { cn } from '@/utils';
 export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) {
   const isRunning = useAgentChatStore((s) => s.isRunning);
   const expanded = useAgentChatStore((s) => s.expanded);
+  // 확인 카드처럼 사용자가 눌러야 진행되는 단계면, 기다리는 이유와 그 카드로 가는 길을 알린다
+  // (모바일에서 시트를 닫아 두면 잠긴 이유를 모를 수 있다)
+  const followUpCount = useAgentChatStore((s) => s.followUpCount);
 
   return (
     <>
@@ -28,10 +31,22 @@ export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) 
             expanded && 'lg:pr-[400px]'
           )}
         >
-          <p className="flex items-center gap-2 rounded-full bg-zinc-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg dark:bg-zinc-100/90 dark:text-zinc-900">
-            <Loader2 size={14} className="animate-spin" aria-hidden />
-            AI 도우미가 작업하는 동안 화면 편집을 잠시 멈춰요
-          </p>
+          {followUpCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => useAgentChatStore.getState().showFollowUp()}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-lg transition-colors hover:bg-amber-600"
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-white" aria-hidden />
+              AI 도우미가 확인을 기다리고 있어요
+              <span className="underline underline-offset-2">보기</span>
+            </button>
+          ) : (
+            <p className="flex items-center gap-2 rounded-full bg-zinc-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg dark:bg-zinc-100/90 dark:text-zinc-900">
+              <Loader2 size={14} className="animate-spin" aria-hidden />
+              AI 도우미가 작업하는 동안 화면 편집을 잠시 멈춰요
+            </p>
+          )}
         </div>
       )}
     </>

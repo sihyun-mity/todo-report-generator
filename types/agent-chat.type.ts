@@ -72,9 +72,21 @@ export type AgentChatStore = {
   // 데스크톱(lg 이상)은 늘 오른쪽에 있다 — 펼친 패널 / 접은 레일. 이 기기에 기억한다.
   expanded: boolean;
   setExpanded: (expanded: boolean) => void;
-  // ⌘K·홈 입력창 등에서 "도우미를 보여 줘" — 데스크톱은 펼치고 모바일은 시트를 연다. 입력칸 포커스 신호도 올린다.
-  reveal: () => void;
+  // ⌘K·홈 입력창 등에서 "도우미를 보여 줘" — 데스크톱은 펼치고 모바일은 시트를 연다.
+  // attention 으로 사용자가 어디를 봐야 하는지 강조한다: input(입력칸 포커스 + 링, 기본) · panel(작업 시작 — 패널만) · none
+  reveal: (options?: { attention?: 'input' | 'panel' | 'none' }) => void;
   focusSignal: number;
+  // 사용자의 눈을 끌 곳 — 패널 테두리는 늘 빛나고, input 이면 입력 상자, message 면 그 카드(후속 동작이 필요한 확인·초안)에 링을 띄운다.
+  // nonce 가 바뀔 때마다 효과가 처음부터 다시 돈다.
+  attention: AgentAttention | null;
+  attend: (target: AgentAttention['target'], messageId?: string) => void;
+  // 아직 처리하지 않은 후속 동작(승인 대기 확인 카드·폼에 넣지 않은 초안) 수 — 패널을 접어 두었을 때 상단바에 알린다
+  followUpCount: number;
+  // 가장 최근 후속 동작 카드 id — 처리 중 안내·상단바에서 "보기"로 그 카드로 데려간다
+  followUpId: string | null;
+  setFollowUp: (count: number, id: string | null) => void;
+  // 도우미를 보여 주고 기다리는 후속 동작 카드로 눈을 끈다
+  showFollowUp: () => void;
   // 채팅이 요청을 처리하는 중 — 그동안 페이지 본문 조작을 막는다(AgentBusyGuard)
   isRunning: boolean;
   setRunning: (isRunning: boolean) => void;
@@ -117,3 +129,5 @@ export type AgentNotesDraft = {
 
 // 먼저 권하는 일 — send 는 그 문장을 보내고, notes 는 메모로 보고서 쓰기를 연다
 export type AgentRecommendation = { action: 'send' | 'notes'; text: string; reason: string };
+
+export type AgentAttention = { nonce: number; target: 'panel' | 'input' | 'message'; messageId?: string };
