@@ -11,6 +11,7 @@ import { cn } from '@/utils';
 // 상단바와 채팅 패널(멈추기·확인 카드)은 이 바깥이라 그대로 쓸 수 있다.
 export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) {
   const isRunning = useAgentChatStore((s) => s.isRunning);
+  const expanded = useAgentChatStore((s) => s.expanded);
 
   return (
     <>
@@ -18,7 +19,15 @@ export function AgentBusyGuard({ children }: Readonly<{ children: ReactNode }>) 
         {children}
       </div>
       {isRunning && (
-        <div role="status" className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-4">
+        // 상단바(h-14 = 56px)에서 16px 띄운다(top-18 = 72px) — 붙어 있으면 상단바 일부처럼 보였다
+        <div
+          role="status"
+          className={cn(
+            'pointer-events-none fixed inset-x-0 top-18 z-40 flex justify-center px-4',
+            // 펼친 패널(400px)을 뺀 본문 가운데에 둔다
+            expanded && 'lg:pr-[400px]'
+          )}
+        >
           <p className="flex items-center gap-2 rounded-full bg-zinc-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg dark:bg-zinc-100/90 dark:text-zinc-900">
             <Loader2 size={14} className="animate-spin" aria-hidden />
             AI 도우미가 작업하는 동안 화면 편집을 잠시 멈춰요

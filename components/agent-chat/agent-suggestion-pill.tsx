@@ -41,46 +41,55 @@ export function AgentSuggestionPill() {
     <div
       className={cn(
         'pointer-events-none fixed inset-x-0 z-35 flex justify-center px-4',
-        // 모바일은 하단 복사 바 위, 데스크톱은 접은 레일(56px)을 뺀 본문 가운데
-        'bottom-[calc(env(safe-area-inset-bottom)+5rem)] lg:bottom-6 lg:pr-14',
+        // 모바일은 하단 복사 바 위, 데스크톱은 본문 가운데 아래
+        'bottom-[calc(env(safe-area-inset-bottom)+5rem)] lg:bottom-6',
         expanded && 'lg:hidden'
       )}
     >
       <div
         role="status"
         className={cn(
-          'pointer-events-auto flex max-w-md min-w-0 animate-agent-pill-in items-center gap-1 rounded-full shadow-lg',
-          top.emphasis
-            ? 'rainbow-glow'
-            : 'border border-zinc-200 bg-white/95 backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95'
+          'pointer-events-auto max-w-md min-w-0 animate-agent-pill-in rounded-full shadow-lg',
+          top.emphasis ? 'rainbow-glow' : 'border border-zinc-200 dark:border-zinc-700'
         )}
       >
-        <button
-          type="button"
-          onClick={() => run(top)}
+        {/* 알약 전체가 실행 영역이다 — 실행 버튼을 알약 전체에 깔고(inset-0), 글은 그 위에 클릭을 통과시키며 얹고,
+            넘기기(X)는 그 영역 안에 따로 올린다(버튼 안에 버튼을 넣을 수 없어서) */}
+        <div
           className={cn(
-            'flex min-w-0 items-center gap-2 rounded-full py-2 pr-1 pl-3.5 text-left',
-            top.emphasis && 'bg-white/70 backdrop-blur-sm dark:bg-zinc-900/60'
+            'relative flex min-w-0 items-center gap-2 rounded-full py-2 pr-10 pl-3.5 transition-colors',
+            top.emphasis
+              ? 'bg-white/75 backdrop-blur-sm hover:bg-white/60 dark:bg-zinc-900/65 dark:hover:bg-zinc-900/50'
+              : 'bg-white/95 backdrop-blur-md hover:bg-zinc-50 dark:bg-zinc-900/95 dark:hover:bg-zinc-800'
           )}
         >
+          <button
+            type="button"
+            onClick={() => run(top)}
+            aria-label={`${top.title} — ${top.reason}`}
+            className="absolute inset-0 rounded-full"
+          />
           <Icon
             size={15}
-            className={cn('shrink-0', top.emphasis ? 'text-zinc-900 dark:text-white' : 'text-blue-500')}
+            className={cn(
+              'pointer-events-none relative shrink-0',
+              top.emphasis ? 'text-zinc-900 dark:text-white' : 'text-blue-500'
+            )}
             aria-hidden
           />
-          <span className="min-w-0">
+          <span className="pointer-events-none relative min-w-0" aria-hidden>
             <span className="block truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">{top.title}</span>
             <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">{top.reason}</span>
           </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => useAgentChatStore.getState().dismiss(top.id)}
-          aria-label="이 제안 넘기기"
-          className="mr-1.5 shrink-0 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-        >
-          <X size={13} aria-hidden />
-        </button>
+          <button
+            type="button"
+            onClick={() => useAgentChatStore.getState().dismiss(top.id)}
+            aria-label="이 제안 넘기기"
+            className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          >
+            <X size={13} aria-hidden />
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -3,9 +3,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ArrowUp,
-  ChevronsLeft,
   ChevronsRight,
-  Github,
   Lightbulb,
   Loader2,
   NotebookPen,
@@ -80,8 +78,9 @@ const iconButtonClass =
   'inline-flex shrink-0 items-center justify-center rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
 
 // AI 도우미 패널 — 서비스 에이전트의 본체.
-// - 데스크톱(lg 이상): 늘 오른쪽에 있다. 펼치면 400px 열, 접으면 56px 레일(아이콘·추천 개수)로 남는다 — 사라지지 않는다.
-//   AgentLayoutShell 이 같은 너비(lg:pr-[400px] / lg:pr-14)만큼 본문을 밀어 나란히 보인다. 헤더(h-14 + 아래 테두리)는 상단바와 같은 높이라 줄이 맞는다.
+// - 데스크톱(lg 이상): 펼치면 오른쪽 400px 열로 붙고 AgentLayoutShell 이 같은 너비(lg:pr-[400px])만큼 본문을 민다.
+//   헤더(h-14 + 아래 테두리)는 상단바와 같은 높이라 줄이 맞는다. 접으면 자리를 완전히 비운다 — 56px 레일로 남기던 때는
+//   열 대부분이 비어 본문 폭만 깎았다. 접은 동안은 상단바의 AgentLauncher(입력 모양 버튼·⌘K)와 제안 알약이 진입점이다.
 // - 모바일(lg 미만): 전체 화면 시트. 상단바 버튼·⌘K·홈 입력창·제안 알약으로 연다. 폼이 가려지므로 작성 중인 보고서 미리보기를 위에 둔다.
 // 비모달이라 배경을 깔지 않고, 바깥 클릭으로 닫지 않는다(모바일 시트만 Esc·back·X 로 닫는다).
 export function AgentPanel({
@@ -187,22 +186,14 @@ export function AgentPanel({
       className={cn(
         'z-45 flex-col bg-white dark:bg-zinc-950',
         isOpen ? 'fixed inset-0 flex h-dvh' : 'hidden',
-        'lg:fixed lg:inset-y-0 lg:right-0 lg:left-auto lg:flex lg:h-dvh lg:border-l lg:border-zinc-200 lg:dark:border-zinc-800',
-        expanded ? 'lg:w-[400px]' : 'lg:w-14'
+        // 데스크톱: 펼쳤을 때만 오른쪽 400px 열. 접으면 자리를 비우고 상단바의 AgentLauncher 로 다시 연다
+        expanded
+          ? 'lg:fixed lg:inset-y-0 lg:right-0 lg:left-auto lg:flex lg:h-dvh lg:w-[400px] lg:border-l lg:border-zinc-200 lg:dark:border-zinc-800'
+          : 'lg:hidden'
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {!expanded && (
-        <AgentRail
-          suggestionCount={suggestions.length}
-          quickActions={quickActions}
-          isRunning={isRunning}
-          onExpand={() => useAgentChatStore.getState().setExpanded(true)}
-          onRunAction={onRunAction}
-        />
-      )}
-
-      <div className={cn('flex min-h-0 flex-1 flex-col', !expanded && 'lg:hidden')}>
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* 상단바와 같은 높이(h-14 + 아래 테두리) — 데스크톱에서 두 헤더의 줄이 이어진다 */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2.5 pl-4 dark:border-zinc-800">
           <Sparkles size={16} className="shrink-0 text-blue-500" aria-hidden />
@@ -346,7 +337,7 @@ export function AgentPanel({
             {quickActions
               .filter((a) => !suggestions.some((s) => s.id === a.id))
               .map((a) => (
-                <AgentActionChip key={a.id} action={a} onRun={onRunAction} />
+                <AgentActionChip key={a.id} action={a} glow="ring" onRun={onRunAction} />
               ))}
           </div>
         )}
@@ -468,62 +459,5 @@ export function AgentPanel({
         )}
       </div>
     </aside>
-  );
-}
-
-type AgentRailProps = {
-  suggestionCount: number;
-  quickActions: ReadonlyArray<AgentQuickAction>;
-  isRunning: boolean;
-  onExpand: () => void;
-  onRunAction: (action: AgentAction) => void;
-};
-
-// 데스크톱에서 접었을 때의 레일 — 사라지지 않고 펼치기·추천 개수·자주 쓰는 작업(GitHub 가져오기 먼저)을 아이콘으로 남긴다
-function AgentRail({ suggestionCount, quickActions, isRunning, onExpand, onRunAction }: Readonly<AgentRailProps>) {
-  const github = quickActions.find((a) => a.emphasis);
-  return (
-    <div className="hidden h-full flex-col items-center lg:flex">
-      <div className="flex h-14 w-full shrink-0 items-center justify-center border-b border-zinc-200 dark:border-zinc-800">
-        <button
-          type="button"
-          onClick={onExpand}
-          aria-label="도우미 펼치기"
-          title="도우미 펼치기 (⌘K)"
-          className={iconButtonClass}
-        >
-          <ChevronsLeft size={16} aria-hidden />
-        </button>
-      </div>
-      <div className="flex flex-col items-center gap-2 py-3">
-        <button
-          type="button"
-          onClick={onExpand}
-          aria-label={`AI 도우미 열기${suggestionCount > 0 ? `, 추천 ${suggestionCount}개` : ''}`}
-          title="AI 도우미"
-          className="relative flex h-10 w-10 items-center justify-center rounded-xl text-blue-500 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/40"
-        >
-          {isRunning ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Sparkles size={18} aria-hidden />}
-          {suggestionCount > 0 && !isRunning && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
-              {suggestionCount}
-            </span>
-          )}
-        </button>
-        {github && (
-          <span className="rainbow-glow rounded-xl" title={github.label}>
-            <button
-              type="button"
-              onClick={() => onRunAction(github.action)}
-              disabled={isRunning}
-              aria-label={github.label}
-              className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-white/60 text-zinc-900 backdrop-blur-sm transition-colors hover:bg-white/45 disabled:opacity-50 dark:bg-zinc-900/50 dark:text-white dark:hover:bg-zinc-900/35"
-            >
-              <Github size={18} aria-hidden />
-            </button>
-          </span>
-        )}
-      </div>
-    </div>
   );
 }

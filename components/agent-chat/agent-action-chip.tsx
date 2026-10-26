@@ -21,14 +21,16 @@ function ActionIcon({
 type AgentActionChipProps = {
   action: AgentQuickAction;
   disabled?: boolean;
+  // 가로 스크롤 줄 안에서는 바깥으로 번지는 빛(blur)이 스크롤 경계에서 사각형으로 잘리므로 무지개 테두리만 남긴다
+  glow?: 'full' | 'ring';
   onRun: (action: AgentQuickAction['action']) => void;
 };
 
 // 빠른 작업 칩. 가장 많이 쓰는 GitHub 가져오기(emphasis)는 금일 헤더 버튼과 같은 무지개 빛으로 강조한다.
-export function AgentActionChip({ action, disabled, onRun }: Readonly<AgentActionChipProps>) {
+export function AgentActionChip({ action, disabled, glow = 'full', onRun }: Readonly<AgentActionChipProps>) {
   if (action.emphasis)
     return (
-      <span className="rainbow-glow shrink-0 rounded-full">
+      <span className={cn('rainbow-glow shrink-0 rounded-full', glow === 'ring' && 'after:hidden')}>
         <button
           type="button"
           onClick={() => onRun(action.action)}

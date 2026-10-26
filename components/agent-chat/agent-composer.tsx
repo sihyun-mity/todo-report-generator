@@ -110,12 +110,9 @@ export function AgentComposer() {
         </>
       )}
       {quickActions.length > 0 && (
-        // 무지개 빛(GitHub 칩)이 가로 스크롤 영역에 잘리지 않게 안쪽 여백을 둔다
+        // 넘치면 줄을 바꾼다 — 가로 스크롤(overflow)로 두면 GitHub 칩의 무지개 빛(blur 10px)이 스크롤 영역 경계에서 사각형으로 잘린다
         <div
-          className={cn(
-            '-mx-1 flex [scrollbar-width:none] gap-2 overflow-x-auto px-1 py-1',
-            isReady && 'mt-2 border-t border-zinc-100 pt-3 dark:border-zinc-800'
-          )}
+          className={cn('flex flex-wrap gap-2', isReady && 'mt-2 border-t border-zinc-100 pt-3 dark:border-zinc-800')}
         >
           {quickActions.map((action) => (
             <AgentActionChip key={action.id} action={action} disabled={isRunning} onRun={runAction} />
