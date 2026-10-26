@@ -21,6 +21,18 @@ export function ReportFormSkeleton() {
           </div>
         </header>
 
+        {/* AgentComposer 의 빠른 작업 칩 줄 — 칩 구성은 상태마다 달라 흔한 6개(GitHub·미완료→내일·저장·기록 내보내기·새소식·화면 모드)
+            너비로 자리를 잡아, 좁은 화면에서도 같은 줄 수로 꺾이게 한다. AI 입력 상자는 마운트 뒤 가용성 확인으로 정해져 여기서 알 수 없다 */}
+        <div className="mb-8 flex flex-wrap gap-2">
+          {[147, 114, 66, 110, 76, 100].map((width) => (
+            <div
+              key={width}
+              className="h-[30px] animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700"
+              style={{ width }}
+            />
+          ))}
+        </div>
+
         <ProjectListSkeleton title="금일 업무 진행 현황" accent="today" />
         <ProjectListSkeleton title="익일 업무 진행 예정" accent="tomorrow" showImportButton />
       </div>
