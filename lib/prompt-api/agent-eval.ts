@@ -1,4 +1,4 @@
-import type { AgentChange, AgentChatTurn, AgentTool, Project } from '@/types';
+import type { AgentChange, AgentChatTurn, AgentRequestScope, AgentTool, Project } from '@/types';
 import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
 import { useReportFormStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
@@ -19,6 +19,8 @@ type EvalTurn = {
   expect?: ReadonlyArray<string>;
   // 실행하면 실패
   forbid?: ReadonlyArray<string>;
+  // 답변이 이 패턴에 맞아야 한다 — 지금 상황(회원 여부·화면 등)을 알고 답하는지 본다
+  answer?: RegExp;
 };
 
 export type AgentEvalScenario = {
@@ -245,6 +247,26 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     name: '새소식 열기',
     turns: [{ say: '가장 최근 새소식 보여줘', expect: ['open_news'], forbid: ['list_news', 'set_theme'] }],
   },
+  { name: '새소식 순서로 열기', turns: [{ say: '두 번째 새소식 열어줘', expect: ['open_news'] }] },
+  // 새소식을 알려 준 뒤 "그거 보여줘"는 그 소식을 연다 — 본문을 다시 읽어 늘어놓았다
+  {
+    name: '새소식 가리켜 열기',
+    turns: [
+      { say: '가장 최근 새소식 알고싶어', expect: ['list_news', 'get_news'] },
+      { say: '그거 보여줘', expect: ['open_news'], forbid: ['get_news', 'list_news'] },
+    ],
+  },
+  { name: '새소식 화면 이동', turns: [{ say: '새소식 화면으로 가줘', expect: ['navigate'] }] },
+  // 지금 상황(Situation now)으로 답해야 하는 질문 — 도구 없이도 회원 여부·화면을 안다
+  {
+    name: '로그인 상태',
+    turns: [{ say: '나 지금 로그인 되어 있어?', expect: [], answer: /로그인|회원|게스트|비회원/ }],
+  },
+  { name: '지금 화면', turns: [{ say: '지금 무슨 화면이야?', expect: [], answer: /보고서|홈|작성/ }] },
+  {
+    name: '사용법(GitHub)',
+    turns: [{ say: 'GitHub에서 가져오기는 어떻게 써?', expect: [], answer: /GitHub|커밋/ }],
+  },
 ];
 
 // 화면을 옮기는 시나리오(새소식 열기) 뒤에는 시작 화면으로 돌아와 그 화면의 도구가 다시 등록될 때까지 기다린다
@@ -296,9 +318,15 @@ export type AgentEvalResult = {
 
 export async function runAgentEval({
   getTools,
+  getSituation,
   runs = 1,
   only,
-}: Readonly<{ getTools: () => ReadonlyArray<AgentTool>; runs?: number; only?: ReadonlyArray<string> }>) {
+}: Readonly<{
+  getTools: () => ReadonlyArray<AgentTool>;
+  getSituation?: (scope: AgentRequestScope) => Promise<Record<string, unknown>>;
+  runs?: number;
+  only?: ReadonlyArray<string>;
+}>) {
   const scenarios = AGENT_EVAL_SCENARIOS.filter((s) => !only || only.some((name) => s.name.includes(name)));
   const original = useReportFormStore.getState();
   const saved = { reportDate: original.reportDate, today: original.today, tomorrow: original.tomorrow };
@@ -326,6 +354,7 @@ export async function runAgentEval({
             const { turns } = await runAgentChatTurn({
               history,
               getTools,
+              getSituation,
               canWriteFromNotes: false,
               signal: new AbortController().signal,
               context: {
@@ -359,6 +388,8 @@ export async function runAgentEval({
               else if (writes.some((name) => !turn.expect!.includes(name)))
                 problem = `다른 쓰기 도구 실행: ${writes.join(', ')}`;
             }
+            if (!problem && turn.answer && !turn.answer.test(answer))
+              problem = `답변이 ${turn.answer} 에 맞지 않음: ${answer.slice(0, 80)}`;
             logs.push({ say: turn.say, tools, answer, problem });
           }
           const state = useReportFormStore.getState();

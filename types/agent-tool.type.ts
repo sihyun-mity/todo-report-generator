@@ -1,4 +1,4 @@
-import type { ConfirmOptions, WebMcpJsonSchema, WebMcpToolAnnotations, WebMcpToolResult } from '@/types';
+import type { AgentFollowUp, ConfirmOptions, WebMcpJsonSchema, WebMcpToolAnnotations, WebMcpToolResult } from '@/types';
 
 // 도구를 부른 쪽(WebMCP 에이전트 / 앱 안 채팅)이 실행에 넘기는 환경.
 // 되돌리기 어려운 동작은 execute 안에서 confirm 으로 사용자 승인을 받는다 — WebMCP 는 확인 다이얼로그로, 채팅은 대화 안 카드로 묻는다.
@@ -42,6 +42,13 @@ export type AgentTool = {
   extraKinds?: ReadonlyArray<AgentToolKind>;
   // 채팅 답변에 쓸 한 문장 — 변경 줄을 하나씩 옮기는 것보다 나을 때(프로젝트 이름 바꾸기·옮기기, 초기화). 성공했을 때만 부른다
   summarize?: (input: Record<string, unknown>, changes: ReadonlyArray<string>) => string;
+  // 채팅에서 이 도구로 답한 뒤 권할 다음 할 일(버튼·한 줄 질문) — 조회만 하고 끝나 "그거 보여줘"를 다시 말해야 했다.
+  // 성공한 결과로만 부른다. 버튼이 가리키는 도구가 지금 등록돼 있지 않으면 채팅이 뺀다
+  followUp?: (
+    input: Record<string, unknown>,
+    result: WebMcpToolResult,
+    scope: AgentRequestScope
+  ) => AgentFollowUp | null;
   execute: (input: Record<string, unknown>, context: AgentToolContext) => Promise<WebMcpToolResult>;
 };
 

@@ -32,7 +32,7 @@ export function AgentSuggestionPill() {
 
   const followUpCount = useAgentChatStore((s) => s.followUpCount);
 
-  // 사용자가 눌러야 할 일(초안의 "폼에 추가" 등)이 Nano에 남아 있는데 Nano가 가려져 있으면 추천보다 먼저 알린다
+  // 사용자가 눌러야 할 일(초안의 "추가" 등)이 Nano에 남아 있는데 Nano가 가려져 있으면 추천보다 먼저 알린다
   if (followUpCount > 0 && !isOpen && !isRunning)
     return (
       <div
@@ -131,7 +131,7 @@ export function AgentSuggestionPill() {
           <button
             type="button"
             onClick={() => useAgentChatStore.getState().dismiss(top.id)}
-            aria-label="이 제안 넘기기"
+            aria-label="이 추천 닫기"
             className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
           >
             <X size={13} aria-hidden />

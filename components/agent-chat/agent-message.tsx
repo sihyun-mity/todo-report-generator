@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { AlertCircle, Brain, Check, ChevronDown, Loader2, NotebookPen, Undo2 } from 'lucide-react';
-import type { AgentChatMessage, AgentNotesDraft, AgentThinkingStep } from '@/types';
+import type { AgentAction, AgentChatMessage, AgentNotesDraft, AgentThinkingStep } from '@/types';
 import { AGENT_CHANGE_VISIBLE_LINES } from '@/constants';
 import { cn } from '@/utils';
+import { AgentActionChip } from '.';
 
 // Nano 대화의 항목 하나 — 말풍선·생각 과정·도구 실행 줄(+변경 카드)·확인 카드·메모 초안·오류
 type AgentMessageProps = {
@@ -14,6 +15,8 @@ type AgentMessageProps = {
   onUndo: (id: string) => void;
   onApplyDraft: (id: string) => void;
   onDiscardDraft: (id: string) => void;
+  // 답변 아래 다음 할 일 버튼을 눌렀다
+  onRunAction: (action: AgentAction) => void;
 };
 
 export function AgentMessage({
@@ -23,6 +26,7 @@ export function AgentMessage({
   onUndo,
   onApplyDraft,
   onDiscardDraft,
+  onRunAction,
 }: Readonly<AgentMessageProps>) {
   switch (message.role) {
     case 'thinking':
@@ -45,12 +49,22 @@ export function AgentMessage({
     case 'assistant':
       return (
         // w-fit: 블록 요소라 짧은 답도 최대 폭까지 늘어나던 것을 글 길이에 맞춘다. 모델이 끝에 붙이는 빈 줄은 떼어 낸다.
-        <p className="w-fit max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-          {message.text.trim()}
-          {message.streaming && (
-            <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
+        <div className="space-y-2">
+          <p className="w-fit max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
+            {message.text.trim()}
+            {message.streaming && (
+              <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
+            )}
+          </p>
+          {/* 다음 할 일 — 답변을 다 쓴 뒤에만. 줄바꿈해 칩마다 온전히 보이게 한다 */}
+          {!message.streaming && message.actions && message.actions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {message.actions.map((a) => (
+                <AgentActionChip key={a.id} action={a} busy={isRunning} onRun={onRunAction} />
+              ))}
+            </div>
           )}
-        </p>
+        </div>
       );
     case 'tool':
       return (
@@ -111,7 +125,7 @@ export function AgentMessage({
             </div>
           ) : (
             <p className="mt-2 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">
-              {status === 'approved' ? '승인했어요' : '취소했어요'}
+              {status === 'approved' ? '진행했어요' : '취소했어요'}
             </p>
           )}
         </div>
@@ -302,24 +316,24 @@ function DraftCard({ draft, status, isRunning, onApply, onDiscard }: Readonly<Dr
             onClick={onDiscard}
             className="flex-1 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
-            버리기
+            취소
           </button>
           <button
             type="button"
             onClick={onApply}
-            // 처리 중에도 누를 수 있게 둔다(흐리게만) — 누르면 처리 중이라고 알린다. 버리기는 AI 를 쓰지 않아 늘 된다
+            // 처리 중에도 누를 수 있게 둔다(흐리게만) — 누르면 처리 중이라고 알린다. 취소는 AI 를 쓰지 않아 늘 된다
             aria-disabled={isRunning || undefined}
             className={cn(
               'flex-1 rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600',
               isRunning && 'opacity-40'
             )}
           >
-            폼에 추가
+            추가
           </button>
         </div>
       ) : (
         <p className="mt-2 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">
-          {status === 'applied' ? '폼에 추가했어요' : '버렸어요'}
+          {status === 'applied' ? '보고서에 추가했어요' : '취소했어요'}
         </p>
       )}
     </div>

@@ -575,6 +575,25 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
       'Return the saved report for the given date: weekday (day), when it was saved (savedAt), counts, and the today and tomorrow sections with tasks, progress and details.',
     inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
+    // 지난 보고서를 읽어 준 뒤 그대로 폼에 불러와 이어 쓸 수 있게 버튼을 둔다(불러오기는 확인 카드를 거친다)
+    followUp: (input) =>
+      typeof input.date === 'string'
+        ? {
+            actions: [
+              {
+                id: `load-report-${input.date}`,
+                label: '이 보고서 폼으로 불러오기',
+                action: {
+                  type: 'tool',
+                  tool: 'load_report',
+                  title: '저장된 보고서 불러오기',
+                  input: { date: input.date },
+                },
+                needsAi: false,
+              },
+            ],
+          }
+        : null,
     execute: async (input) => {
       const date = parseDateKeyInput(input.date, 'date');
       if (typeof date !== 'string') return toolError(date.error);

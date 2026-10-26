@@ -107,7 +107,7 @@ export function AgentSuggestionCard({ suggestion, busy, onRun, onDismiss }: Read
         <button
           type="button"
           onClick={() => onDismiss(suggestion)}
-          aria-label="이 제안 넘기기"
+          aria-label="이 추천 닫기"
           className="absolute top-1.5 right-1.5 rounded-full p-1 text-zinc-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-zinc-600 focus-visible:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-300"
         >
           <X size={12} aria-hidden />

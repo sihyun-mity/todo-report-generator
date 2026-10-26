@@ -127,7 +127,7 @@ export function useAgentSuggestions(): {
   if (pathname === '/whats-new' && has('list_news'))
     all.push({
       id: 'news-summary',
-      title: '최근 새소식 요약 듣기',
+      title: '최근 새소식 요약 보기',
       reason: '최근 업데이트를 짧게 정리해 드려요',
       action: { type: 'prompt', text: '최근 새소식 3개를 요약해줘', fresh: true },
       needsAi: true,
@@ -144,7 +144,7 @@ export function useAgentSuggestions(): {
     all.push({
       id: 'notifications',
       title: '작성 알림 설정 보기',
-      reason: '평일 오후 4시에 미작성 알림을 받을 수 있어요',
+      reason: '평일 오후 4시에 보고서를 쓰지 않았으면 알려 드려요',
       action: { type: 'tool', tool: 'navigate', title: '화면 이동', input: { page: 'settings_notifications' } },
       needsAi: false,
     });

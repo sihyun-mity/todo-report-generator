@@ -66,6 +66,8 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   pathname: '/',
   setPathname: (pathname) => set((s) => ({ pathname, lastNewsId: newsIdFromPath(pathname) ?? s.lastNewsId })),
   lastNewsId: null,
+  mentionedNewsId: null,
+  setMentionedNewsId: (mentionedNewsId) => set({ mentionedNewsId }),
   request: null,
   submit: (action, { reveal = true } = {}) => {
     set((s) => ({ request: { id: (s.request?.id ?? 0) + 1, action } }));

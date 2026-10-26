@@ -19,15 +19,22 @@ import {
   runAgentChatTurn,
   structureNotes,
 } from '@/lib/prompt-api';
-import { agentToolsFor } from '@/lib/webmcp';
+import { agentToolsFor, parseToolUnavailable } from '@/lib/webmcp';
 import { useAgentChatStore, useAgentToolsStore, useReportFormStore } from '@/stores';
 import { createId } from '@/utils';
-import { AgentPanel, useAgentSuggestions, useGlobalAgentTools } from '.';
+import { AgentPanel, useAgentSituation, useAgentSuggestions, useGlobalAgentTools } from '.';
+
+// 대화에서 다룬 새소식(mentionedNewsId)을 이어 가는 도구 — 이 밖의 도구를 실행하면 "그거"가 가리키던 소식을 잊는다
+const NEWS_TOOL_NAMES: ReadonlyArray<string> = ['list_news', 'get_news', 'open_news'];
+
+// Nano가 물은 다음 할 일을 받아들이는 짧은 말("응", "보여줘", "네 열어주세요")
+const ACCEPT_OFFER =
+  /^(응|어|엉|네|넵|넹|예|좋아|좋아요|그래|그래요|ㅇㅇ|ㅇㅋ|오케이|ok|okay|yes|부탁해|부탁해요)?[\s,.!~]*(그거|그걸|그것|이거|그\s*소식)?\s*((보여|열어|띄워|해)\s*(줘|주세요|줄래|봐)|그렇게\s*해\s*(줘|주세요)|볼래|볼게|볼게요)?[\s.!~요]*$/i;
 
 // 모델이 던진 오류를 사용자 문구로 바꾼다
 const errorMessage = (error: unknown) => {
   if (error instanceof DOMException && error.name === 'QuotaExceededError')
-    return '대화가 길어져 AI가 더 읽을 수 없어요. 새 대화를 시작해 주세요.';
+    return '대화가 길어져 더 이어 갈 수 없어요. 새 대화를 시작해 주세요.';
   if (error instanceof DOMException && error.name === 'TimeoutError')
     return 'AI 응답이 너무 오래 걸려 멈췄어요. 다시 시도해 주세요.';
   return 'AI 응답을 만들지 못했어요. 다시 시도해 주세요.';
@@ -39,6 +46,12 @@ const errorMessage = (error: unknown) => {
 export function AgentAssistant() {
   useGlobalAgentTools();
   useHistoryAgentTools();
+  const getSituation = useAgentSituation();
+  // 등록 시점에 한 번 만드는 개발용 회귀 실행기가 최신 함수를 부르게
+  const situationRef = useRef(getSituation);
+  useEffect(() => {
+    situationRef.current = getSituation;
+  });
 
   const setRunning = useAgentChatStore((s) => s.setRunning);
   const availability = useAgentChatStore((s) => s.availability);
@@ -56,6 +69,8 @@ export function AgentAssistant() {
   const [isContextTrimmed, setIsContextTrimmed] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
+  // 마지막 답변이 "자세히 보시겠어요?"처럼 물은 다음 할 일 — 바로 다음 메시지가 받아들이는 말이면 모델 없이 실행한다
+  const offeredRef = useRef<AgentAction | null>(null);
   // 대화 안 확인 카드의 응답 대기 — 카드 id → resolve
   const pendingConfirms = useRef(new Map<string, (ok: boolean) => void>());
   // 변경 카드의 되돌리기 — 도구 메시지 id → undo
@@ -99,6 +114,7 @@ export function AgentAssistant() {
         return runAgentEval({
           ...options,
           getTools: () => agentToolsFor(useAgentToolsStore.getState().tools, 'chat'),
+          getSituation: (scope) => situationRef.current(scope),
         });
       },
     });
@@ -184,6 +200,15 @@ export function AgentAssistant() {
       notifyBusy();
       return;
     }
+    // Nano가 방금 "자세히 보시겠어요?"라고 물었고 받아들이는 말이면 그 버튼을 바로 실행한다 — 모델에 맡기면
+    // "응"을 새 요청으로 보고 엉뚱한 의도로 갈라지곤 했다. 다른 말이면 묻던 것은 잊고 평소처럼 처리한다
+    const offered = fresh ? null : offeredRef.current;
+    offeredRef.current = null;
+    if (offered && ACCEPT_OFFER.test(text.trim())) {
+      setMessages((prev) => [...prev, { id: createId(), role: 'user', text: text.trim() }]);
+      runAction(offered);
+      return;
+    }
     if (canWriteFromNotes && looksLikeWorkNotes(text)) {
       void submitNotes(text);
       return;
@@ -208,12 +233,17 @@ export function AgentAssistant() {
     // 도구가 실행 중에 알린 변경 — 도구가 끝나면 그 메시지에 붙인다
     let pendingChange: AgentChange | null = null;
     try {
-      const { turns: added, route } = await runAgentChatTurn({
+      const {
+        turns: added,
+        route,
+        followUp,
+      } = await runAgentChatTurn({
         history,
         // 부탁 표현("~해줘" 등)이 있으면 업무 메모 의도를 아예 후보에서 뺀다 — 앞 대화가 메모 위주면 모델이
         // "지난주 보고서 요약해줘"까지 메모로 골랐다
         canWriteFromNotes: canWriteFromNotes && !hasRequestExpression(text),
         getTools: () => agentToolsFor(useAgentToolsStore.getState().tools, 'chat'),
+        getSituation,
         context: {
           confirm: requestConfirm,
           reportChange: (change) => {
@@ -224,6 +254,7 @@ export function AgentAssistant() {
         // 앞 대화와 관계없는 새 요청이라 모델이 앞 대화 없이 시작했다 — 화면의 앞 대화도 비운다(startFresh 와 같은 규칙:
         // 처리하지 않은 후속 동작(폼에 넣지 않은 초안·승인 대기 카드)이 있으면 화면은 두고 모델에 넘기는 기록만 새로 시작한다)
         onFreshStart: () => {
+          useAgentChatStore.getState().setMentionedNewsId(null);
           before = [];
           history = history.slice(-1);
           setTurns(history);
@@ -257,7 +288,9 @@ export function AgentAssistant() {
           pendingChange = null;
           setMessages((prev) => [...prev, { id, role: 'tool', title: tool.title, status: 'running' }]);
         },
-        onToolEnd: (_tool, result) => {
+        onToolEnd: (tool, result) => {
+          // 대화가 새소식에서 다른 일로 넘어가면 "그거"는 더 이상 그 소식이 아니다
+          if (!NEWS_TOOL_NAMES.includes(tool.name)) useAgentChatStore.getState().setMentionedNewsId(null);
           if (!toolMessageId) return;
           const change: AgentChange | null = pendingChange;
           if (change?.undo) undoFns.current.set(toolMessageId, change.undo);
@@ -284,6 +317,10 @@ export function AgentAssistant() {
         await showNotesDraft(text, controller);
       } else {
         setTurns([...history, ...added]);
+        // 답변 뒤에 다음 할 일 버튼을 단다. 한 줄 질문으로 물었으면 "응"만으로도 첫 버튼을 실행하게 기억해 둔다
+        const answeredId = answerId as string | null;
+        if (followUp && answeredId) patchMessage(answeredId, { actions: followUp.actions });
+        offeredRef.current = followUp?.ask ? (followUp.actions[0]?.action ?? null) : null;
         // 빠진 정보를 되물었다 — 바로 답할 수 있게 입력칸으로 데려간다(다음 메시지가 그 답으로 이어진다)
         if (route === 'question') useAgentChatStore.getState().reveal({ attention: 'input' });
       }
@@ -313,7 +350,7 @@ export function AgentAssistant() {
     }
   };
 
-  // 업무 메모를 정리해 보고서 초안 카드로 보여 준다. 폼에는 사용자가 "폼에 추가"를 눌러야 들어간다.
+  // 업무 메모를 정리해 보고서 초안 카드로 보여 준다. 폼에는 사용자가 "추가"를 눌러야 들어간다.
   const showNotesDraft = async (notes: string, controller: AbortController) => {
     try {
       const { today, tomorrow } = useReportFormStore.getState();
@@ -332,12 +369,12 @@ export function AgentAssistant() {
       }
       const draftId = createId();
       setMessages((prev) => [...prev, { id: draftId, role: 'draft', draft, status: 'pending' }]);
-      // "폼에 추가"를 눌러야 들어간다 — 초안 카드로 눈을 끈다
+      // "추가"를 눌러야 들어간다 — 초안 카드로 눈을 끈다
       useAgentChatStore.getState().attend('message', draftId);
       setTurns((prev) => [
         ...prev,
         { role: 'user', text: `[The user wrote work notes to turn into a report]\n${notes.trim()}` },
-        { role: 'assistant', text: '메모를 정리해 보고서 초안을 만들었어요. 확인하고 폼에 추가해 주세요.' },
+        { role: 'assistant', text: '메모를 보고서 초안으로 정리했어요. 확인한 뒤 추가해 주세요.' },
       ]);
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -368,7 +405,7 @@ export function AgentAssistant() {
     const message = messages.find((m) => m.id === id);
     const tool = useAgentToolsStore.getState().tools.find((t) => t.name === 'fill_report');
     if (message?.role !== 'draft' || message.status !== 'pending' || !tool || isRunning) {
-      if (!tool) toast.error('보고서 작성 화면에서만 폼에 넣을 수 있어요.');
+      if (!tool) toast.error('초안은 보고서 작성 화면에서만 추가할 수 있어요.');
       else if (isRunning) notifyBusy();
       return;
     }
@@ -376,10 +413,7 @@ export function AgentAssistant() {
     const toolMessageId = createId();
     // 실행 중 도구가 알린 변경(콜백에서 채운다)
     const captured: { change: AgentChange | null } = { change: null };
-    setMessages((prev) => [
-      ...prev,
-      { id: toolMessageId, role: 'tool', title: '메모 초안을 폼에 추가', status: 'running' },
-    ]);
+    setMessages((prev) => [...prev, { id: toolMessageId, role: 'tool', title: '보고서 초안 추가', status: 'running' }]);
     try {
       const result = await tool.execute(
         { today: message.draft.today, tomorrow: message.draft.tomorrow, mode: 'append' },
@@ -413,6 +447,8 @@ export function AgentAssistant() {
     setTurns([]);
     setIsContextTrimmed(false);
     undoFns.current.clear();
+    offeredRef.current = null;
+    useAgentChatStore.getState().setMentionedNewsId(null);
   };
 
   // 변경 카드의 되돌리기. 그사이 사용자가 직접 고쳤으면 덮어쓰지 않고 알린다. 모델도 알 수 있게 대화 기록에 남긴다.
@@ -468,9 +504,15 @@ export function AgentAssistant() {
         ...(applied ? { changes: applied.lines, undo: applied.undo ? 'available' : undefined } : {}),
       });
       const text = result.content.map((c) => c.text).join('\n');
-      // 바꾸는 것 없이 끝난 결과(예: 가져올 미완료 업무 없음)는 사용자에게도 알린다
-      if (result.isError) setMessages((prev) => [...prev, { id: createId(), role: 'error', text }]);
-      else if (!applied && /"changed":false/.test(text)) {
+      // 바꾸는 것 없이 끝난 결과(예: 가져올 미완료 업무 없음)·화면 이동 결과·할 수 없는 이유는 사용자에게도 알린다
+      const unavailable = parseToolUnavailable(result);
+      if (unavailable)
+        setMessages((prev) => [
+          ...prev,
+          { id: createId(), role: 'assistant', text: `${unavailable.reason} ${unavailable.offer}`, streaming: false },
+        ]);
+      else if (result.isError) setMessages((prev) => [...prev, { id: createId(), role: 'error', text }]);
+      else if (!applied && (/"changed":false/.test(text) || tool.kind === 'navigate')) {
         const message = /"message":"([^"]+)"/.exec(text)?.[1];
         if (message)
           setMessages((prev) => [...prev, { id: createId(), role: 'assistant', text: message, streaming: false }]);
@@ -550,7 +592,7 @@ export function AgentAssistant() {
       await downloadPromptModel(setDownloadProgress);
       useAgentChatStore.getState().setAvailability(await getPromptApiAvailability());
     } catch {
-      toast.error('온디바이스 AI 모델을 내려받지 못했습니다.');
+      toast.error('AI 모델을 내려받지 못했어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setDownloadProgress(null);
     }

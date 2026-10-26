@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AgentTool, News, Theme } from '@/types';
+import type { AgentQuickAction, AgentTool, News, Theme, WebMcpToolResult } from '@/types';
 import { AGENT_NAVIGATE_WAIT_MS, AGENT_NEWS_CONTENT_MAX_CHARS, AGENT_NEWS_LIST_LIMIT, AGENT_PAGES } from '@/constants';
 import { useAgentTools, useRouter } from '@/hooks';
 import { isGuestMode } from '@/lib/guest';
@@ -49,6 +49,32 @@ const rankFromRequest = (request: string) => {
   if (digits) return Number(digits[1]);
   const word = /(첫|두|세|네|다섯)\s*번째/.exec(request) ?? /(첫)\s*(새\s*소식|소식|공지)/.exec(request);
   return word ? ORDINALS[word[1]] : null;
+};
+// 대화에서 방금 다룬 소식을 가리켜 열어 달라는 요청("그거 보여줘") — 본문을 읽어 채팅으로 늘어놓지 않고 그 소식 화면을 연다.
+// 새소식을 다룬 직후에만(mentionedNewsId) 소식으로 본다 — 보고서 얘기 뒤의 "그거 보여줘"까지 소식으로 열지 않게
+const POINTING_REQUEST =
+  /그거|그것|그걸|이거|이것|이걸|저거|[이그저]\s*(새\s*소식|소식|공지|글)|방금\s*(말한|그|본)|말한\s*(거|것|소식)/;
+const opensMentionedNews = (request: string) =>
+  !!useAgentChatStore.getState().mentionedNewsId &&
+  POINTING_REQUEST.test(request) &&
+  OPEN_REQUEST.test(request) &&
+  !NOT_OPEN_REQUEST.test(request) &&
+  rankFromRequest(request) === null;
+const opensNews = (request: string) => opensOneNews(request) || opensMentionedNews(request);
+
+// 답변 뒤 버튼 — 소식 하나를 상세 화면으로 연다
+const openNewsAction = (id: string, label: string): AgentQuickAction => ({
+  id: `open-news-${id}`,
+  label,
+  action: { type: 'tool', tool: 'open_news', title: '새소식 열기', input: { id } },
+  needsAi: false,
+});
+const resultJson = (result: WebMcpToolResult) => {
+  try {
+    return JSON.parse(result.content.map((c) => c.text).join('')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 };
 
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
@@ -206,14 +232,37 @@ export function useGlobalAgentTools() {
         // 보고 있는(방금 본) 소식을 가리키면 get_news 가 그 소식을 바로 읽는다 — 목록도 함께 가리킬 때만 남긴다.
         // 가리킬 소식이 없으면 get_news 의 unavailable 이 되묻는다(목록으로 조용히 대신하지 않는다)
         requires: (request, scope) =>
-          !opensOneNews(request) &&
+          !opensNews(request) &&
           (newsIdFromPath(scope.path)
             ? !CURRENT_NEWS_REQUEST.test(request) || NEWS_LIST_REQUEST.test(request)
             : !pointsAtOneNews(request)),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
+        // 목록을 답한 뒤 가장 새 소식을 바로 열 수 있게 묻고 버튼을 둔다
+        followUp: (_input, result, scope) => {
+          const newest = (resultJson(result)?.news as Array<{ id: string; title: string }> | undefined)?.[0];
+          if (!newest) return null;
+          return {
+            ask: `'${newest.title}' 소식을 자세히 보시겠어요?`,
+            actions: [
+              openNewsAction(newest.id, '가장 최근 소식 열기'),
+              ...(scope.path === AGENT_PAGES.whats_new.path
+                ? []
+                : [
+                    {
+                      id: 'go-whats-new',
+                      label: '새소식 목록 보기',
+                      action: { type: 'tool', tool: 'navigate', title: '화면 이동', input: { page: 'whats_new' } },
+                      needsAi: false,
+                    } satisfies AgentQuickAction,
+                  ]),
+            ],
+          };
+        },
         execute: async () => {
           const { isMember, items } = await queryClient.fetchQuery(queries.news.list());
+          // 목록을 읽으면 Nano는 가장 새 소식부터 말한다 — 이어지는 "그거 보여줘"는 그 소식이다
+          useAgentChatStore.getState().setMentionedNewsId(items[0]?.id ?? null);
           return toolText({
             viewer: isMember ? 'member' : 'guest',
             total: items.length,
@@ -232,7 +281,7 @@ export function useGlobalAgentTools() {
         description:
           'Return the body (markdown) of one news item. id comes from list_news, currentNewsId when the user is reading one (이 소식), or lastViewedNewsId for the news the user just read (아까 본 소식).',
         // "가장 최근 새소식 보여줘"는 화면으로 연다(open_news) — 본문을 읽어 채팅으로 답하지 않는다
-        requires: (request) => !opensOneNews(request),
+        requires: (request) => !opensNews(request),
         // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다.
         // 요청할 때의 화면 기준이라 응답을 기다리는 사이 화면을 옮겨도 그 소식을 읽는다. 상세 화면 밖이면 마지막으로 본 소식을 넘긴다.
         inputContext: (scope) => {
@@ -266,6 +315,12 @@ export function useGlobalAgentTools() {
           required: ['id'],
         },
         annotations: { readOnlyHint: true },
+        // 본문을 채팅으로 읽어 준 뒤, 그 소식 화면이 아니면 화면에서 열 수 있게 묻는다
+        followUp: (_input, result, scope) => {
+          const read = resultJson(result);
+          if (typeof read?.id !== 'string' || newsIdFromPath(scope.path) === read.id) return null;
+          return { ask: '화면에서 자세히 보시겠어요?', actions: [openNewsAction(read.id, '이 소식 열기')] };
+        },
         execute: async (input) => {
           if (typeof input.id !== 'string' || !isNewsId(input.id))
             return toolError('id 는 list_news 결과의 소식 id 여야 합니다.');
@@ -275,6 +330,7 @@ export function useGlobalAgentTools() {
               reason: '그 새소식은 찾을 수 없거나 지금 볼 수 없는 소식이에요.',
               offer: '대신 최근 새소식을 살펴볼까요?',
             });
+          useAgentChatStore.getState().setMentionedNewsId(item.id);
           return toolText({
             id: item.id,
             title: item.title,
@@ -287,14 +343,17 @@ export function useGlobalAgentTools() {
         name: 'open_news',
         title: '새소식 열기',
         kind: 'navigate',
-        // "보여줘"는 조회로 분류되곤 해서 조회 의도에도 둔다 — 소식 하나를 순서로 집어 열어 달라고 할 때만 후보다
+        // "보여줘"는 조회로 분류되곤 해서 조회 의도에도 둔다 — 소식 하나를 순서로 집거나 방금 다룬 소식을 가리켜 열어 달라고 할 때만 후보다
         extraKinds: ['read'],
-        requires: (request) => opensOneNews(request),
+        requires: (request) => opensNews(request),
         description:
-          'Open the detail screen of one news item (새소식) so the user can read it. rank 1 = the newest (가장 최근·최신), 2 = the second newest. Use this for 보여줘/열어줘 on one news item.',
+          'Open the detail screen of one news item (새소식) so the user can read it. rank 1 = the newest (가장 최근·최신), 2 = the second newest. Also opens the news just talked about in the conversation (그거 보여줘). Use this for 보여줘/열어줘 on one news item.',
         inputSchema: {
           type: 'object',
-          properties: { rank: { type: 'integer', minimum: 1, description: '1 = newest, 2 = second newest' } },
+          properties: {
+            rank: { type: 'integer', minimum: 1, description: '1 = newest, 2 = second newest' },
+            id: { type: 'string', description: 'News id from list_news, instead of rank' },
+          },
         },
         execute: async (input, context) => {
           // 채팅에서는 순서를 요청 문장에서 읽는다 — 모델이 채운 값보다 정확하다. "가장 최근"·"최신"·"마지막"은 가장 새 소식이다
@@ -307,7 +366,16 @@ export function useGlobalAgentTools() {
               reason: `지금 볼 수 있는 새소식은 ${items.length}개예요.`,
               offer: '대신 가장 최근 새소식을 열까요?',
             });
-          const item = items[rank - 1];
+          // "그거 보여줘" — 방금 대화에서 다룬 소식(볼 수 있는 소식일 때만)
+          const mentionedId = useAgentChatStore.getState().mentionedNewsId;
+          const mentioned =
+            context.request && opensMentionedNews(context.request)
+              ? items.find((n) => n.id === mentionedId)
+              : undefined;
+          // 채팅 밖(답변 뒤 버튼·WebMCP)에서는 id 로 집을 수 있다 — 채팅에서는 모델이 지어낸 id 일 수 있어 쓰지 않는다
+          const byId = context.request ? undefined : items.find((n) => n.id === input.id);
+          const item = mentioned ?? byId ?? items[rank - 1];
+          useAgentChatStore.getState().setMentionedNewsId(item.id);
           const path = `/whats-new/${item.id}`;
           if (window.location.pathname === path)
             return toolText({ moved: false, path, id: item.id, message: `이미 '${item.title}' 새소식을 보고 있어요.` });

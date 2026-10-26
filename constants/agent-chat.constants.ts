@@ -14,6 +14,9 @@ export const AGENT_PAGES = {
   settings_withdraw: { path: '/settings/withdraw', label: '회원 탈퇴', memberOnly: true },
 } as const satisfies Record<string, { path: string; label: string; memberOnly?: boolean; guestOnly?: boolean }>;
 
+/** 매 요청의 지금 상황(새소식 수·최신 제목)에 쓰는 새소식 목록을 다시 받지 않고 쓰는 시간 — 요청마다 Server Action 을 부르지 않게 */
+export const AGENT_SITUATION_NEWS_STALE_MS = 5 * 60_000;
+
 /** `navigate` 뒤 주소가 바뀔 때까지 기다리는 최대 시간 — 넘기면 이동 중인 것으로 보고 결과를 돌려준다 */
 export const AGENT_NAVIGATE_WAIT_MS = 5_000;
 

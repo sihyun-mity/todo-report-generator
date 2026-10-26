@@ -304,6 +304,7 @@ export function AgentPanel({
                         onUndo={onUndo}
                         onApplyDraft={onApplyDraft}
                         onDiscardDraft={onDiscardDraft}
+                        onRunAction={onRunAction}
                       />
                     </li>
                   ))}
@@ -342,7 +343,7 @@ export function AgentPanel({
             <span className="min-w-0 flex-1 truncate">
               {followUp.role === 'confirm'
                 ? `${followUp.options.title} — 위 카드에서 ${followUp.options.confirmText ?? '확인'} 또는 취소를 눌러 주세요`
-                : '보고서 초안 — 확인하고 "폼에 추가"를 눌러 주세요'}
+                : '보고서 초안을 확인하고 "추가"를 눌러 주세요'}
             </span>
             <span className="shrink-0 font-semibold">보기</span>
           </button>

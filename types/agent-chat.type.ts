@@ -4,7 +4,8 @@ import type { AgentTool, ConfirmOptions } from '@/types';
 export type AgentChatMessage =
   // cancelled — 사용자가 멈춘 요청. 대화 기록(모델에게 넘기는 것)에서는 빠진다
   | { id: string; role: 'user'; text: string; cancelled?: boolean }
-  | { id: string; role: 'assistant'; text: string; streaming: boolean }
+  // actions — 답변 뒤에 권하는 다음 할 일 버튼(예: 새소식 목록을 답한 뒤 "가장 최근 소식 열기")
+  | { id: string; role: 'assistant'; text: string; streaming: boolean; actions?: ReadonlyArray<AgentQuickAction> }
   | {
       id: string;
       role: 'tool';
@@ -69,6 +70,10 @@ export type AgentQuickAction = {
   emphasis?: boolean;
 };
 
+// 답변 뒤의 다음 할 일 — actions 는 답변 아래 버튼, ask 는 답변 끝에 붙이는 한 줄 질문("자세히 보시겠어요?").
+// ask 가 있으면 사용자가 "응"·"보여줘"처럼 받아들이기만 해도 첫 버튼을 실행한다(모델을 거치지 않는다)
+export type AgentFollowUp = { ask?: string; actions: ReadonlyArray<AgentQuickAction> };
+
 export type AgentChatStore = {
   // 모바일(lg 미만) 전체 화면 시트 열림
   isOpen: boolean;
@@ -113,6 +118,10 @@ export type AgentChatStore = {
   setPathname: (pathname: string) => void;
   // 이번 문서에서 마지막으로 연 새소식 id — 상세 화면을 벗어난 뒤 "아까 보던 소식"을 가리켜도 Nano가 찾게 한다
   lastNewsId: string | null;
+  // 대화에서 마지막으로 다룬 새소식 id(목록을 읽었으면 가장 새 소식) — "그거 보여줘"가 그 소식을 열게 한다.
+  // 새소식이 아닌 도구를 실행하거나 새 대화를 시작하면 비운다
+  mentionedNewsId: string | null;
+  setMentionedNewsId: (id: string | null) => void;
   // 다른 곳(홈 입력창·제안 알약)이 Nano에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
   request: { id: number; action: AgentAction } | null;
   // reveal: false 면 Nano를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일

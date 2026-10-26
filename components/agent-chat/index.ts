@@ -11,6 +11,7 @@ export * from './agent-panel';
 export * from './agent-path-tracker';
 export * from './agent-suggestion-pill';
 export * from './report-live-preview';
+export * from './use-agent-situation';
 export * from './use-agent-suggestions';
 export * from './use-global-agent-tools';
 export * from './use-speech-input';
