@@ -13,6 +13,8 @@ import { AgentActionChip, AgentInputBox, useAgentSuggestions } from '.';
 export function AgentComposer() {
   const availability = useAgentChatStore((s) => s.availability);
   const isRunning = useAgentChatStore((s) => s.isRunning);
+  // 보낸 요청을 Nano가 시작하기 전 — 여기서 로딩을 보여 주다가 첫 생각을 시작하면 Nano로 넘긴다(바통 터치)
+  const handoff = useAgentChatStore((s) => s.handoff);
   const { quickActions } = useAgentSuggestions();
   const isReady = availability === 'available';
 
@@ -25,8 +27,11 @@ export function AgentComposer() {
         <AgentInputBox
           placeholder="요청하거나 오늘 한 일을 적어 보세요"
           hint="예: 지난주 보고서 요약해줘 · 로그인 오류 고쳤고 결제 리팩터링 절반 했어"
-          isRunning={isRunning}
-          onSubmit={(text) => useAgentChatStore.getState().submit({ type: 'prompt', text })}
+          isRunning={isRunning && !handoff}
+          pending={handoff}
+          pendingHint="Nano가 요청을 읽고 있어요…"
+          // 보내자마자 Nano로 넘어가면 모델을 준비하는 몇 초 동안 빈 패널만 보였다 — 첫 생각을 시작할 때 넘긴다
+          onSubmit={(text) => useAgentChatStore.getState().submit({ type: 'prompt', text }, { handoff: true })}
           className="shadow-sm"
         />
       )}

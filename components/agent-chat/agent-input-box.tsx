@@ -1,7 +1,7 @@
 'use client';
 
 import { type KeyboardEvent, type RefObject, useId, useRef, useState } from 'react';
-import { ArrowUp, Mic, Square } from 'lucide-react';
+import { ArrowUp, Mic, Sparkles, Square } from 'lucide-react';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { useSpeechInput } from '.';
@@ -17,6 +17,10 @@ type AgentInputBoxProps = {
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   // Nano로 넘어와 여기를 봐야 할 때 — 값이 바뀔 때마다 바깥으로 퍼지는 링을 다시 띄운다
   attentionKey?: number | null;
+  // 보낸 요청을 Nano가 받아 시작하기 전(홈 입력창의 바통 터치 대기) — 테두리가 무지개로 돌고 보내기 자리에 반짝이가 뜨며
+  // 안내 줄이 pendingHint 로 바뀐다. 그동안은 새로 보내지 않는다
+  pending?: boolean;
+  pendingHint?: string;
   className?: string;
 };
 
@@ -34,6 +38,8 @@ export function AgentInputBox({
   onStop,
   textareaRef,
   attentionKey,
+  pending = false,
+  pendingHint,
   className,
 }: Readonly<AgentInputBoxProps>) {
   const inputId = useId();
@@ -45,7 +51,7 @@ export function AgentInputBox({
 
   const submit = () => {
     const value = text.trim();
-    if (!value || disabled) return;
+    if (!value || disabled || pending) return;
     // 처리 중이면 보내지 않고 알린다 — 적은 글은 그대로 두어 끝난 뒤 다시 보낼 수 있게 한다
     if (isRunning) {
       useAgentChatStore.getState().notifyBusy();
@@ -74,7 +80,7 @@ export function AgentInputBox({
   // 막힌 상자(AI 를 쓸 수 없음)는 안내·버튼이 모두 빠져 도구 줄이 빈 높이만 남는다 — 그때는 줄을 그리지 않고 글 영역을 가운데 맞춘다
   const hasToolbar = !disabled || !!hint || (isRunning && !!onStop);
 
-  return (
+  const form = (
     <form
       onSubmit={(event) => {
         event.preventDefault();
@@ -83,7 +89,10 @@ export function AgentInputBox({
       className={cn(
         'relative rounded-2xl border border-zinc-200 bg-white transition-colors focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus-within:border-zinc-500',
         disabled && 'bg-zinc-50 dark:bg-zinc-900/50',
-        className
+        // 무지개 테두리가 보이게 제 테두리는 감춘다(감싼 rainbow-glow 의 1px 여백이 테두리가 된다)
+        pending &&
+          'w-full border-transparent focus-within:border-transparent dark:border-transparent dark:focus-within:border-transparent',
+        !pending && className
       )}
     >
       {attentionKey != null && (
@@ -126,9 +135,15 @@ export function AgentInputBox({
             disabled ? 'cursor-not-allowed' : 'cursor-text'
           )}
         >
-          {hint}
+          {pending ? (
+            <span className="text-zinc-500 dark:text-zinc-400" role="status">
+              {pendingHint}
+            </span>
+          ) : (
+            hint
+          )}
         </label>
-        {!disabled && speech.isSupported && !isRunning && (
+        {!disabled && speech.isSupported && !isRunning && !pending && (
           <button
             type="button"
             onClick={toggleSpeech}
@@ -145,7 +160,15 @@ export function AgentInputBox({
             <Mic size={15} aria-hidden />
           </button>
         )}
-        {isRunning && onStop ? (
+        {pending ? (
+          // 보낸 요청을 Nano가 시작하기를 기다리는 중 — 회전 로더 대신 반짝이(twinkle)로 "생각을 준비하는 중"을 보인다
+          <span
+            aria-hidden
+            className={cn(iconButton, 'bg-gradient-to-br from-sky-400 via-indigo-400 to-fuchsia-400 text-white')}
+          >
+            <Sparkles size={15} className="animate-twinkle" />
+          </span>
+        ) : isRunning && onStop ? (
           <button
             type="button"
             onClick={onStop}
@@ -178,4 +201,7 @@ export function AgentInputBox({
       </div>
     </form>
   );
+
+  // 기다리는 동안만 무지개 빛을 켠다. 감싸는 요소는 늘 두고 클래스만 바꾼다 — 요소를 바꾸면 form 이 다시 마운트돼 포커스를 잃는다
+  return <div className={cn('rounded-2xl', pending && 'rainbow-glow flex w-full', pending && className)}>{form}</div>;
 }

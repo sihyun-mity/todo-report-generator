@@ -14,6 +14,9 @@ export const AGENT_PAGES = {
   settings_withdraw: { path: '/settings/withdraw', label: '회원 탈퇴', memberOnly: true },
 } as const satisfies Record<string, { path: string; label: string; memberOnly?: boolean; guestOnly?: boolean }>;
 
+/** 홈 입력창에서 보낸 요청을 Nano로 넘기기 전 최대 대기 — 첫 생각 신호가 오지 않아도 이 시간이 지나면 넘긴다 */
+export const AGENT_HANDOFF_MAX_WAIT_MS = 15_000;
+
 /** 매 요청의 지금 상황(새소식 수·최신 제목)에 쓰는 새소식 목록을 다시 받지 않고 쓰는 시간 — 요청마다 Server Action 을 부르지 않게 */
 export const AGENT_SITUATION_NEWS_STALE_MS = 5 * 60_000;
 

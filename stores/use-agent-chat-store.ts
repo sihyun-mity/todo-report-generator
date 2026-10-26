@@ -1,7 +1,7 @@
 import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import type { AgentChatStore } from '@/types';
-import { AGENT_BUSY_TOAST_ID, AGENT_PANEL_STORAGE_KEY } from '@/constants';
+import { AGENT_BUSY_TOAST_ID, AGENT_HANDOFF_MAX_WAIT_MS, AGENT_PANEL_STORAGE_KEY } from '@/constants';
 import { newsIdFromPath } from '@/utils';
 
 // 데스크톱 패널을 펼쳐 둘지(접으면 레일)는 이 기기에 기억한다. 저장소를 못 쓰면 기억하지 못할 뿐이다.
@@ -86,10 +86,26 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
     })),
   clearFocus: () => set({ focus: {} }),
   request: null,
-  submit: (action, { reveal = true } = {}) => {
+  submit: (action, { reveal = true, handoff = false } = {}) => {
     set((s) => ({ request: { id: (s.request?.id ?? 0) + 1, action } }));
+    // 홈 입력창에서 보내면 바로 넘어가지 않는다 — 모델을 준비하는 동안 입력창이 로딩을 보여 주다가 첫 생각에서 넘긴다.
+    // 어떤 이유로든 시작 신호가 오지 않으면 그대로 멈춰 있지 않게 잠시 뒤 넘긴다
+    if (handoff) {
+      set({ handoff: true });
+      const id = get().request?.id;
+      setTimeout(() => {
+        if (get().request?.id === id) get().passHandoff();
+      }, AGENT_HANDOFF_MAX_WAIT_MS);
+      return;
+    }
     // 작업을 시작하는 할 일이라 입력칸이 아니라 패널(처리 과정)로 눈을 끈다
     if (reveal) get().reveal({ attention: 'panel' });
+  },
+  handoff: false,
+  passHandoff: () => {
+    if (!get().handoff) return;
+    set({ handoff: false });
+    get().reveal({ attention: 'panel' });
   },
   dismissed: new Set(),
   dismiss: (id) => set((s) => ({ dismissed: new Set([...s.dismissed, id]) })),

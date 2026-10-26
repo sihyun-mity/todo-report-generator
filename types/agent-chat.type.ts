@@ -138,7 +138,12 @@ export type AgentChatStore = {
   // 다른 곳(홈 입력창·제안 알약)이 Nano에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
   request: { id: number; action: AgentAction } | null;
   // reveal: false 면 Nano를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일
-  submit: (action: AgentAction, options?: { reveal?: boolean }) => void;
+  // handoff: true 면 바로 열지 않고 보낸 곳(홈 입력창)이 로딩을 보여 주다가, Nano가 첫 생각을 시작하면 Nano로 넘긴다(passHandoff)
+  submit: (action: AgentAction, options?: { reveal?: boolean; handoff?: boolean }) => void;
+  // 홈 입력창이 보낸 요청을 Nano가 아직 받아 시작하지 않았다 — 그동안 홈 입력창이 로딩을 보여 준다
+  handoff: boolean;
+  // Nano가 일을 시작했다(첫 생각·도구·답변·끝) — 기다리던 요청이 있으면 Nano를 열어 넘긴다
+  passHandoff: () => void;
   // 이번 세션에서 닫은(또는 실행한) 제안 — 같은 제안을 다시 띄우지 않는다
   dismissed: ReadonlySet<string>;
   dismiss: (id: string) => void;

@@ -187,6 +187,8 @@ export function AgentAssistant() {
     setRunning(false);
     useAgentChatStore.getState().setFormLocked(false);
     if (abortRef.current === controller) abortRef.current = null;
+    // 생각 단계 없이 끝난 일(메모 정리·버튼 실행·오류)도 결과를 보여 주러 Nano로 넘긴다
+    useAgentChatStore.getState().passHandoff();
   };
 
   // 입력창 하나로 부탁과 업무 메모를 함께 받는다. 분명한 메모는 규칙(looksLikeWorkNotes)으로 바로 메모 정리로 보내고,
@@ -268,7 +270,9 @@ export function AgentAssistant() {
         },
         // 폼을 바꾸는 요청으로 정해진 때부터만 본문을 잠근다(조회·요약·대화·저장은 잠그지 않는다)
         onFormLock: () => useAgentChatStore.getState().setFormLocked(true),
-        onThinking: (step) =>
+        onThinking: (step) => {
+          // 홈 입력창에서 보낸 요청이면 첫 생각을 시작할 때 Nano로 넘긴다 — 그 전(모델 준비)까지는 입력창이 로딩을 보여 준다
+          useAgentChatStore.getState().passHandoff();
           setMessages((prev) =>
             prev.map((m) =>
               m.id === thinkingId && m.role === 'thinking'
@@ -280,9 +284,11 @@ export function AgentAssistant() {
                   }
                 : m
             )
-          ),
+          );
+        },
         signal: controller.signal,
         onToolStart: (tool) => {
+          useAgentChatStore.getState().passHandoff();
           const id = createId();
           toolMessageId = id;
           pendingChange = null;
