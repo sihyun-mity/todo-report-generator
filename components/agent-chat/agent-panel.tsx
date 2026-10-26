@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
+import { useRef, useState, useSyncExternalStore } from 'react';
+import { ArrowDown, ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
 import type { AgentAction, AgentChatMessage, AgentQuickAction, AgentSuggestion } from '@/types';
 import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLES } from '@/constants';
-import { useDismissLayer, useGrabSlide, useSignalEffect } from '@/hooks';
+import { useDismissLayer, useFollowScroll, useGrabSlide, useSignalEffect } from '@/hooks';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { CloseButton, useDismissOnBack } from '..';
@@ -101,7 +101,6 @@ export function AgentPanel({
   const expanded = useAgentChatStore((s) => s.expanded);
   const focusSignal = useAgentChatStore((s) => s.focusSignal);
   const panelRef = useRef<HTMLElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const baseSeed = useSyncExternalStore(subscribeNever, getClientExampleSeed, getServerExampleSeed);
   // "다른 예시"를 누를 때마다 더해 다시 섞는다
@@ -118,6 +117,17 @@ export function AgentPanel({
   // ⌘K·홈 입력창 등에서 Nano를 부르면 입력칸으로 포커스를 옮긴다
   useSignalEffect(focusSignal > 0 ? String(focusSignal) : null, () => inputRef.current?.focus());
 
+  // 새 내용(메시지·스트리밍 답변·생각 과정 펼침)이 오면 맨 아래를 보고 있을 때만 따라간다 — GitHub 가져오기의 AI 생각 로그와 같다.
+  // 위로 올려 읽는 중이면 위치를 건드리지 않고 맨 아래로 가는 버튼을 띄운다. 새 요청을 보내면 다시 따라간다.
+  const lastUserMessageId = messages.findLast((m) => m.role === 'user')?.id ?? null;
+  const {
+    listRef: scrollRef,
+    contentRef: scrollContentRef,
+    isFollowing,
+    handleScroll,
+    scrollToBottom,
+  } = useFollowScroll({ resumeKey: lastUserMessageId });
+
   // 눈을 끌 곳 — 후속 동작이 필요한 카드면 그 카드까지 스크롤한다(효과는 아래 오버레이가 nonce 마다 다시 그린다)
   const attention = useAgentChatStore((s) => s.attention);
   useSignalEffect(attention ? String(attention.nonce) : null, () => {
@@ -129,13 +139,6 @@ export function AgentPanel({
 
   // 아직 처리하지 않은 후속 동작 중 가장 최근 것 — 입력칸 위에 "무엇을 해야 하는지"를 고정해 보여 준다
   const followUp = messages.findLast((m) => (m.role === 'confirm' || m.role === 'draft') && m.status === 'pending');
-
-  // 새 내용이 오면 맨 아래로 따라간다 — 위로 올려 읽는 중이면(바닥에서 멀면) 그대로 둔다
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
-  }, [messages]);
 
   const isReady = availability === 'available';
   // 예시 칩은 바로 보낸다
@@ -202,108 +205,124 @@ export function AgentPanel({
 
         {toolNames.includes('get_current_report') && <ReportLivePreview />}
 
-        <div
-          ref={scrollRef}
-          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 select-text"
-        >
-          <AgentAvailabilityNotice
-            availability={availability}
-            downloadProgress={downloadProgress}
-            onDownload={onDownload}
-          />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 select-text"
+          >
+            <div ref={scrollContentRef} className="space-y-4">
+              <AgentAvailabilityNotice
+                availability={availability}
+                downloadProgress={downloadProgress}
+                onDownload={onDownload}
+              />
 
-          {messages.length === 0 ? (
-            <>
-              {suggestions.length > 0 && (
-                <section className="space-y-2">
-                  <AgentSuggestionHeading>지금 추천</AgentSuggestionHeading>
-                  <div className="space-y-2">
-                    {suggestions.map((s) => (
-                      <AgentSuggestionCard
-                        key={s.id}
-                        suggestion={s}
-                        busy={isRunning}
-                        onRun={onRunSuggestion}
-                        onDismiss={onDismissSuggestion}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
-              {quickActions.length > 0 && (
-                <section className="space-y-2">
-                  <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">빠른 작업</p>
-                  <div className="flex flex-wrap gap-2">
-                    {quickActions.map((a) => (
-                      <AgentActionChip key={a.id} action={a} busy={isRunning} onRun={onRunAction} />
-                    ))}
-                  </div>
-                </section>
-              )}
-              {examples.length > 0 && (
-                <section className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">이렇게 말해 보세요</p>
-                    {examples.length > AGENT_CHAT_EXAMPLE_COUNT && (
-                      <button
-                        type="button"
-                        onClick={() => setSeedOffset((offset) => offset + 1)}
-                        className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                      >
-                        <Shuffle size={12} aria-hidden />
-                        다른 예시
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {examples.slice(0, AGENT_CHAT_EXAMPLE_COUNT).map((text) => (
-                      <button
-                        key={text}
-                        type="button"
-                        onClick={() => submit(text)}
-                        className="rounded-full border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                      >
-                        {text}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </>
-          ) : (
-            <ul className="space-y-3">
-              {isContextTrimmed && (
-                <li className="rounded-lg bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
-                  대화가 길어져 앞부분은 AI가 더 기억하지 못해요. 처음부터 다시 하려면 새 대화를 시작해 주세요.
-                </li>
-              )}
-              {messages.map((message) => (
-                <li key={message.id} data-message-id={message.id} className="relative">
-                  {attention?.target === 'message' && attention.messageId === message.id && (
-                    <span
-                      key={attention.nonce}
-                      aria-hidden
-                      className="pointer-events-none absolute -inset-1 animate-agent-attention-ring rounded-2xl"
-                    />
+              {messages.length === 0 ? (
+                <>
+                  {suggestions.length > 0 && (
+                    <section className="space-y-2">
+                      <AgentSuggestionHeading>지금 추천</AgentSuggestionHeading>
+                      <div className="space-y-2">
+                        {suggestions.map((s) => (
+                          <AgentSuggestionCard
+                            key={s.id}
+                            suggestion={s}
+                            busy={isRunning}
+                            onRun={onRunSuggestion}
+                            onDismiss={onDismissSuggestion}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   )}
-                  <AgentMessage
-                    message={message}
-                    isRunning={isRunning}
-                    onAnswerConfirm={onAnswerConfirm}
-                    onUndo={onUndo}
-                    onApplyDraft={onApplyDraft}
-                    onDiscardDraft={onDiscardDraft}
-                  />
-                </li>
-              ))}
-              {isRunning && messages.at(-1)?.role !== 'assistant' && (
-                // 생각 과정 블록은 도구 줄 위에 남으므로, 맨 아래에는 지금 하고 있는 단계를 한 줄로 보여 준다
-                <li className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
-                  <Loader2 size={14} className="animate-spin" aria-hidden />
-                  {currentStepLabel(messages) ?? '처리하는 중...'}
-                </li>
+                  {quickActions.length > 0 && (
+                    <section className="space-y-2">
+                      <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">빠른 작업</p>
+                      <div className="flex flex-wrap gap-2">
+                        {quickActions.map((a) => (
+                          <AgentActionChip key={a.id} action={a} busy={isRunning} onRun={onRunAction} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {examples.length > 0 && (
+                    <section className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">이렇게 말해 보세요</p>
+                        {examples.length > AGENT_CHAT_EXAMPLE_COUNT && (
+                          <button
+                            type="button"
+                            onClick={() => setSeedOffset((offset) => offset + 1)}
+                            className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          >
+                            <Shuffle size={12} aria-hidden />
+                            다른 예시
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {examples.slice(0, AGENT_CHAT_EXAMPLE_COUNT).map((text) => (
+                          <button
+                            key={text}
+                            type="button"
+                            onClick={() => submit(text)}
+                            className="rounded-full border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                          >
+                            {text}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              ) : (
+                <ul className="space-y-3">
+                  {isContextTrimmed && (
+                    <li className="rounded-lg bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+                      대화가 길어져 앞부분은 AI가 더 기억하지 못해요. 처음부터 다시 하려면 새 대화를 시작해 주세요.
+                    </li>
+                  )}
+                  {messages.map((message) => (
+                    <li key={message.id} data-message-id={message.id} className="relative">
+                      {attention?.target === 'message' && attention.messageId === message.id && (
+                        <span
+                          key={attention.nonce}
+                          aria-hidden
+                          className="pointer-events-none absolute -inset-1 animate-agent-attention-ring rounded-2xl"
+                        />
+                      )}
+                      <AgentMessage
+                        message={message}
+                        isRunning={isRunning}
+                        onAnswerConfirm={onAnswerConfirm}
+                        onUndo={onUndo}
+                        onApplyDraft={onApplyDraft}
+                        onDiscardDraft={onDiscardDraft}
+                      />
+                    </li>
+                  ))}
+                  {isRunning && messages.at(-1)?.role !== 'assistant' && (
+                    // 생각 과정 블록은 도구 줄 위에 남으므로, 맨 아래에는 지금 하고 있는 단계를 한 줄로 보여 준다
+                    <li className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
+                      <Loader2 size={14} className="animate-spin" aria-hidden />
+                      {currentStepLabel(messages) ?? '처리하는 중...'}
+                    </li>
+                  )}
+                </ul>
               )}
-            </ul>
+            </div>
+          </div>
+          {!isFollowing && (
+            <button
+              type="button"
+              onClick={scrollToBottom}
+              aria-label="최신 내용 보기"
+              title="최신 내용 보기"
+              className="absolute bottom-2 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/95 text-zinc-600 shadow-md backdrop-blur hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              <ArrowDown size={16} aria-hidden />
+            </button>
           )}
         </div>
 

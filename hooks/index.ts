@@ -4,6 +4,7 @@ export * from './use-backdrop-canvas';
 export * from './use-container';
 export * from './use-dismiss-layer';
 export * from './use-focus-scroll';
+export * from './use-follow-scroll';
 export * from './use-grab-slide';
 export * from './use-kr-holidays';
 export * from './use-media';

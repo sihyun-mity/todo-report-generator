@@ -56,7 +56,7 @@ import {
 } from '@/constants';
 import { CloseButton, Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
-import { useDismissLayer } from '@/hooks';
+import { useDismissLayer, useFollowScroll } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
 import {
   readCommitImportMemory,
@@ -174,9 +174,6 @@ const summarize = (plan: CommitImportPlan) => {
     commits: plan.projects.reduce((sum, p) => sum + p.tasks.reduce((s, t) => s + t.commits.length, 0), 0),
   };
 };
-
-// AI 생각 로그에서 맨 아래로 간주하는 여유(px) — 이 안에 있으면 새 내용을 따라 스크롤한다
-const FOLLOW_THRESHOLD_PX = 24;
 
 const countIncluded = (plan: CommitImportPlan) =>
   plan.projects.reduce((sum, p) => sum + p.tasks.filter(isApplicable).length, 0);
@@ -892,54 +889,18 @@ function ProgressBar({ ratio, label }: Readonly<{ ratio: number; label?: string 
 // 끝난 단계는 결과 한 줄로 접는다. 대화창 높이를 다 쓰면 목록이 스크롤되고, 사용자가 맨 아래를 보고 있을 때만
 // 새로 생성되는 내용을 따라 내려간다. 위로 올려 읽는 중이면 맨 아래로 돌아가는 버튼을 띄운다.
 function ThinkingLog({ thoughts }: Readonly<{ thoughts: ReadonlyArray<ClassifyThought> }>) {
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLOListElement | null>(null);
-  // 맨 아래를 보고 있는지 — 처음에는 따라간다. 위로 올려 읽는 중이면 위치를 건드리지 않는다.
-  // ResizeObserver 콜백이 읽는 값은 ref, 버튼 표시는 state 로 둔다.
-  const followRef = useRef(true);
-  const [isFollowing, setIsFollowing] = useState(true);
-  const lastScrollTopRef = useRef(0);
-
-  const setFollow = (value: boolean) => {
-    followRef.current = value;
-    setIsFollowing(value);
-  };
-
-  // 위로 올렸을 때만 따라가기를 멈추고, 맨 아래에 닿으면 다시 따라간다. 아래로 내려가는 스크롤(새 내용 따라가기·
-  // 버튼의 부드러운 스크롤 도중)로는 멈추지 않는다 — 부드러운 스크롤 도중에 새 줄이 생기면 따라가기가 풀리지 않게.
-  const handleScroll = () => {
-    const list = listRef.current;
-    if (!list) return;
-    const isAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
-    if (isAtBottom) setFollow(true);
-    else if (list.scrollTop < lastScrollTopRef.current) setFollow(false);
-    lastScrollTopRef.current = list.scrollTop;
-  };
-
-  const scrollToBottom = () => {
-    const list = listRef.current;
-    if (!list) return;
-    setFollow(true);
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    list.scrollTo({ top: list.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
-  };
-
   // 내용 높이가 바뀌면(줄 추가·줄바꿈 변화·끝난 단계 접힘) 목록 높이를 그 값으로 옮겨 transition 으로 부드럽게 늘고 준다.
   // 대화창이 최대 높이에 닿으면 flex 가 이 높이보다 작게 줄이고, 그때부터는 목록 안에서 스크롤된다.
   // 최소 높이는 min(내용, 5rem) — 고정 최소 높이를 두면 내용이 적을 때 아래가 비고, 없으면 좁은 화면에서 0 까지 짓눌린다.
-  // ResizeObserver 콜백은 레이아웃 직후·그리기 전에 돌아 맨 아래 따라가기도 여기서 해야 새 줄이 가려졌다 보이지 않는다.
-  useEffect(() => {
-    const list = listRef.current;
-    const content = contentRef.current;
-    if (!list || !content) return;
-    const observer = new ResizeObserver(() => {
+  const { listRef, contentRef, isFollowing, handleScroll, scrollToBottom } = useFollowScroll<
+    HTMLDivElement,
+    HTMLOListElement
+  >({
+    onResize: (list, content) => {
       list.style.height = `${content.offsetHeight}px`;
       list.style.minHeight = `min(${content.offsetHeight}px, 5rem)`;
-      if (followRef.current) list.scrollTop = list.scrollHeight;
-    });
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
+    },
+  });
 
   return (
     <section
