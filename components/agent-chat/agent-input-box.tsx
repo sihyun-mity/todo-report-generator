@@ -91,7 +91,18 @@ export function AgentInputBox({
         style={{ fieldSizing: 'content' } as React.CSSProperties}
       />
       <div className="flex items-center gap-1 px-2 pb-2">
-        <span className="min-w-0 flex-1 truncate pl-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">{hint}</span>
+        {/* 안내 줄도 입력칸의 label 로 둔다 — 버튼 사이 빈 곳까지 채우므로(flex-1) 이 줄을 눌러도 입력칸으로 포커스가 간다.
+            입력칸 이름은 위의 sr-only label 로 충분하므로 보조기술에는 숨긴다 */}
+        <label
+          htmlFor={inputId}
+          aria-hidden
+          className={cn(
+            'min-w-0 flex-1 self-stretch truncate pl-1.5 text-[11px] leading-8 text-zinc-400 dark:text-zinc-500',
+            disabled ? 'cursor-not-allowed' : 'cursor-text'
+          )}
+        >
+          {hint}
+        </label>
         {!disabled && speech.isSupported && !isRunning && (
           <button
             type="button"
