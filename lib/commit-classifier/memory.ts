@@ -26,7 +26,7 @@ import { createClient } from '@/lib/supabase/client';
 //    (예: `todo-report-generator` 로 가져온 뒤 "일일 업무 보고 서비스" 로 고쳐 저장했다면 다음부터 그 이름으로)
 // 2) `저장소#scope` → 작업명: 같은 묶음의 커밋을 그 작업에 붙이거나 그 이름으로 새 작업을 만든다.
 // 3) 세부 항목: AI 제안 문구 → 사용자가 고친 문구 쌍을 예시로 넘겨 새 제안을 사용자 표기로 바꾸고,
-//    제안을 지운 / 남긴 횟수와 사용자가 직접 추가한 줄 수로 다음 제안을 얼마나 아낄지 정한다.
+//    제안을 지운 / 남긴 횟수와 사용자가 직접 추가한 줄 수로 다음 제안을 얼마나 아낄지 정한다(횟수는 보고서 저장 때만 센다).
 // 4) 진행률: 새 작업에 제안한 진행률 → 사용자가 고친 진행률 쌍을 예시로 넘겨 다음 유추가 사용자 성향을 따르게 한다.
 // 5) 제외한 저장소: 개인 프로젝트처럼 보고서에 넣지 않을 저장소는 커밋 조회부터 건너뛴다.
 //    매번 작업을 하나도 넣지 않고 적용하는 저장소는 횟수를 세 두었다가 미리보기에서 제외를 제안한다.
@@ -212,7 +212,6 @@ export const rememberCommitImport = (
     const scopeTasks = { ...memory.scopeTasks };
     const edits: Array<DetailEdit> = [];
     const progressEdits: Array<ProgressEdit> = [];
-    const feedback = { ...memory.detailFeedback };
     const originalProjectName = (repo: string) => original.projects.find((p) => p.repos.includes(repo))?.name.trim();
     const originalTaskName = (sha: string) =>
       original.projects
@@ -240,18 +239,14 @@ export const rememberCommitImport = (
             edited: task.progress,
           });
         }
-        // AI 제안 세부 항목: 미리보기에서 지운 개수 / 남긴 개수, 그리고 사용자가 고친 문구
+        // AI 제안 세부 항목을 사용자가 고친 문구. 남김·지움·추가 횟수는 여기서 세지 않는다 — 폼에서 더 고칠 수 있고,
+        // 확정만 하고 버리거나 다시 가져오면 거듭 세인다. 보고서 저장 때(`learnFromSavedReport`) 연결로 센다.
         for (const suggested of task.suggestedDetails) {
           const detail = task.details.find((d) => d.suggested === suggested);
-          if (!detail || !detail.content.trim()) {
-            feedback.removed += 1;
-            continue;
+          if (detail?.content.trim() && detail.content.trim() !== suggested) {
+            edits.push({ original: suggested, edited: detail.content.trim() });
           }
-          feedback.kept += 1;
-          if (detail.content.trim() !== suggested) edits.push({ original: suggested, edited: detail.content.trim() });
         }
-        // 사용자가 미리보기에서 직접 추가한 세부 항목
-        feedback.added += task.details.filter((d) => d.suggested === null && d.content.trim()).length;
       }
     }
     // 이번에 작업을 하나도 넣지 않은 저장소는 횟수를 올리고, 하나라도 넣은 저장소는 처음부터 다시 센다.
@@ -293,7 +288,6 @@ export const rememberCommitImport = (
       scopeTasks,
       repoSkips,
       detailEdits: pushDetailEdits(memory.detailEdits, edits),
-      detailFeedback: feedback,
       progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
       importedTasks: pushImportedTasks(memory.importedTasks, records),
       pendingLinks: [...links, ...memory.pendingLinks].slice(0, COMMIT_IMPORT_PENDING_LINK_LIMIT),
@@ -361,6 +355,12 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
         alive.push(link);
         continue;
       }
+      if (link.kind === 'dropped') {
+        // 작업은 보고서에 남았는데 미리보기에서 제안을 지웠다 — "제안이 필요 없었다". 한 번 세고 연결은 버린다.
+        // 작업까지 지웠으면(위 `!task`) 세지 않는다 — 작업째 버린 것은 세부 항목 제안에 대한 판단이 아니다.
+        if (task.content.trim()) feedback.removed += link.count;
+        continue;
+      }
       if (link.kind === 'details') {
         // 폼에 넣은 뒤 사용자가 직접 추가한 세부 항목. 센 줄은 known 에 더해 다시 저장해도 두 번 세지 않고,
         // 같은 작업의 나머지 `details` 연결은 이 하나로 합쳐 버린다.
@@ -388,18 +388,23 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
         alive.push(link);
         continue;
       }
+      // AI 제안 세부 항목: 저장된 보고서에 남았으면 "남김" 한 번, 지웠으면 "지움". 앞선 저장에서 이미 남김으로 센 줄을
+      // 같은 날 다시 고쳐 지웠다면 그 남김을 지움으로 옮긴다(예전 연결은 미리보기 확정 때 남김으로 셌다 — counted 없음).
+      const counted = link.counted ?? true;
       const detail = task.details.find((d) => d.id === link.detailId);
       if (!detail || !detail.content.trim()) {
         feedback.removed += 1;
+        if (counted) feedback.kept = Math.max(0, feedback.kept - 1);
         continue;
       }
+      if (!counted) feedback.kept += 1;
       // 폼에 넣은 뒤 사용자가 문구를 고친 경우만
       if (detail.content.trim() !== link.inserted) {
         edits.push({ original: link.original, edited: detail.content.trim() });
-        alive.push({ ...link, inserted: detail.content.trim() });
+        alive.push({ ...link, inserted: detail.content.trim(), counted: true });
         continue;
       }
-      alive.push(link);
+      alive.push({ ...link, counted: true });
     }
 
     return {

@@ -62,10 +62,22 @@ export type CommitImportLink =
   | { kind: 'project'; repo: string; projectId: string }
   | { kind: 'task'; scopeKey: string; projectId: string; taskId: string }
   // original = AI 가 제안한 문구, inserted = 폼에 넣은 문구. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
-  | { kind: 'detail'; projectId: string; taskId: string; detailId: string; original: string; inserted: string }
+  // counted = 보고서 저장 때 "남김"으로 셌는지. 필드가 없는 예전 연결은 미리보기 확정 때 이미 셌다.
+  | {
+      kind: 'detail';
+      projectId: string;
+      taskId: string;
+      detailId: string;
+      original: string;
+      inserted: string;
+      counted?: boolean;
+    }
+  // 미리보기에서 지워 폼에 들어가지 않은 AI 제안 세부 항목 수 — 작업이 저장된 보고서에 남아 있을 때 "지움"으로 한 번 센다
+  | { kind: 'dropped'; projectId: string; taskId: string; count: number }
   // 가져와 새로 만든 작업 — 저장 시 최종 작업명을 등록 기록(`importedTasks`)에 반영한다. recordId 는 그 기록의 id 다.
   | { kind: 'imported'; projectId: string; taskId: string; recordId: string }
-  // 가져온 작업에 폼 반영 시점에 있던 세부 항목 id — 저장 시 여기 없는 줄은 사용자가 직접 추가한 것이다
+  // 가져온 작업에 폼 반영 시점에 있던 세부 항목 id — 저장 시 여기 없는 줄은 사용자가 직접 추가한 것이다.
+  // 미리보기에서 사용자가 추가해 들어간 줄은 넣지 않는다 — 저장 때 남아 있어야 "추가"로 센다.
   | { kind: 'details'; projectId: string; taskId: string; known: Array<string> }
   // 새 작업 진행률. suggested = 제안한 값, inserted = 폼에 넣은 값. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
   | {

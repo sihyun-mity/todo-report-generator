@@ -3,6 +3,7 @@ import type {
   CommitImportPlan,
   GithubCommit,
   PlannedDetail,
+  PlannedTask,
   Project,
   ReportHistoryItem,
   Task,
@@ -76,11 +77,16 @@ export const applyCommitImportPlan = (
   const linkTask = (
     projectId: string,
     taskId: string,
-    commits: ReadonlyArray<GithubCommit>,
+    plannedTask: PlannedTask,
     details: ReadonlyArray<{ id: string; planned: PlannedDetail }>
   ) => {
-    const scopeKeys = new Set(commits.map(commitScopeKey).filter((key): key is string => key !== null));
+    const scopeKeys = new Set(plannedTask.commits.map(commitScopeKey).filter((key): key is string => key !== null));
     scopeKeys.forEach((scopeKey) => links.push({ kind: 'task', scopeKey, projectId, taskId }));
+    // 미리보기에서 지운 AI 제안 — 확정만 하고 버리거나 다시 가져와도 거듭 세지 않게 보고서 저장 때 센다
+    const dropped = plannedTask.suggestedDetails.filter(
+      (suggested) => !plannedTask.details.some((d) => d.suggested === suggested && d.content.trim())
+    ).length;
+    if (dropped) links.push({ kind: 'dropped', projectId, taskId, count: dropped });
     // AI 가 제안한 세부 항목만 연결한다 — 사용자가 직접 추가한 줄은 배울 기준(제안 문구)이 없다
     details.forEach(({ id, planned }) => {
       if (planned.suggested === null) return;
@@ -91,13 +97,27 @@ export const applyCommitImportPlan = (
         detailId: id,
         original: planned.suggested,
         inserted: planned.content.trim(),
+        counted: false,
       });
     });
   };
 
-  // 반영 시점의 세부 항목 — 보고서 저장 때 여기 없는 줄을 사용자가 직접 추가한 것으로 센다
-  const linkDetails = (projectId: string, task: Pick<Task, 'id' | 'details'>) =>
-    links.push({ kind: 'details', projectId, taskId: task.id, known: task.details.map((d) => d.id) });
+  // 반영 시점의 세부 항목 — 보고서 저장 때 여기 없는 줄을 사용자가 직접 추가한 것으로 센다.
+  // 미리보기에서 사용자가 추가한 줄은 빼 둔다 — 저장 때까지 남아 있으면 그때 "추가"로 센다(확정만 하고 버리거나 다시
+  // 가져오면 두 번 세지 않게).
+  const linkDetails = (
+    projectId: string,
+    task: Pick<Task, 'id' | 'details'>,
+    added: ReadonlyArray<{ id: string; planned: PlannedDetail }>
+  ) => {
+    const userAdded = new Set(added.filter(({ planned }) => planned.suggested === null).map(({ id }) => id));
+    links.push({
+      kind: 'details',
+      projectId,
+      taskId: task.id,
+      known: task.details.map((d) => d.id).filter((id) => !userAdded.has(id)),
+    });
+  };
 
   for (const plannedProject of plan.projects) {
     const tasks = plannedProject.tasks.filter((t) => t.included && t.content.trim());
@@ -135,8 +155,8 @@ export const applyCommitImportPlan = (
           ...added.map(({ id, planned }) => ({ id, content: planned.content.trim() })),
         ];
         existingTask.progress = plannedTask.progress;
-        linkTask(project.id, existingTask.id, plannedTask.commits, added);
-        linkDetails(project.id, existingTask);
+        linkTask(project.id, existingTask.id, plannedTask, added);
+        linkDetails(project.id, existingTask, added);
         continue;
       }
       const added = plannedDetails.map((planned) => ({ id: createId(), planned }));
@@ -148,8 +168,8 @@ export const applyCommitImportPlan = (
       };
       // 비어 있는 작업 줄(새 프로젝트의 기본 줄 등)은 지우고 채운다
       project.tasks = [...project.tasks.filter((t) => t.content.trim() || t.details.length), task];
-      linkTask(project.id, task.id, plannedTask.commits, added);
-      linkDetails(project.id, task);
+      linkTask(project.id, task.id, plannedTask, added);
+      linkDetails(project.id, task, added);
       // 등록 기록 id 는 계획의 작업 key 를 쓴다 — `rememberCommitImport` 가 이 key 로 계획의 작업을 찾아 기록을 만든다
       links.push({ kind: 'imported', projectId: project.id, taskId: task.id, recordId: plannedTask.key });
       if (plannedTask.suggestedProgress !== null) {
