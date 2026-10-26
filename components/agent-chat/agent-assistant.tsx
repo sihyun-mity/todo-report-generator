@@ -216,7 +216,11 @@ export function AgentAssistant() {
         // 부탁이 아니라 업무 메모였다 — 메모 정리가 대화 기록을 메모 턴으로 남기므로 방금 넣은 사용자 턴은 되돌린다
         setTurns(turns);
         await showNotesDraft(text, controller);
-      } else setTurns([...history, ...added]);
+      } else {
+        setTurns([...history, ...added]);
+        // 빠진 정보를 되물었다 — 바로 답할 수 있게 입력칸으로 데려간다(다음 메시지가 그 답으로 이어진다)
+        if (route === 'question') useAgentChatStore.getState().reveal({ attention: 'input' });
+      }
     } catch (error) {
       if (toolMessageId) patchMessage(toolMessageId, { status: 'error' });
       if (!controller.signal.aborted) {

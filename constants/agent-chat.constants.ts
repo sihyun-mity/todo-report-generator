@@ -48,6 +48,7 @@ export const AGENT_CHAT_EXAMPLES: ReadonlyArray<{ text: string; tool: string }> 
   { text: '금일 업무에 "API 연동" 작업을 진행률 70%로 추가해줘', tool: 'add_report_tasks' },
   { text: '내일 할 일에 "QA" 프로젝트 "회귀 테스트" 넣어줘', tool: 'add_report_tasks' },
   { text: '오늘 미완료 업무를 내일 할 일로 옮겨줘', tool: 'carry_over_incomplete_tasks' },
+  { text: '오늘 한 업무를 내일도 그대로 넣어줘', tool: 'copy_today_to_tomorrow' },
   { text: '익일 업무를 "배포 준비" 작업 하나로 바꿔줘', tool: 'replace_report_section' },
   { text: '보고서 날짜를 어제로 바꿔줘', tool: 'set_report_date' },
   { text: '지난주에 쓴 보고서를 요약해줘', tool: 'search_reports' },

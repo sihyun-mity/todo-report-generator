@@ -26,6 +26,9 @@ export type AgentTool = {
   annotations?: WebMcpToolAnnotations;
   // 노출할 경로. 생략하면 둘 다 — 작은 로컬 모델이 다루기 어려운 도구는 WebMCP 에만 둔다
   surfaces?: ReadonlyArray<AgentToolSurface>;
+  // 채팅이 다음 행동을 고르고 입력을 만들 때 함께 보여 줄 지금 상태(예: 작성 중인 폼) — "오늘 한 업무를 내일에도"처럼
+  // 화면의 내용을 가리키는 요청을 모델이 지어내지 않고 실제 값으로 채우게 한다
+  inputContext?: () => unknown;
   execute: (input: Record<string, unknown>, context: AgentToolContext) => Promise<WebMcpToolResult>;
 };
 

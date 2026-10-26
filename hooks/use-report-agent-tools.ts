@@ -81,6 +81,12 @@ const currentFormSnapshot = () => {
   };
 };
 
+// 채팅이 쓰기 도구의 입력을 만들 때 보는 지금 폼(AgentTool.inputContext) — 완성 텍스트 등은 빼 토큰을 아낀다
+const currentFormState = () => {
+  const { month, day, today, tomorrow } = currentFormSnapshot();
+  return { report: { month, day, today, tomorrow } };
+};
+
 // ───────────── 입력 검증 ─────────────
 // inputSchema 는 에이전트에게 주는 힌트일 뿐 브라우저가 강제하지 않는다. execute 에서 다시 검증한다.
 // 실패하면 에이전트가 고쳐 다시 부를 수 있도록 어느 필드가 왜 틀렸는지 문자열로 돌려준다.
@@ -450,6 +456,7 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         kind: 'add',
         description:
           'Append one project and its tasks to one section of the report form. If a project with the same name exists, the tasks are added under it; otherwise a new project is created. Existing content is kept.',
+        inputContext: currentFormState,
         inputSchema: {
           type: 'object',
           properties: {
@@ -495,6 +502,7 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         kind: 'replace',
         description:
           'Replace one section of the report form entirely with the given projects. Asks the user to confirm if current content would be lost. To only append, use add_report_tasks.',
+        inputContext: currentFormState,
         inputSchema: {
           type: 'object',
           properties: { section: SECTION_SCHEMA, projects: { ...PROJECTS_SCHEMA, minItems: 1 } },
@@ -554,16 +562,42 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         title: '미완료 업무 익일로 가져오기',
         kind: 'add',
         description:
-          "Copy today's tasks under 100% progress to tomorrow. Tasks are added under projects with the same name; tasks already there are skipped.",
+          "Copy only today's unfinished tasks (under 100% progress) to tomorrow. Tasks are added under projects with the same name; tasks already there are skipped. To repeat today's work tomorrow regardless of progress, use copy_today_to_tomorrow.",
         inputSchema: { type: 'object', properties: {} },
         execute: async (_input, context) => {
           const { today, tomorrow, setBucket } = useReportFormStore.getState();
           const merged = mergeIncompleteTasks(today, tomorrow);
-          if (!merged) return toolText({ changed: false, message: '가져올 새로운 미완료 작업이 없습니다.' });
+          if (!merged)
+            return toolText({
+              changed: false,
+              message:
+                '가져올 새로운 미완료 작업이 없습니다. 완료한 작업까지 옮기려면 "오늘 업무를 내일에도 그대로 넣어줘"라고 해 주세요.',
+            });
           const finish = beginFormChange(context);
           setBucket('tomorrow', merged);
           finish();
           toast.success('에이전트가 미완료 업무를 익일로 가져왔습니다.');
+          return toolText({ changed: true, ...currentFormSnapshot() });
+        },
+      },
+      {
+        // 반복 업무(예: 24시간 모니터링)는 오늘 100% 여도 내일 또 한다 — 이 도구가 없을 때 Nano 가 add_report_tasks 로
+        // 프로젝트명·작업명을 지어내(요청 문장을 작업명으로) 넣었다
+        name: 'copy_today_to_tomorrow',
+        title: '금일 업무 익일로 복사',
+        kind: 'add',
+        description:
+          "Copy all of today's tasks, including completed ones, to tomorrow as they are — for work the user will do again tomorrow (오늘 한 업무 내일도 그대로, 반복 업무). Completed tasks start at 0% tomorrow. Tasks already in tomorrow are skipped.",
+        inputSchema: { type: 'object', properties: {} },
+        execute: async (_input, context) => {
+          const { today, tomorrow, setBucket } = useReportFormStore.getState();
+          const merged = mergeIncompleteTasks(today, tomorrow, { includeCompleted: true });
+          if (!merged)
+            return toolText({ changed: false, message: '익일로 옮길 금일 작업이 없습니다(이미 모두 들어 있어요).' });
+          const finish = beginFormChange(context);
+          setBucket('tomorrow', merged);
+          finish();
+          toast.success('에이전트가 금일 업무를 익일로 복사했습니다.');
           return toolText({ changed: true, ...currentFormSnapshot() });
         },
       },

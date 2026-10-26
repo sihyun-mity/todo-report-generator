@@ -57,9 +57,11 @@ export const areAllAttemptedProjectsValid = (projects: ReadonlyArray<Project>) =
 // 금일 프로젝트에서 미완료(진행률 100% 미만) 태스크만 모아 익일 프로젝트 목록에 병합
 // - 이미 동일한 프로젝트명이 존재하면 태스크만 추가
 // - 동일한 프로젝트 내 동일한 작업 내용이 이미 있으면 중복으로 간주하여 제외
+// - includeCompleted 면 완료한 작업까지 옮긴다(내일도 반복하는 업무). 완료한 작업은 익일 예정이므로 진행률 0 으로 시작한다
 export const mergeIncompleteTasks = (
   todayProjects: ReadonlyArray<Project>,
-  tomorrowProjects: ReadonlyArray<Project>
+  tomorrowProjects: ReadonlyArray<Project>,
+  { includeCompleted = false }: Readonly<{ includeCompleted?: boolean }> = {}
 ): Array<Project> | null => {
   const incomplete: Array<Project> = todayProjects
     .map((p): Project | null => {
@@ -67,13 +69,14 @@ export const mergeIncompleteTasks = (
 
       const tasks = p.tasks
         .filter((t) => {
-          if (t.content.trim() === '' || t.progress >= 100) return false;
+          if (t.content.trim() === '' || (!includeCompleted && t.progress >= 100)) return false;
           if (!existing) return true;
           return !existing.tasks.some((et) => et.content.trim() === t.content.trim());
         })
         .map((t) => ({
           ...t,
           id: createId(),
+          progress: t.progress >= 100 ? 0 : t.progress,
           details: (t.details ?? []).map((d) => ({ ...d, id: createId() })),
         }));
 
