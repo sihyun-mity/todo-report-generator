@@ -32,6 +32,8 @@ WEBAUTHN_RP_ID=localhost                    # 운영: 실제 도메인
 WEBAUTHN_RP_NAME=todo-report-generator
 WEBAUTHN_ORIGIN=http://localhost:3000       # 운영: https://...
 WEBAUTHN_CHALLENGE_SECRET=                  # 64자 hex (openssl rand -hex 32)
+
+ORIGIN_TRIAL_TOKENS=                        # 선택. WebMCP 오리진 트라이얼 토큰 (쉼표로 여러 개)
 ```
 
 ---
@@ -48,13 +50,13 @@ Supabase 마이그레이션은 `supabase/migrations/*.sql`을 순서대로 적�
 
 ## Scripts
 
-| 명령어            | 설명                                       |
-| ----------------- | ------------------------------------------ |
-| `npm run dev`     | 개발 서버 (Turbopack)                      |
-| `npm run build`   | 프로덕션 빌드                              |
-| `npm run start`   | 빌드 결과 실행                             |
-| `npm run lint`    | ESLint (eslint-config-next)                |
-| `npx tsc --noEmit`| 타입 체크                                  |
+| 명령어             | 설명                        |
+| ------------------ | --------------------------- |
+| `npm run dev`      | 개발 서버 (Turbopack)       |
+| `npm run build`    | 프로덕션 빌드               |
+| `npm run start`    | 빌드 결과 실행              |
+| `npm run lint`     | ESLint (eslint-config-next) |
+| `npx tsc --noEmit` | 타입 체크                   |
 
 커밋 시 Husky `pre-commit` 훅이 변경 파일에 `eslint --fix` + `prettier --write`를 실행한다.
 

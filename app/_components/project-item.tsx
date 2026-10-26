@@ -11,6 +11,8 @@ import { TaskItem, type RemoveOptions, type TaskFocusField } from '.';
 
 type ProjectItemProps = {
   project: Project;
+  // 접근성 이름 접두어 (예: "금일 프로젝트 1"). 같은 모양의 입력칸을 보조기술·DOM 기반 에이전트가 구분하게 한다.
+  label: string;
   onUpdateName: (name: string) => void;
   onRemove: () => void;
   onAddTask: (taskId: string) => void;
@@ -43,6 +45,7 @@ const isComposingKey = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isC
 
 export const ProjectItem = ({
   project,
+  label,
   onUpdateName,
   onRemove,
   onAddTask,
@@ -194,6 +197,7 @@ export const ProjectItem = ({
           ref={nameInputRef}
           type="text"
           placeholder="프로젝트명"
+          aria-label={`${label} 이름`}
           value={project.name}
           enterKeyHint="next"
           onChange={(e) => onUpdateName(e.target.value)}
@@ -207,6 +211,7 @@ export const ProjectItem = ({
         <button
           onClick={onRemove}
           disabled={!canRemove}
+          aria-label={`${label} 삭제`}
           className="shrink-0 cursor-pointer rounded-md p-2 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-red-950/30"
           title={canRemove ? '프로젝트 삭제' : '최소 하나의 프로젝트가 필요합니다'}
         >
@@ -227,6 +232,7 @@ export const ProjectItem = ({
               <TaskItem
                 key={task.id}
                 task={task}
+                label={`${label} 작업 ${index + 1}`}
                 onUpdate={(updates) => onUpdateTask(task.id, updates)}
                 onRemove={() => onRemoveTask(task.id)}
                 canRemove={project.tasks.length > 1}
@@ -245,6 +251,7 @@ export const ProjectItem = ({
         </SortableContext>
         <button
           onClick={handleAddTask}
+          aria-label={`${label}에 작업 추가`}
           className="ml-2 flex cursor-pointer items-center gap-1 text-sm font-medium text-blue-500 transition-colors hover:text-blue-600 sm:ml-4"
         >
           <Plus size={14} /> 작업 추가

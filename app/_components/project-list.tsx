@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { CalendarDays, Github, Plus, Sun } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -9,6 +9,9 @@ import { cn, createId, hasProjectContent } from '@/utils';
 import { ProjectItem } from '.';
 
 type Accent = 'today' | 'tomorrow';
+
+// 보조기술·DOM 기반 에이전트가 같은 모양의 입력칸들을 구분할 수 있도록 접근성 이름 앞에 붙이는 버킷 이름.
+const ACCENT_LABELS: Record<Accent, string> = { today: '금일', tomorrow: '익일' };
 
 // 외부에서 ProjectList로 보내는 포커스 신호. nonce가 변할 때마다 트리거된다.
 export type ProjectListFocusRequest =
@@ -67,6 +70,8 @@ export const ProjectList = ({
   focusRequest,
 }: Readonly<ProjectListProps>) => {
   const [lastAddedProjectId, setLastAddedProjectId] = useState<string | null>(null);
+  const headingId = useId();
+  const sectionLabel = ACCENT_LABELS[accent];
   // 버킷 전체를 droppable로 등록 — 비어 있어도 다른 버킷에서 끌어온 프로젝트를 받을 수 있다.
   const { setNodeRef: setDroppableRef } = useDroppable({ id: accent });
   // Backspace 삭제 후 이전 항목 포커스, 또는 외부 focusRequest를 sync 받는 통합 상태.
@@ -142,14 +147,16 @@ export const ProjectList = ({
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   return (
-    <div className="mb-8 w-full">
+    <section aria-labelledby={headingId} className="mb-8 w-full">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <span className={cn('h-5 w-1 rounded-full', accentStyles.stripe)} aria-hidden />
           <span className={cn('flex h-7 w-7 items-center justify-center rounded-md', accentStyles.iconWrap)}>
             <Icon size={14} />
           </span>
-          <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-200">{title}</h2>
+          <h2 id={headingId} className="text-xl font-bold text-zinc-800 dark:text-zinc-200">
+            {title}
+          </h2>
         </div>
         <div className="flex gap-2">
           {onImportGithub && (
@@ -167,6 +174,7 @@ export const ProjectList = ({
           {onImportIncomplete && (
             <button
               onClick={onImportIncomplete}
+              aria-label="금일 미완료 업무를 익일로 가져오기"
               className="flex cursor-pointer items-center gap-1 rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
             >
               <Plus size={16} /> 미완료 업무 가져오기
@@ -174,6 +182,7 @@ export const ProjectList = ({
           )}
           <button
             onClick={handleAddProject}
+            aria-label={`${sectionLabel} 업무에 프로젝트 추가`}
             className="flex cursor-pointer items-center gap-1 rounded-md bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
           >
             <Plus size={16} /> 프로젝트 추가
@@ -192,10 +201,11 @@ export const ProjectList = ({
               새 프로젝트를 추가하거나 여기로 프로젝트를 끌어다 놓으세요.
             </div>
           ) : (
-            projects.map((project) => (
+            projects.map((project, index) => (
               <ProjectItem
                 key={project.id}
                 project={project}
+                label={`${sectionLabel} 프로젝트 ${index + 1}`}
                 onUpdateName={(name) => onUpdateProjectName(project.id, name)}
                 onRemove={() => onRemoveProject(project.id)}
                 canRemove={projects.length > 1}
@@ -216,6 +226,6 @@ export const ProjectList = ({
           )}
         </div>
       </SortableContext>
-    </div>
+    </section>
   );
 };

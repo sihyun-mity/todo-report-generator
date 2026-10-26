@@ -9,6 +9,8 @@ import { useSignalEffect } from '@/hooks';
 
 type TaskDetailItemProps = {
   detail: TaskDetail;
+  // 접근성 이름 (예: "금일 프로젝트 1 작업 2 세부 항목 1")
+  label: string;
   onUpdate: (content: string) => void;
   onRemove: () => void;
   onEnter?: () => void;
@@ -25,6 +27,7 @@ const isComposingKey = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isC
 // 진행률이 없고 내용만 갖기 때문에 작업 행보다 한 단계 작은 크기로 렌더한다.
 export const TaskDetailItem = ({
   detail,
+  label,
   onUpdate,
   onRemove,
   onEnter,
@@ -77,6 +80,7 @@ export const TaskDetailItem = ({
         ref={inputRef}
         type="text"
         placeholder="세부 내용"
+        aria-label={label}
         value={detail.content}
         enterKeyHint="next"
         onChange={(e) => onUpdate(e.target.value)}
@@ -88,6 +92,7 @@ export const TaskDetailItem = ({
         type="button"
         onClick={onRemove}
         title="세부 항목 삭제"
+        aria-label={`${label} 삭제`}
         className="shrink-0 cursor-pointer rounded-md p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
       >
         <Trash2 size={14} />

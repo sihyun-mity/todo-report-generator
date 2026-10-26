@@ -11,3 +11,4 @@ export * from './report.type';
 export * from './theme.type';
 export * from './toast.type';
 export * from './webauthn.type';
+export * from './webmcp.type';

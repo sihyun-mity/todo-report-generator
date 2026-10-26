@@ -13,6 +13,8 @@ export type TaskFocusField = 'content' | 'progress' | 'detail';
 
 type TaskItemProps = {
   task: Task;
+  // 접근성 이름 접두어 (예: "금일 프로젝트 1 작업 2")
+  label: string;
   onUpdate: (updates: Partial<Task>) => void;
   onRemove: () => void;
   canRemove: boolean;
@@ -39,6 +41,7 @@ const isComposingKey = (e: KeyboardEvent<HTMLInputElement>) => e.nativeEvent.isC
 
 export const TaskItem = ({
   task,
+  label,
   onUpdate,
   onRemove,
   canRemove,
@@ -149,6 +152,7 @@ export const TaskItem = ({
           ref={contentRef}
           type="text"
           placeholder="작업 내용"
+          aria-label={`${label} 내용`}
           value={task.content}
           enterKeyHint="next"
           onChange={(e) => onUpdate({ content: e.target.value })}
@@ -161,11 +165,13 @@ export const TaskItem = ({
           value={task.progress}
           onChange={(progress) => onUpdate({ progress })}
           onEnter={onProgressEnter}
+          ariaLabel={`${label} 진행률(%)`}
         />
         <button
           type="button"
           onClick={handleAddDetail}
           disabled={!canAddDetail}
+          aria-label={`${label}에 세부 항목 추가`}
           className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-blue-50 hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400 dark:hover:bg-blue-950/30"
           title={canAddDetail ? '세부 항목 추가' : '작업 내용을 먼저 입력해주세요'}
         >
@@ -173,6 +179,7 @@ export const TaskItem = ({
         </button>
         <button
           onClick={onRemove}
+          aria-label={`${label} 삭제`}
           className="shrink-0 cursor-pointer rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-red-950/30"
           disabled={!canRemove}
           title="작업 삭제"
@@ -190,6 +197,7 @@ export const TaskItem = ({
               <TaskDetailItem
                 key={detail.id}
                 detail={detail}
+                label={`${label} 세부 항목 ${index + 1}`}
                 onUpdate={(content) => onUpdateDetail(detail.id, content)}
                 onRemove={() => onRemoveDetail(detail.id)}
                 onEnter={() => handleDetailEnter(index)}

@@ -21,7 +21,7 @@ import {
   type ProjectListFocusRequest,
   type RemoveOptions,
 } from '.';
-import { useProjects, useReportHistory, useResetOnHide, type UseProjectsReturn } from '@/hooks';
+import { useProjects, useReportAgentTools, useReportHistory, useResetOnHide, type UseProjectsReturn } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
 import { learnFromSavedReport, rememberCommitImport } from '@/lib/commit-classifier/memory';
@@ -286,6 +286,16 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   // - 히스토리 store 초기화 중: isHistoryLoaded=false → skeleton
   // - hydration 로직(오늘 기록 복원 / 익일 carry-over) 진행 중: hasHydratedFromHistory=false → skeleton
   const isFormReady = isClient && isHistoryLoaded && hasHydratedFromHistory;
+
+  // WebMCP 를 지원하는 브라우저 에이전트에게 폼 채우기·기록 조회 도구를 노출한다.
+  // 에이전트 저장도 복사와 같은 후처리(캘린더 이동 + 이탈 경고 해제)를 거친다.
+  useReportAgentTools({
+    enabled: isFormReady,
+    onSaved: (date) => {
+      requestHistoryFocus(date.month, date.day);
+      refreshBaseline();
+    },
+  });
 
   // 프로젝트/작업/세부 항목 삭제 직후 "실행 취소" 버튼이 포함된 토스트를 띄운다.
   // 토스트가 유지되는 동안(UNDO_TOAST_DURATION_MS) 사용자가 원래 위치로 되돌릴 수 있다.

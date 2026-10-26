@@ -121,6 +121,22 @@ Next.js 기본 파일명이 아니다. 동작:
 - **게스트**: localStorage에서 한 번에 로드. `MAX_HISTORY_ITEMS` 제한이 있고 `sortGuestByReportDateDesc`로 클라이언트 정렬한다.
 - **`addHistory`**: 같은 날짜의 기존 본문과 일치하면 I/O를 건너뛴다(복사 연타 시 무의미한 쓰기 방지). 사용자 모드에서는 upsert 후 해당 월을 직접 refetch — `loadingMonths`를 표시하지 않아 사용자 액션 직후 스켈레톤 깜빡임이 없다.
 
+### 에이전트 도구 (WebMCP)
+
+보고서 작성 화면은 브라우저 에이전트용 WebMCP 도구를 등록한다 (`hooks/use-report-agent-tools.ts`, `ReportForm`에서 호출). 서버는 관여하지 않는다 — 도구는 탭 안의 JS 로 store 액션을 직접 호출하고, 지시 해석은 에이전트 몫이다.
+
+- **도구**: 조회 `get_current_report` · `list_report_dates` · `get_report` · `search_reports`, 쓰기 `fill_report` · `import_report_text` · `carry_over_incomplete_tasks` · `save_report`. 쓰기 도구는 id 대신 버킷(today/tomorrow) 단위로 받는다.
+- **진입점**: `lib/webmcp`의 `getModelContext()`가 `document.modelContext`(최신 스펙)를 우선하고 `navigator.modelContext`(초기 프리뷰)로 폴백한다. 둘 다 없으면 아무것도 하지 않는다. 스펙이 초안이라 타입(`types/webmcp.type.ts`)과 이 래퍼만 고치면 되게 격리했다.
+- **노출 시점**: `isFormReady`(기록 hydration 완료) 이후에만 등록한다. 그 전에 채우면 hydration 이 에이전트 입력을 덮어쓴다. `<Activity>`로 숨겨지면 effect cleanup 의 `AbortController.abort()`로 해제되고, 복귀하면 다시 등록된다.
+- **사용자 확인**: 폼 변경은 화면에 그대로 보이므로 확인 없이 반영한다. 기록에 남는 `save_report`만 `confirm()` 다이얼로그로 승인을 받는다. 설정·인증·기록 삭제는 도구로 노출하지 않는다.
+- **입력 검증**: `inputSchema`는 브라우저가 강제하지 않는 힌트다. `execute`에서 다시 검증하고, 실패하면 에이전트가 고쳐 재호출할 수 있도록 필드 경로가 담긴 `isError` 결과를 돌려준다. 기록 본문이 포함된 결과에는 `untrustedContentHint`를 단다.
+- **DOM 경로도 유지한다**: WebMCP 를 모르는 에이전트·보조기술을 위해 폼 입력칸·버튼은 "금일 프로젝트 1 작업 2 진행률(%)" 같은 위치 기반 `aria-label`을 갖는다. 접두어는 `ProjectList → ProjectItem → TaskItem → TaskDetailItem`으로 `label` prop 을 내려 만든다.
+- **로컬 검증**: Chrome 을 `--enable-features=WebMCPTesting`(또는 `chrome://flags/#enable-webmcp-testing`)으로 띄우고, `chrome-devtools-mcp --categoryExperimentalWebmcp=true`의 `list_webmcp_tools` / `execute_webmcp_tool`로 호출한다.
+- **실사용자 노출 = 오리진 트라이얼**: 기본 설정의 Chrome 에는 `document.modelContext`가 없다. `ORIGIN_TRIAL_TOKENS`(쉼표 구분, `types/environments.d.ts`)를 설정하면 `next.config.ts`의 `headers()`가 모든 응답에 `Origin-Trial` 헤더를 실어 방문자 브라우저에서 API 가 켜진다. 토큰이 없으면 헤더를 싣지 않는다.
+  - Chrome 트라이얼(`WebMCP`)은 데스크톱 Chrome 149~162 대상이다(2026-09 연장). Edge 는 별도 트라이얼이라 토큰을 따로 받아 함께 넣는다.
+  - 토큰은 등록한 origin 에만 유효하다(프리뷰 배포 도메인에서는 무시됨). `headers()`는 빌드 시점에 평가되므로 토큰을 바꾸면 재배포해야 한다.
+  - 트라이얼이 끝나기 전에 Chrome Platform Status(feature `5117755740913664`)에서 연장·정식 출시 여부를 확인한다.
+
 ### GitHub 커밋 가져오기
 
 금일 업무 헤더의 **GitHub에서 가져오기** — 커밋을 불러와 Chrome 온디바이스 AI(Prompt API)로 프로젝트·작업에 분류한다. 설정은 `docs/github-import-setup.md`.

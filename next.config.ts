@@ -3,6 +3,15 @@ import type { NextConfig } from 'next';
 /** CSS Module 파일 경로 — Turbopack Tailwind 로더 규칙에서 모듈 여부를 가른다. */
 const CSS_MODULE_PATH = /\.module\.[^/]+$/;
 
+/**
+ * 오리진 트라이얼 토큰 목록 (`ORIGIN_TRIAL_TOKENS`, 쉼표 구분).
+ * 브라우저는 `Origin-Trial` 헤더 값의 쉼표 구분 토큰을 각각 검증하므로 한 헤더에 모아 보낸다.
+ */
+const ORIGIN_TRIAL_TOKENS = (process.env.ORIGIN_TRIAL_TOKENS ?? '')
+  .split(',')
+  .map((token) => token.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
   experimental: {
     scrollRestoration: true,
@@ -48,6 +57,10 @@ const nextConfig: NextConfig = {
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
+      // 실험 기능(WebMCP 등)을 방문자 브라우저에서 켠다. 토큰이 없으면 헤더를 아예 싣지 않는다.
+      ...(ORIGIN_TRIAL_TOKENS.length > 0
+        ? [{ source: '/:path*', headers: [{ key: 'Origin-Trial', value: ORIGIN_TRIAL_TOKENS.join(', ') }] }]
+        : []),
     ];
   },
 };
