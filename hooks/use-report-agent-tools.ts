@@ -97,7 +97,120 @@ const toAgentReport = (item: ReportHistoryItem) => ({
   date: reportItemDateKey(item),
   today: toAgentProjects(item.todayProjects),
   tomorrow: toAgentProjects(item.tomorrowProjects),
+  savedAt: item.timestamp,
 });
+
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// 'YYYY-MM-DD' → '10/19(월)'. 요일을 데이터로 준다 — 없으면 모델이 요일을 지어냈다(2026-10-19 월요일을 화요일로 답했다)
+const dayLabel = (date: string) => {
+  const [year, month, day] = date.split('-').map(Number);
+  return `${month}/${day}(${WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()]})`;
+};
+
+// 기록을 저장(복사)한 시각 — "언제 저장했어?"·"몇 시에 썼어?"에 답할 수 있게
+const savedAtLabel = (timestamp: number) => {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+// ───────────── 개수 ─────────────
+// "몇 개"를 묻는 질문에 쓰도록 도구가 미리 센다 — 작은 모델은 목록을 직접 세지 못했다(지난주 작업 수를 묻자 날짜 수를 답하고
+// 작업 대신 프로젝트를 늘어놓았다). 결과가 길면 뒤가 잘리므로 결과 맨 앞(counts)에 문장으로 둔다.
+
+const countTasks = (projects: ReadonlyArray<AgentProject>) => {
+  const tasks = projects.flatMap((p) => p.tasks);
+  return { projects: projects.length, tasks: tasks.length, completed: tasks.filter((t) => t.progress === 100).length };
+};
+
+const formCounts = (today: ReadonlyArray<AgentProject>, tomorrow: ReadonlyArray<AgentProject>) =>
+  (
+    [
+      ['금일', today],
+      ['익일', tomorrow],
+    ] as const
+  )
+    .map(([label, projects]) => {
+      const c = countTasks(projects);
+      return `${label} 프로젝트 ${c.projects}개 · 작업 ${c.tasks}개(100% 완료 ${c.completed}개)`;
+    })
+    .join(' / ');
+
+// 여러 날을 합친 개수 — 같은 작업을 날마다 이어 적으므로 같은 작업(프로젝트+작업 내용)을 한 번만 센 개수와 날짜별로 센 건수를 함께 준다
+const periodCounts = (reports: ReadonlyArray<{ today: Array<AgentProject>; tomorrow: Array<AgentProject> }>) => {
+  const section = (bucket: ProjectsBucket) => {
+    const projects = new Set<string>();
+    const tasks = new Map<string, number>();
+    for (const report of reports)
+      for (const p of report[bucket]) {
+        projects.add(p.name.trim());
+        for (const t of p.tasks) {
+          const key = `${p.name.trim()}\n${t.content.trim()}`;
+          tasks.set(key, Math.max(tasks.get(key) ?? 0, t.progress));
+        }
+      }
+    const entries = reports.reduce((n, r) => n + countTasks(r[bucket]).tasks, 0);
+    const completed = [...tasks.values()].filter((progress) => progress === 100).length;
+    return `프로젝트 ${projects.size}개 · 작업 ${tasks.size}개(같은 작업은 한 번만 셈, 100% 완료 ${completed}개, 날짜별로 따로 세면 ${entries}건)`;
+  };
+  return `보고서 ${reports.length}일 · 금일(한 일) ${section('today')} · 익일(예정) ${section('tomorrow')}`;
+};
+
+type AgentReport = ReturnType<typeof toAgentReport>;
+
+// ───────────── 여러 날 결과 ─────────────
+// 프로젝트·작업을 JSON 객체로 넘기면 글자 대부분이 키 이름이라, 한 주만 넘어도 채팅에 넘기는 결과(6,000자)가 잘려 뒤 날짜가 빠졌다.
+// 그래서 여러 날은 ① 작업별 흐름(같은 작업을 날마다 이어 적으므로 요약에 가장 쓸모 있다)을 먼저 두고 ② 날짜마다 한 줄로 준다.
+
+const compactProjects = (projects: ReadonlyArray<AgentProject>) =>
+  projects
+    .map(
+      (p) =>
+        `[${p.name}] ${p.tasks
+          .map((t) => `${t.content} ${t.progress}%${t.details.length > 0 ? ` (세부: ${t.details.join('; ')})` : ''}`)
+          .join(', ')}`
+    )
+    .join(' ') || '없음';
+
+const compactDay = (report: AgentReport) =>
+  `${report.date} ${dayLabel(report.date)} 금일(작업 ${countTasks(report.today).tasks}개): ${compactProjects(report.today)} / 익일(작업 ${countTasks(report.tomorrow).tasks}개): ${compactProjects(report.tomorrow)}`;
+
+// 기간 안의 금일 작업을 작업별로 — 며칠 했는지, 진행률이 어떻게 변했는지. reports 는 날짜 오름차순
+const taskTimeline = (reports: ReadonlyArray<AgentReport>) => {
+  const tasks = new Map<string, { project: string; task: string; dates: Array<string>; first: number; last: number }>();
+  for (const report of reports)
+    for (const p of report.today)
+      for (const t of p.tasks) {
+        const key = `${p.name.trim()}\n${t.content.trim()}`;
+        const entry = tasks.get(key) ?? {
+          project: p.name.trim(),
+          task: t.content.trim(),
+          dates: [],
+          first: t.progress,
+          last: t.progress,
+        };
+        entry.dates.push(report.date);
+        entry.last = t.progress;
+        tasks.set(key, entry);
+      }
+  return [...tasks.values()].map(
+    (e) =>
+      `[${e.project}] ${e.task}: ${e.dates.length}일(${dayLabel(e.dates[0])}${e.dates.length > 1 ? `~${dayLabel(e.dates.at(-1)!)}` : ''}), 진행률 ${e.first === e.last ? `${e.last}%` : `${e.first}%→${e.last}%`}`
+  );
+};
+
+const periodResult = (reports: ReadonlyArray<AgentReport>, extra: Record<string, unknown> = {}) => {
+  const shown = reports.slice(-MAX_SEARCH_RESULTS);
+  return toolText({
+    counts: periodCounts(reports),
+    total: reports.length,
+    ...extra,
+    truncated: reports.length > MAX_SEARCH_RESULTS,
+    tasks: taskTimeline(shown),
+    days: shown.map(compactDay),
+  });
+};
 
 const isSavable = (today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Project>) =>
   (today.some(hasProjectContent) || tomorrow.some(hasProjectContent)) &&
@@ -106,11 +219,14 @@ const isSavable = (today: ReadonlyArray<Project>, tomorrow: ReadonlyArray<Projec
 
 const currentFormSnapshot = () => {
   const { reportDate, today, tomorrow } = useReportFormStore.getState();
+  const agentToday = toAgentProjects(today);
+  const agentTomorrow = toAgentProjects(tomorrow);
   return {
+    counts: formCounts(agentToday, agentTomorrow),
     month: Number(reportDate.month),
     day: Number(reportDate.day),
-    today: toAgentProjects(today),
-    tomorrow: toAgentProjects(tomorrow),
+    today: agentToday,
+    tomorrow: agentTomorrow,
     canSave: isSavable(today, tomorrow),
     text: generateReportText({ ...reportDate, todayProjects: today, tomorrowProjects: tomorrow }),
   };
@@ -434,20 +550,29 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
     title: '저장된 보고서 날짜 조회',
     kind: 'read',
     description:
-      'Return only the dates (YYYY-MM-DD, newest first) that have saved reports — no content. Use it only to know which dates have records. To view or summarize content, use search_reports (range/keyword) or get_report (one day).',
+      'Return only the dates (YYYY-MM-DD, newest first) that have saved reports — no content — with the total and the number of reports per month (byMonth). Use it to know which dates have records or how many reports were written. To view or summarize content, use search_reports (range/keyword) or get_report (one day).',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true },
     execute: async () => {
       await ensureHistory();
       const { mode, allReportDates } = useReportHistoryStore.getState();
-      return toolText({ storage: mode === 'user' ? 'account' : 'browser', dates: allReportDates });
+      // "이번 달에 보고서 몇 번 썼어?" — 모델이 날짜 목록을 직접 세지 않게 월별로 세어 준다
+      const byMonth: Record<string, number> = {};
+      for (const date of allReportDates) byMonth[date.slice(0, 7)] = (byMonth[date.slice(0, 7)] ?? 0) + 1;
+      return toolText({
+        storage: mode === 'user' ? 'account' : 'browser',
+        total: allReportDates.length,
+        byMonth,
+        dates: allReportDates,
+      });
     },
   },
   {
     name: 'get_report',
     title: '저장된 보고서 조회',
     kind: 'read',
-    description: 'Return the saved report (today and tomorrow sections) for the given date.',
+    description:
+      'Return the saved report for the given date: weekday (day), when it was saved (savedAt), counts, and the today and tomorrow sections with tasks, progress and details.',
     inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input) => {
@@ -455,7 +580,15 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
       if (typeof date !== 'string') return toolError(date.error);
       const item = await findSavedReport(date, '볼까요');
       if (isToolResult(item)) return item;
-      return toolText(toAgentReport(item));
+      const { savedAt, ...report } = toAgentReport(item);
+      return toolText({
+        counts: formCounts(report.today, report.tomorrow),
+        date: report.date,
+        day: dayLabel(report.date),
+        savedAt: savedAtLabel(savedAt),
+        today: report.today,
+        tomorrow: report.tomorrow,
+      });
     },
   },
   {
@@ -463,7 +596,7 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
     title: '보고서 기록 검색',
     kind: 'read',
     description:
-      'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. Results are in ascending date order, up to the latest 62 reports.',
+      'Search saved report contents by date range (from~to, inclusive) and keyword. Use it to view or summarize several days, e.g. "summarize this week" or "find last month\'s token tasks". With a keyword, only projects whose name, tasks or details contain it are kept. The result has counts (projects and tasks already counted for the period — use them for "how many" questions), tasks (each task done in the period: how many days, first~last day, progress change) and days (one line per report in ascending date order with weekday, up to the latest 62 reports).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -497,7 +630,8 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
 
       const inPeriod = all
         .map(toAgentReport)
-        .filter((r) => (from === null || r.date >= from) && (to === null || r.date <= to));
+        .filter((r) => (from === null || r.date >= from) && (to === null || r.date <= to))
+        .sort((a, b) => a.date.localeCompare(b.date));
       const reports = inPeriod
         .map((r) =>
           query ? { ...r, today: r.today.filter(matchesQuery), tomorrow: r.tomorrow.filter(matchesQuery) } : r
@@ -506,18 +640,11 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
 
       // 키워드로 하나도 안 나오면 기간 전체를 돌려준다 — "query 를 빼고 다시 부르라"고 알려도 모델이 같은 호출을 되풀이했다
       if (query && reports.length === 0 && inPeriod.length > 0)
-        return toolText({
-          total: inPeriod.length,
+        return periodResult(inPeriod, {
           note: `"${rawQuery}" 와 일치하는 프로젝트가 없어 기간 안의 보고서 전체를 돌려줍니다.`,
-          truncated: inPeriod.length > MAX_SEARCH_RESULTS,
-          reports: inPeriod.slice(-MAX_SEARCH_RESULTS),
         });
 
-      return toolText({
-        total: reports.length,
-        truncated: reports.length > MAX_SEARCH_RESULTS,
-        reports: reports.slice(-MAX_SEARCH_RESULTS),
-      });
+      return periodResult(reports);
     },
   },
 ];
@@ -574,7 +701,7 @@ export const useReportAgentTools = ({
         kind: 'read',
         stateReader: true,
         description:
-          'Return the daily report form currently being written: report date (month/day), today, tomorrow, whether it can be saved (canSave) and the finished report text (text). Call it to check the current state before editing.',
+          'Return the daily report form currently being written: report date (month/day), today, tomorrow, whether it can be saved (canSave), the finished report text (text) and counts (projects and tasks already counted per section — use them for "how many" questions). Call it to check the current state before editing.',
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: async () => toolText(currentFormSnapshot()),

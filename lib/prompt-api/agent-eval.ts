@@ -50,6 +50,20 @@ const has = (projects: ReadonlyArray<EvalProject>, content: string) => tasksOf(p
 export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
   { name: '인사', turns: [{ say: '안녕! 뭐 할 수 있어?', expect: [] }] },
   {
+    // 실제로 실패했던 질문 — 쓰기 의도로 분류돼 "처리할 기능이 없어요"로 끝났다
+    name: '작성 중 보고서 개수 묻기',
+    form: { ...BASE_FORM, tomorrow: [{ name: 'QA', tasks: [{ content: '회귀 테스트', progress: 0 }] }] },
+    turns: [{ say: '내일 할 업무는 몇가지야?', expect: ['get_current_report'] }],
+  },
+  {
+    // 실제로 실패했던 대화 — 다듬는 질문을 "보고서에 추가"로 분류해 "처리할 기능이 없어요"로 끝났다
+    name: '지난주 작업 수 → 작업 단위로 다시',
+    turns: [
+      { say: '지난주에 한 업무는 몇가지나 돼?', expect: ['search_reports'] },
+      { say: '프로젝트 단위말고 작업 단위로 세줘', expect: [] },
+    ],
+  },
+  {
     // 실제로 실패했던 대화 — 중복이 생기고, 중복 삭제가 폼 초기화로 갔다
     name: '반복 업무 복사 → 진행률 → 중복 정리',
     form: BASE_FORM,
@@ -216,6 +230,11 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     name: '작성 중 보고서 요약',
     form: BASE_FORM,
     turns: [{ say: '지금 작성 중인 보고서 요약해줘', expect: ['get_current_report'] }],
+  },
+  // 대화로 분류돼도 기록을 묻는 말이면 조회해야 한다 — 도구 없이 답하면 기록을 지어낸다
+  {
+    name: '저장 횟수 묻기',
+    turns: [{ say: '이번 달에 보고서 몇 번 썼어?', expect: ['list_report_dates', 'search_reports'] }],
   },
   { name: '이번 주 기록 정리', turns: [{ say: '이번 주에 쓴 보고서 정리해줘', expect: ['search_reports'] }] },
   { name: '화면 모드', turns: [{ say: '다크 모드로 바꿔줘', expect: ['set_theme'] }] },
