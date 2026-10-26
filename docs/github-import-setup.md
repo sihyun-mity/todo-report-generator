@@ -59,7 +59,8 @@ GitHub 승인 화면에서 취소해도 기존 로그인 세션은 유지한다(
 
 1. `GET /user/repos?sort=pushed` 로 기준 시각 이후 push 된 저장소(최대 20개)를 고른다.
 2. 저장소마다 `GET /repos/{r}/activity?actor=<login>&activity_type=push` 로 본인이 push 한 브랜치를 찾는다
-   (막혀 있으면 기본 브랜치만 본다). 저장소당 최대 10개 브랜치.
+   (막혀 있으면 기본 브랜치만 본다). 저장소당 최대 10개 브랜치. `time_period` 는 지금부터 거슬러 세는 창이라
+   지난 날짜 보고서도 범위 시작이 들어가는 창(`day`~`year`, 1년보다 오래되면 생략)을 고른다.
 3. 브랜치마다 `GET /repos/{r}/commits?author=<login>&since=<시작>&until=<끝>` 으로 커밋을 모으고 SHA 로 중복을 없앤다. 머지 커밋은 제외.
 
 조회 범위는 **보고서 날짜 직전 보고서의 작성 시각부터**다(오늘 보고서면 `until` 없음). 보고서 날짜에 이미 저장한 보고서는

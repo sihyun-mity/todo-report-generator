@@ -77,6 +77,22 @@ async function listRecentRepos(token: string, since: Date, excludedRepos: Readon
     .slice(0, GITHUB_MAX_REPOS);
 }
 
+// activity API 의 time_period 는 "지금부터 거슬러" 세는 창이라, 지난 날짜 보고서도 범위 끝이 아니라 since 가 들어가는
+// 가장 작은 창을 고른다(month·quarter 는 달력 길이와 어긋나지 않게 짧게 잡는다). 1년보다 오래되면 창을 두지 않는다.
+const ACTIVITY_PERIODS = [
+  { period: 'day', days: 1 },
+  { period: 'week', days: 7 },
+  { period: 'month', days: 28 },
+  { period: 'quarter', days: 89 },
+  { period: 'year', days: 365 },
+] as const;
+
+function activityPeriodQuery(since: Date) {
+  const days = (Date.now() - since.getTime()) / 86_400_000;
+  const found = ACTIVITY_PERIODS.find((p) => days <= p.days);
+  return found ? `&time_period=${found.period}` : '';
+}
+
 // 저장소에서 since 이후 작성자들(GitHub login)이 push 한 브랜치. Repository activities API 가 막혀 있으면 기본 브랜치만 본다.
 // 이메일로만 받은 작성자는 push 주체를 알 수 없어 연결한 계정이 push 한 브랜치와 기본 브랜치에서 찾는다
 // (GitLab 에서 옮겨 온 저장소처럼 예전 이메일로 작성한 커밋을 본인이 push 한 경우).
@@ -87,13 +103,12 @@ async function findPushedBranches(
   since: Date
 ): Promise<Array<string>> {
   const branches = new Set<string>([repo.default_branch]);
-  const days = (Date.now() - since.getTime()) / 86_400_000;
-  const period = days <= 1 ? 'day' : days <= 7 ? 'week' : 'month';
+  const periodQuery = activityPeriodQuery(since);
   for (const actor of actors) {
     try {
       const activity = await gh<Array<ActivityItem>>(
         token,
-        `/repos/${repo.full_name}/activity?actor=${encodeURIComponent(actor)}&activity_type=push&time_period=${period}&per_page=100`
+        `/repos/${repo.full_name}/activity?actor=${encodeURIComponent(actor)}&activity_type=push${periodQuery}&per_page=100`
       );
       for (const a of activity) {
         if (new Date(a.timestamp) < since || !a.ref.startsWith('refs/heads/')) continue;
