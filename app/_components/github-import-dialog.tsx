@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
+  ArrowDown,
   Building2,
   CalendarClock,
   Check,
@@ -161,8 +162,6 @@ const summarize = (plan: CommitImportPlan) => {
   };
 };
 
-// 분류 중 화면에 남겨 둘 판단 단계 수(최신 것부터)
-const VISIBLE_THOUGHTS = 4;
 // AI 생각 로그에서 맨 아래로 간주하는 여유(px) — 이 안에 있으면 새 내용을 따라 스크롤한다
 const FOLLOW_THRESHOLD_PX = 24;
 
@@ -299,7 +298,7 @@ export function GithubImportDialog({
           setThoughts((current) =>
             current.some((t) => t.id === thought.id)
               ? current.map((t) => (t.id === thought.id ? thought : t))
-              : [...current, thought].slice(-VISIBLE_THOUGHTS)
+              : [...current, thought]
           ),
       });
       // AI 분류는 모든 단계가 완료된 모습을 잠깐 보여 준 뒤 결과로 넘어간다. 규칙 분류는 기다림 없이 바로 끝나 그대로 보여 준다.
@@ -876,17 +875,38 @@ function ProgressBar({ ratio, label }: Readonly<{ ratio: number; label?: string 
 
 // 온디바이스 AI 가 지금 무엇을 판단하는지와, 생성 중인 응답에서 읽어 낸 점수·요약을 실시간으로 보여 준다.
 // 끝난 단계는 결과 한 줄로 접는다. 대화창 높이를 다 쓰면 목록이 스크롤되고, 사용자가 맨 아래를 보고 있을 때만
-// 새로 생성되는 내용을 따라 내려간다.
+// 새로 생성되는 내용을 따라 내려간다. 위로 올려 읽는 중이면 맨 아래로 돌아가는 버튼을 띄운다.
 function ThinkingLog({ thoughts }: Readonly<{ thoughts: ReadonlyArray<ClassifyThought> }>) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLOListElement | null>(null);
   // 맨 아래를 보고 있는지 — 처음에는 따라간다. 위로 올려 읽는 중이면 위치를 건드리지 않는다.
+  // ResizeObserver 콜백이 읽는 값은 ref, 버튼 표시는 state 로 둔다.
   const followRef = useRef(true);
+  const [isFollowing, setIsFollowing] = useState(true);
+  const lastScrollTopRef = useRef(0);
 
+  const setFollow = (value: boolean) => {
+    followRef.current = value;
+    setIsFollowing(value);
+  };
+
+  // 위로 올렸을 때만 따라가기를 멈추고, 맨 아래에 닿으면 다시 따라간다. 아래로 내려가는 스크롤(새 내용 따라가기·
+  // 버튼의 부드러운 스크롤 도중)로는 멈추지 않는다 — 부드러운 스크롤 도중에 새 줄이 생기면 따라가기가 풀리지 않게.
   const handleScroll = () => {
     const list = listRef.current;
     if (!list) return;
-    followRef.current = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
+    const isAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
+    if (isAtBottom) setFollow(true);
+    else if (list.scrollTop < lastScrollTopRef.current) setFollow(false);
+    lastScrollTopRef.current = list.scrollTop;
+  };
+
+  const scrollToBottom = () => {
+    const list = listRef.current;
+    if (!list) return;
+    setFollow(true);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    list.scrollTo({ top: list.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
   };
 
   // 내용 높이가 바뀌면(줄 추가·줄바꿈 변화·끝난 단계 접힘) 목록 높이를 그 값으로 옮겨 transition 으로 부드럽게 늘고 준다.
@@ -914,53 +934,66 @@ function ThinkingLog({ thoughts }: Readonly<{ thoughts: ReadonlyArray<ClassifyTh
       <p className="mb-2 flex shrink-0 items-center gap-1.5 px-3 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
         <Cpu size={12} /> AI가 생각하는 과정
       </p>
-      <div
-        ref={listRef}
-        onScroll={handleScroll}
-        className="scrollbar-hidden min-h-0 overflow-y-auto px-3 transition-[height,min-height] duration-300 ease-out motion-reduce:transition-none"
-      >
-        <ol ref={contentRef} className="space-y-2.5">
-          {thoughts.map((thought) => {
-            const isDone = thought.conclusion !== null;
-            return (
-              <li key={thought.id} className="flex gap-2 text-xs">
-                {isDone ? (
-                  <Check size={14} className="mt-0.5 shrink-0 text-emerald-500" />
-                ) : (
-                  <Sparkles size={14} className="mt-0.5 shrink-0 animate-pulse text-blue-500" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      'break-words',
-                      isDone ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-zinc-700 dark:text-zinc-200'
-                    )}
-                  >
-                    {thought.title}
-                  </p>
+      <div className="relative flex min-h-0 flex-col">
+        <div
+          ref={listRef}
+          onScroll={handleScroll}
+          className="scrollbar-hidden min-h-0 overflow-y-auto px-3 transition-[height,min-height] duration-300 ease-out motion-reduce:transition-none"
+        >
+          <ol ref={contentRef} className="space-y-2.5">
+            {thoughts.map((thought) => {
+              const isDone = thought.conclusion !== null;
+              return (
+                <li key={thought.id} className="flex gap-2 text-xs">
                   {isDone ? (
-                    <p className="mt-0.5 break-words text-zinc-600 dark:text-zinc-300">→ {thought.conclusion}</p>
+                    <Check size={14} className="mt-0.5 shrink-0 text-emerald-500" />
                   ) : (
-                    <div className="mt-1 space-y-0.5 border-l-2 border-blue-100 pl-2 text-zinc-500 dark:border-blue-900/50 dark:text-zinc-400">
-                      {thought.lines.length ? (
-                        thought.lines.map((line, index) => (
-                          <p key={index} className="break-words">
-                            {line}
-                            {index === thought.lines.length - 1 && (
-                              <span className="ml-0.5 inline-block h-3 w-1 translate-y-0.5 animate-pulse bg-blue-400" />
-                            )}
-                          </p>
-                        ))
-                      ) : (
-                        <p className="animate-pulse">생각하는 중…</p>
-                      )}
-                    </div>
+                    <Sparkles size={14} className="mt-0.5 shrink-0 animate-pulse text-blue-500" />
                   )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={cn(
+                        'break-words',
+                        isDone ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-zinc-700 dark:text-zinc-200'
+                      )}
+                    >
+                      {thought.title}
+                    </p>
+                    {isDone ? (
+                      <p className="mt-0.5 break-words text-zinc-600 dark:text-zinc-300">→ {thought.conclusion}</p>
+                    ) : (
+                      <div className="mt-1 space-y-0.5 border-l-2 border-blue-100 pl-2 text-zinc-500 dark:border-blue-900/50 dark:text-zinc-400">
+                        {thought.lines.length ? (
+                          thought.lines.map((line, index) => (
+                            <p key={index} className="break-words">
+                              {line}
+                              {index === thought.lines.length - 1 && (
+                                <span className="ml-0.5 inline-block h-3 w-1 translate-y-0.5 animate-pulse bg-blue-400" />
+                              )}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="animate-pulse">생각하는 중…</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+        {!isFollowing && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label="최신 내용 보기"
+            title="최신 내용 보기"
+            className="absolute bottom-1 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/95 text-zinc-600 shadow-md backdrop-blur hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/95 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            <ArrowDown size={14} />
+          </button>
+        )}
       </div>
     </section>
   );
