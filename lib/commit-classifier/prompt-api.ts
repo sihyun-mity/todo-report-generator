@@ -58,17 +58,21 @@ export type JsonAsker = <T>(prompt: string, schema: object, onText?: (text: stri
 // 세션 하나를 만들고 질문마다 clone 해 쓴다(앞 질문의 문맥이 섞이지 않게).
 // 같은 모델로 프롬프트를 동시에 돌리면 뒤 요청이 수 분간 멈추는 현상이 있어 호출은 반드시 직렬로 한다.
 // availability 가 'available' 일 때만 호출한다(다운로드는 downloadPromptModel 로 따로).
-export const openPromptSession = async (): Promise<{ ask: JsonAsker; close: () => void }> => {
-  const base = await LanguageModel.create(OPTIONS);
+// signal 이 중단되면 진행 중인 응답을 끊고 대기열에 남은 질문은 모델에 보내지 않는다(AbortError 로 끝난다) —
+// 다른 세션의 분류와 모델 호출이 겹치지 않게, 새로 분류하기 전에 이전 분류를 멈출 때 쓴다.
+export const openPromptSession = async (signal?: AbortSignal): Promise<{ ask: JsonAsker; close: () => void }> => {
+  const base = await LanguageModel.create({ ...OPTIONS, signal });
 
   let queue: Promise<unknown> = Promise.resolve();
   const ask: JsonAsker = <T>(prompt: string, schema: object, onText?: (text: string) => void) => {
     const run = async () => {
-      const session = await base.clone();
+      signal?.throwIfAborted();
+      const session = await base.clone({ signal });
       try {
+        const timeout = AbortSignal.timeout(COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS);
         const options = {
           responseConstraint: schema,
-          signal: AbortSignal.timeout(COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS),
+          signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
         };
         const raw = onText
           ? await readStream(session.promptStreaming(prompt, options), onText)

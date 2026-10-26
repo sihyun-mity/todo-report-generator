@@ -278,9 +278,12 @@ export function GithubImportDialog({
   const isAiChecked = aiAvailability.isSuccess && aiNotice === null;
 
   // 분류는 같은 커밋 조회 결과(조회 시각)마다 한 번만 돌린다.
+  // signal 을 넘겨 두면 react-query 가 이전 분류를 취소한다 — 작성자·제외 목록이 바뀌어 다시 조회하면(키가 바뀌어
+  // 관찰자가 없어지면) 또는 같은 키로 refetch 하면(다시 분류·제외 해제·모델 받은 뒤). 온디바이스 모델은 동시에
+  // 호출하면 뒤 요청이 수 분간 멈추므로 이전 분류를 끝까지 돌리지 않는다.
   const plan = useQuery({
     ...queries.github.plan(commits.dataUpdatedAt),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       setProgress(null);
       setThoughts([]);
       const result = await classifyCommits({
@@ -290,6 +293,7 @@ export function GithubImportDialog({
         todayProjects,
         reportDateKey,
         history,
+        signal,
         onProgress: setProgress,
         onThinking: (thought) =>
           setThoughts((current) =>

@@ -134,7 +134,7 @@ Next.js 기본 파일명이 아니다. 동작:
   - 메뉴를 열면 자동완성 후보(`fetchGithubCommitAuthors`)를 불러온다 — 같은 저장소 범위(제외 저장소 빼고)의 최근 `GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS`(30일) 기본 브랜치 커밋 작성자. 저장소마다 커밋 목록 한 번만 조회한다. GitHub 계정과 연결된 커밋은 login, 아니면 작성 이메일로 모은다. 후보에는 작성자 식별값·이름·커밋 수·저장소만 싣고 커밋 내용은 싣지 않는다 — 다른 사람의 이메일이 보이는 것은 저장소 접근 권한으로 이미 볼 수 있는 정보라 허용한다.
 - 분류(`lib/commit-classifier/`)는 브라우저에서만 돈다. Gemini Nano 는 `ko` 를 선언하면 unavailable 이라 `en` 으로 선언하고 한국어를 넣는다.
   - 결정은 **후보별 0-10 점수 + 임계값**으로 한다(저장소→프로젝트 ≥8, 커밋→작업 ≥7). 선택형 enum 하나로 고르게 하면 기존 항목으로 쏠려 "새 작업"을 못 고른다. 프롬프트를 바꾸면 PoC 세트로 다시 검증한다.
-  - 모델 호출은 직렬로만 한다(`openPromptSession` 큐). 동시에 돌리면 뒤 요청이 수 분간 멈춘다.
+  - 모델 호출은 직렬로만 한다(`openPromptSession` 큐). 동시에 돌리면 뒤 요청이 수 분간 멈춘다. 큐는 분류(세션)마다 따로라, 다시 분류하기 전에 **이전 분류를 취소한다** — 분류 쿼리의 react-query `signal` 을 `classifyCommits` → `openPromptSession` 까지 넘겨 두면 키가 바뀌거나(작성자·제외 목록 변경으로 다시 조회) 같은 키로 refetch 할 때 진행 중인 응답을 끊고 남은 호출을 버린다. 중단은 `safeAsk` 에서 던져 "판정 없음"으로 삼키지 않고, 중단 뒤에는 진행 표시 콜백을 부르지 않는다.
   - 분류 중에는 응답을 `promptStreaming` 으로 받아 "AI가 생각하는 과정"(단계 제목 + 생성 중인 점수·`summary`·`reason`·작업명)을 보여 준다. 스트리밍 JSON 은 `partial-json.ts` 로 키 단위로만 읽는다. 표시를 위해 프롬프트·스키마를 바꾸지 않는다(바꾸면 PoC 재검증 대상). 진행은 단계 목록(`COMMIT_CLASSIFY_STAGE`)으로 보여 준다 — 전체 호출 수는 앞 단계 판정에 따라 달라져 미리 알 수 없어, 진행 중인 단계 안의 개수만 센다.
   - 모델이 `available` 일 때만 AI 를 쓴다. 다운로드는 사용자 클릭(`downloadPromptModel`)으로만 시작한다.
   - AI 를 쓸 수 없으면(모델 미설치 `downloadable`/`downloading`, 미지원 브라우저 `unavailable`) 커밋 조회 뒤 **분류 시작 전에 한 번** 안내한다(`AiUnavailableNotice`) — 모델 받고 AI 로 분류할지, 저장소 기준(규칙) 분류로 계속할지 고르게 한다. 확인한 상태는 기기 localStorage(`COMMIT_IMPORT_AI_NOTICE_STORAGE_KEY`)에 남겨 같은 상태로는 다시 묻지 않는다(상태가 바뀌면 다시 안내). 이후 규칙 분류 미리보기의 안내 줄과 "AI 모델 받고 다시 분류" 버튼은 그대로 둔다.

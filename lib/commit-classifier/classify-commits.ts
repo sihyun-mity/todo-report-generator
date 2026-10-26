@@ -70,6 +70,8 @@ type ClassifyArgs = {
   onProgress: (progress: ClassifyProgress) => void;
   // AI 판단 과정(분류 중 화면 표시용). AI 를 쓸 때만 불린다.
   onThinking: (thought: ClassifyThought) => void;
+  // 중단되면 남은 모델 호출을 하지 않고 AbortError 로 끝난다. 중단 뒤에는 onProgress / onThinking 을 부르지 않는다.
+  signal?: AbortSignal;
 };
 
 // 판단 과정 한 단계를 띄우고, 모델 응답을 read 로 읽어 갱신(onText)하다가 결과로 마무리(conclude)한다
@@ -105,9 +107,13 @@ export async function classifyCommits({
   todayProjects,
   reportDateKey,
   history,
-  onProgress,
-  onThinking,
+  onProgress: reportProgress,
+  onThinking: reportThinking,
+  signal,
 }: ClassifyArgs): Promise<CommitImportPlan> {
+  // 중단된 분류가 새 분류의 진행 표시를 덮어쓰지 않게 한다
+  const onProgress = (value: ClassifyProgress) => !signal?.aborted && reportProgress(value);
+  const onThinking = (value: ClassifyThought) => !signal?.aborted && reportThinking(value);
   const memory = await readCommitImportMemory(userId);
   const styleSamples = collectStyleSamples(history);
   const formProjects = todayProjects.filter((p) => p.name.trim());
@@ -137,16 +143,20 @@ export async function classifyCommits({
   // 미리보기에서 사용자가 내려받기를 누르면 다시 분류한다. 세션 생성(모델 적재)이 오래 걸릴 수 있어 단계로 보여 준다.
   startStage(COMMIT_CLASSIFY_STAGE.PREPARE, 0);
   const availability = await getPromptApiAvailability();
-  const session = availability === 'available' ? await openPromptSession().catch(() => null) : null;
+  signal?.throwIfAborted();
+  const session = availability === 'available' ? await openPromptSession(signal).catch(() => null) : null;
   const ask: JsonAsker | null = session?.ask ?? null;
   // 드물게 응답이 멈춰 타임아웃이 나므로 한 번 더 시도한다. 그래도 실패하면 null — 호출부는 "판정 없음"으로 처리한다.
+  // 모든 모델 호출이 여기를 지나므로 중단은 여기서 던져 분류 전체를 끝낸다(판정 없음으로 삼켜 계속하지 않게).
   const safeAsk = async <T>(prompt: string, schema: object, onText?: (text: string) => void): Promise<T | null> => {
+    signal?.throwIfAborted();
     if (!ask) return null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await ask<T>(prompt, schema, onText);
       } catch {
-        // 다음 시도
+        // 중단이면 다시 시도하지 않고 끝낸다
+        signal?.throwIfAborted();
       }
     }
     return null;
