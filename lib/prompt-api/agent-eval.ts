@@ -258,6 +258,14 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     ],
   },
   { name: '새소식 화면 이동', turns: [{ say: '새소식 화면으로 가줘', expect: ['navigate'] }] },
+  // "자세히 보시겠어요?" 뒤의 "자세히 보여줘"는 그 소식을 연다 — GitHub 가져오기 창을 열었다
+  {
+    name: '새소식 자세히 보기',
+    turns: [
+      { say: '가장 최근 새소식 알려줘', expect: ['list_news', 'get_news'] },
+      { say: '자세히 보여줘', expect: ['open_news'], forbid: ['open_github_import'] },
+    ],
+  },
   // 묻는 말은 화면을 옮기지 않고 답한다 — "알고싶어"에 새소식 화면으로 옮겨 갔다
   {
     name: '새소식 묻기',

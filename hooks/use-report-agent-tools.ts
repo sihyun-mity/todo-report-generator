@@ -1689,6 +1689,8 @@ export const useReportAgentTools = ({
         name: 'open_github_import',
         title: 'GitHub 커밋 가져오기 열기',
         kind: 'navigate',
+        // GitHub·커밋·가져오기를 말했을 때만 — "자세히 보여줘"에 이 창을 열었다
+        requires: (request) => /github|깃허브|깃헙|커밋|가져오기|가져와/i.test(request),
         description:
           'Open the "GitHub에서 가져오기" dialog that imports GitHub commits into today\'s tasks. The user picks and applies commits in the dialog. Members only — guests see a login prompt.',
         inputSchema: { type: 'object', properties: {} },
@@ -1698,8 +1700,9 @@ export const useReportAgentTools = ({
           return toolText({
             opened: true,
             message: isMember
-              ? '가져오기 창을 열었습니다. 사용자가 창에서 커밋을 확인하고 적용합니다.'
-              : '게스트라 로그인 안내가 표시됩니다. 커밋 가져오기는 로그인 후 쓸 수 있습니다.',
+              ? // 화면에 그대로 보이는 안내다(이동·열기 도구는 이 문장으로 답한다)
+                'GitHub 가져오기 창을 열었어요. 창에서 커밋을 확인하고 적용해 주세요.'
+              : 'GitHub 가져오기는 로그인한 회원만 쓸 수 있어요. 창에서 로그인 안내를 확인해 주세요.',
           });
         },
       },

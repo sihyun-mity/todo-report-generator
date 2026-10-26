@@ -52,8 +52,9 @@ const rankFromRequest = (request: string) => {
 };
 // 대화에서 방금 다룬 소식을 가리켜 열어 달라는 요청("그거 보여줘") — 본문을 읽어 채팅으로 늘어놓지 않고 그 소식 화면을 연다.
 // 대화에서 가장 최근에 다룬 것이 새소식일 때만(focus.latest) 소식으로 본다 — 보고서 얘기 뒤의 "그거 보여줘"까지 소식으로 열지 않게
+// "자세히 보여줘"도 방금 다룬 소식을 가리킨다 — "자세히 보시겠어요?"에 이렇게 답하자 GitHub 가져오기를 열었다
 const POINTING_REQUEST =
-  /그거|그것|그걸|이거|이것|이걸|저거|[이그저]\s*(새\s*소식|소식|공지|글)|방금\s*(말한|그|본)|말한\s*(거|것|소식)/;
+  /그거|그것|그걸|이거|이것|이걸|저거|[이그저]\s*(새\s*소식|소식|공지|글)|방금\s*(말한|그|본)|말한\s*(거|것|소식)|자세히|좀\s*더|더\s*자세/;
 const opensMentionedNews = (request: string) =>
   useAgentChatStore.getState().focus.latest === 'news' &&
   POINTING_REQUEST.test(request) &&
