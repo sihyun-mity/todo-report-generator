@@ -17,15 +17,13 @@ import {
   hasRequestExpression,
   looksLikeWorkNotes,
   runAgentChatTurn,
+  focusAfterTool,
   structureNotes,
 } from '@/lib/prompt-api';
 import { agentToolsFor, parseToolUnavailable } from '@/lib/webmcp';
 import { useAgentChatStore, useAgentToolsStore, useReportFormStore } from '@/stores';
 import { createId } from '@/utils';
 import { AgentPanel, useAgentSituation, useAgentSuggestions, useGlobalAgentTools } from '.';
-
-// 대화에서 다룬 새소식(mentionedNewsId)을 이어 가는 도구 — 이 밖의 도구를 실행하면 "그거"가 가리키던 소식을 잊는다
-const NEWS_TOOL_NAMES: ReadonlyArray<string> = ['list_news', 'get_news', 'open_news'];
 
 // Nano가 물은 다음 할 일을 받아들이는 짧은 말("응", "보여줘", "네 열어주세요")
 const ACCEPT_OFFER =
@@ -244,6 +242,8 @@ export function AgentAssistant() {
         canWriteFromNotes: canWriteFromNotes && !hasRequestExpression(text),
         getTools: () => agentToolsFor(useAgentToolsStore.getState().tools, 'chat'),
         getSituation,
+        // 이번 요청이 가리킨 대상·도구가 다룬 대상을 기억해 다음 요청의 "그거"를 풀게 한다
+        onFocus: (patch) => useAgentChatStore.getState().updateFocus(patch),
         context: {
           confirm: requestConfirm,
           reportChange: (change) => {
@@ -254,7 +254,7 @@ export function AgentAssistant() {
         // 앞 대화와 관계없는 새 요청이라 모델이 앞 대화 없이 시작했다 — 화면의 앞 대화도 비운다(startFresh 와 같은 규칙:
         // 처리하지 않은 후속 동작(폼에 넣지 않은 초안·승인 대기 카드)이 있으면 화면은 두고 모델에 넘기는 기록만 새로 시작한다)
         onFreshStart: () => {
-          useAgentChatStore.getState().setMentionedNewsId(null);
+          useAgentChatStore.getState().clearFocus();
           before = [];
           history = history.slice(-1);
           setTurns(history);
@@ -288,9 +288,7 @@ export function AgentAssistant() {
           pendingChange = null;
           setMessages((prev) => [...prev, { id, role: 'tool', title: tool.title, status: 'running' }]);
         },
-        onToolEnd: (tool, result) => {
-          // 대화가 새소식에서 다른 일로 넘어가면 "그거"는 더 이상 그 소식이 아니다
-          if (!NEWS_TOOL_NAMES.includes(tool.name)) useAgentChatStore.getState().setMentionedNewsId(null);
+        onToolEnd: (_tool, result) => {
           if (!toolMessageId) return;
           const change: AgentChange | null = pendingChange;
           if (change?.undo) undoFns.current.set(toolMessageId, change.undo);
@@ -425,6 +423,8 @@ export function AgentAssistant() {
         }
       );
       const applied = captured.change;
+      // 초안으로 넣은 작업을 이어서 "그거 진행률 바꿔줘"라고 할 수 있게 다룬 대상으로 기억한다
+      useAgentChatStore.getState().updateFocus(focusAfterTool(tool, {}, result, applied?.lines ?? []));
       if (applied?.undo) undoFns.current.set(toolMessageId, applied.undo);
       patchMessage(toolMessageId, {
         status: result.isError ? 'error' : 'done',
@@ -448,7 +448,7 @@ export function AgentAssistant() {
     setIsContextTrimmed(false);
     undoFns.current.clear();
     offeredRef.current = null;
-    useAgentChatStore.getState().setMentionedNewsId(null);
+    useAgentChatStore.getState().clearFocus();
   };
 
   // 변경 카드의 되돌리기. 그사이 사용자가 직접 고쳤으면 덮어쓰지 않고 알린다. 모델도 알 수 있게 대화 기록에 남긴다.
@@ -498,6 +498,8 @@ export function AgentAssistant() {
         },
       });
       const applied = captured.change;
+      // 버튼으로 실행해도 다룬 대상을 기억한다 — 버튼으로 연 소식을 이어서 "그거 요약해줘"라고 할 수 있게
+      useAgentChatStore.getState().updateFocus(focusAfterTool(tool, input, result, applied?.lines ?? []));
       if (applied?.undo) undoFns.current.set(toolMessageId, applied.undo);
       patchMessage(toolMessageId, {
         status: result.isError ? 'error' : 'done',

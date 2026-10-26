@@ -11,6 +11,8 @@ import { useTheme } from '..';
 
 type NewsList = { isMember: boolean; items: Array<News> };
 
+const SECTION_LABELS: Record<string, string> = { today: '금일', tomorrow: '익일', 금일: '금일', 익일: '익일' };
+
 const screenOf = (path: string, newsTitle: string | null) => {
   if (newsIdFromPath(path)) return `새소식 상세${newsTitle ? ` — '${newsTitle}'` : ''}`;
   const page = Object.values(AGENT_PAGES).find((p) => p.path === path);
@@ -55,7 +57,21 @@ export function useAgentSituation() {
           news?.find((n) => n.id === id)?.title ??
           null)
         : null;
-    const lastNewsId = useAgentChatStore.getState().lastNewsId;
+    const { lastNewsId, focus } = useAgentChatStore.getState();
+    // 대화에서 다루고 있는 대상 — "그거·그날·그 작업"을 풀 때 쓴다(latest 가 가장 최근에 다룬 종류)
+    const talkingAbout = {
+      ...(focus.latest ? { latest: focus.latest } : {}),
+      ...(focus.subject ? { lastRequestAbout: focus.subject } : {}),
+      ...(focus.news ? { news: `'${focus.news.title}'` } : {}),
+      ...(focus.reportDate ? { report: focus.reportDate } : {}),
+      ...(focus.task
+        ? {
+            task: [SECTION_LABELS[focus.task.section ?? ''], focus.task.project, focus.task.task]
+              .filter(Boolean)
+              .join(' · '),
+          }
+        : {}),
+    };
 
     return {
       screen: screenOf(scope.path, titleOf(newsIdFromPath(scope.path))),
@@ -80,6 +96,7 @@ export function useAgentSituation() {
             : { count: allReportDates.length, newest: allReportDates[0], oldest: allReportDates.at(-1) },
       news: news ? { count: news.length, newest: news[0]?.title ?? null } : 'unknown',
       ...(lastNewsId && lastNewsId !== newsIdFromPath(scope.path) ? { lastViewedNews: titleOf(lastNewsId) } : {}),
+      ...(Object.keys(talkingAbout).length > 0 ? { talkingAbout } : {}),
     };
   };
 }

@@ -70,6 +70,17 @@ export type AgentQuickAction = {
   emphasis?: boolean;
 };
 
+// 대화에서 다루고 있는 대상. subject 는 의도 분류 때 모델이 이번 요청이 가리키는 것을 대화에서 풀어 쓴 이름(작업명·날짜·소식 제목 등),
+// 나머지는 실행한 도구가 실제로 다룬 대상이다. latest 는 가장 최근에 다룬 종류 — "그거"가 무엇을 가리킬지 고를 때 쓴다
+export type AgentFocus = {
+  subject?: string;
+  news?: { id: string; title: string };
+  // YYYY-MM-DD — 조회·불러오기한 저장 보고서 날짜
+  reportDate?: string;
+  task?: { section?: string; project?: string; task: string };
+  latest?: 'news' | 'report' | 'task';
+};
+
 // 답변 뒤의 다음 할 일 — actions 는 답변 아래 버튼, ask 는 답변 끝에 붙이는 한 줄 질문("자세히 보시겠어요?").
 // ask 가 있으면 사용자가 "응"·"보여줘"처럼 받아들이기만 해도 첫 버튼을 실행한다(모델을 거치지 않는다)
 export type AgentFollowUp = { ask?: string; actions: ReadonlyArray<AgentQuickAction> };
@@ -118,10 +129,12 @@ export type AgentChatStore = {
   setPathname: (pathname: string) => void;
   // 이번 문서에서 마지막으로 연 새소식 id — 상세 화면을 벗어난 뒤 "아까 보던 소식"을 가리켜도 Nano가 찾게 한다
   lastNewsId: string | null;
-  // 대화에서 마지막으로 다룬 새소식 id(목록을 읽었으면 가장 새 소식) — "그거 보여줘"가 그 소식을 열게 한다.
-  // 새소식이 아닌 도구를 실행하거나 새 대화를 시작하면 비운다
-  mentionedNewsId: string | null;
-  setMentionedNewsId: (id: string | null) => void;
+  // 대화에서 다루고 있는 대상 — 다음 요청의 "그거·그날·그 작업"을 실제 대상으로 풀게 지금 상황에 함께 넘긴다
+  focus: AgentFocus;
+  // 바뀐 종류만 덮어쓴다. latest 는 넘긴 종류로 정해진다(subject 만 넘기면 그대로, latest 를 직접 넘기면 그 값)
+  updateFocus: (patch: AgentFocus) => void;
+  // 새 대화를 시작하면 비운다
+  clearFocus: () => void;
   // 다른 곳(홈 입력창·제안 알약)이 Nano에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
   request: { id: number; action: AgentAction } | null;
   // reveal: false 면 Nano를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일

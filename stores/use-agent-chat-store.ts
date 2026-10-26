@@ -66,8 +66,25 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   pathname: '/',
   setPathname: (pathname) => set((s) => ({ pathname, lastNewsId: newsIdFromPath(pathname) ?? s.lastNewsId })),
   lastNewsId: null,
-  mentionedNewsId: null,
-  setMentionedNewsId: (mentionedNewsId) => set({ mentionedNewsId }),
+  focus: {},
+  updateFocus: (patch) =>
+    set((s) => ({
+      focus: {
+        ...s.focus,
+        ...patch,
+        latest:
+          'latest' in patch
+            ? patch.latest
+            : patch.news
+              ? 'news'
+              : patch.task
+                ? 'task'
+                : patch.reportDate
+                  ? 'report'
+                  : s.focus.latest,
+      },
+    })),
+  clearFocus: () => set({ focus: {} }),
   request: null,
   submit: (action, { reveal = true } = {}) => {
     set((s) => ({ request: { id: (s.request?.id ?? 0) + 1, action } }));

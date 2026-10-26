@@ -51,11 +51,11 @@ const rankFromRequest = (request: string) => {
   return word ? ORDINALS[word[1]] : null;
 };
 // 대화에서 방금 다룬 소식을 가리켜 열어 달라는 요청("그거 보여줘") — 본문을 읽어 채팅으로 늘어놓지 않고 그 소식 화면을 연다.
-// 새소식을 다룬 직후에만(mentionedNewsId) 소식으로 본다 — 보고서 얘기 뒤의 "그거 보여줘"까지 소식으로 열지 않게
+// 대화에서 가장 최근에 다룬 것이 새소식일 때만(focus.latest) 소식으로 본다 — 보고서 얘기 뒤의 "그거 보여줘"까지 소식으로 열지 않게
 const POINTING_REQUEST =
   /그거|그것|그걸|이거|이것|이걸|저거|[이그저]\s*(새\s*소식|소식|공지|글)|방금\s*(말한|그|본)|말한\s*(거|것|소식)/;
 const opensMentionedNews = (request: string) =>
-  !!useAgentChatStore.getState().mentionedNewsId &&
+  useAgentChatStore.getState().focus.latest === 'news' &&
   POINTING_REQUEST.test(request) &&
   OPEN_REQUEST.test(request) &&
   !NOT_OPEN_REQUEST.test(request) &&
@@ -76,6 +76,14 @@ const resultJson = (result: WebMcpToolResult) => {
     return null;
   }
 };
+
+type NewsRef = { id: string; title: string };
+const newestOf = (result: WebMcpToolResult) => (resultJson(result)?.news as Array<NewsRef> | undefined)?.[0] ?? null;
+// 결과에 담긴 소식(id·title)을 대화의 대상으로
+const newsFocus = (news: Partial<NewsRef> | null) =>
+  news && typeof news.id === 'string' && typeof news.title === 'string'
+    ? { news: { id: news.id, title: news.title } }
+    : null;
 
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
 
@@ -120,6 +128,21 @@ export function useGlobalAgentTools() {
     queryClient.getQueryData<NewsDetail>(queries.news.detail(id).queryKey)?.title ??
     queryClient.getQueryData<NewsList>(queries.news.list().queryKey)?.items.find((n) => n.id === id)?.title ??
     null;
+
+  // id 없이 가리킨 소식 하나 — 요청의 순서("가장 최근"·"두 번째"), "이거·그거"(보고 있는 소식 → 대화에서 다룬 소식 → 마지막으로 본 소식).
+  // 채팅 밖(WebMCP)에서는 rank 로만 찾는다
+  const newsIdFor = async (request: string | undefined, rankInput: unknown) => {
+    const { items } = await queryClient.fetchQuery(queries.news.list());
+    if (!request) {
+      const rank = Number(rankInput);
+      return Number.isInteger(rank) && rank >= 1 ? (items[rank - 1]?.id ?? null) : null;
+    }
+    const rank = rankFromRequest(request) ?? (ONE_NEWS_BY_ORDER.test(request) || /최근|새로/.test(request) ? 1 : null);
+    if (rank) return items[rank - 1]?.id ?? null;
+    const viewing = newsIdFromPath(window.location.pathname);
+    const { focus, lastNewsId } = useAgentChatStore.getState();
+    return viewing ?? (focus.latest === 'news' ? focus.news?.id : undefined) ?? lastNewsId ?? null;
+  };
 
   useAgentTools(
     (): Array<AgentTool> => [
@@ -238,9 +261,11 @@ export function useGlobalAgentTools() {
             : !pointsAtOneNews(request)),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
+        // 목록을 읽으면 Nano는 가장 새 소식부터 말한다 — 이어지는 "그거 보여줘"는 그 소식이다
+        focus: (_input, result) => newsFocus(newestOf(result)),
         // 목록을 답한 뒤 가장 새 소식을 바로 열 수 있게 묻고 버튼을 둔다
         followUp: (_input, result, scope) => {
-          const newest = (resultJson(result)?.news as Array<{ id: string; title: string }> | undefined)?.[0];
+          const newest = newestOf(result);
           if (!newest) return null;
           return {
             ask: `'${newest.title}' 소식을 자세히 보시겠어요?`,
@@ -261,8 +286,6 @@ export function useGlobalAgentTools() {
         },
         execute: async () => {
           const { isMember, items } = await queryClient.fetchQuery(queries.news.list());
-          // 목록을 읽으면 Nano는 가장 새 소식부터 말한다 — 이어지는 "그거 보여줘"는 그 소식이다
-          useAgentChatStore.getState().setMentionedNewsId(items[0]?.id ?? null);
           return toolText({
             viewer: isMember ? 'member' : 'guest',
             total: items.length,
@@ -279,7 +302,7 @@ export function useGlobalAgentTools() {
         title: '새소식 읽기',
         kind: 'read',
         description:
-          'Return the body (markdown) of one news item. id comes from list_news, currentNewsId when the user is reading one (이 소식), or lastViewedNewsId for the news the user just read (아까 본 소식).',
+          'Return the body (markdown) of one news item. id comes from list_news, currentNewsId when the user is reading one (이 소식), or lastViewedNewsId for the news the user just read (아까 본 소식). Without an id, give rank (1 = newest).',
         // "가장 최근 새소식 보여줘"는 화면으로 연다(open_news) — 본문을 읽어 채팅으로 답하지 않는다
         requires: (request) => !opensNews(request),
         // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다.
@@ -311,9 +334,12 @@ export function useGlobalAgentTools() {
         },
         inputSchema: {
           type: 'object',
-          properties: { id: { type: 'string', description: 'News id' } },
-          required: ['id'],
+          properties: {
+            id: { type: 'string', description: 'News id. Omit it if you do not have a real id.' },
+            rank: { type: 'integer', minimum: 1, description: '1 = newest, when there is no id' },
+          },
         },
+        focus: (_input, result) => newsFocus(resultJson(result)),
         annotations: { readOnlyHint: true },
         // 본문을 채팅으로 읽어 준 뒤, 그 소식 화면이 아니면 화면에서 열 수 있게 묻는다
         followUp: (_input, result, scope) => {
@@ -321,16 +347,20 @@ export function useGlobalAgentTools() {
           if (typeof read?.id !== 'string' || newsIdFromPath(scope.path) === read.id) return null;
           return { ask: '화면에서 자세히 보시겠어요?', actions: [openNewsAction(read.id, '이 소식 열기')] };
         },
-        execute: async (input) => {
-          if (typeof input.id !== 'string' || !isNewsId(input.id))
-            return toolError('id 는 list_news 결과의 소식 id 여야 합니다.');
-          const item = await queryClient.fetchQuery(queries.news.detail(input.id));
+        execute: async (input, context) => {
+          // 모델이 id 를 지어내곤 해("가장 최근 새소식 알려줘"에 없는 id 로 불러 매번 실패했다) 받은 id 로 못 찾으면
+          // 요청의 순서("가장 최근"·"두 번째")나 대화에서 다룬 소식으로 찾는다
+          const byId =
+            typeof input.id === 'string' && isNewsId(input.id)
+              ? await queryClient.fetchQuery(queries.news.detail(input.id))
+              : null;
+          const fallbackId = byId ? null : await newsIdFor(context.request, input.rank);
+          const item = byId ?? (fallbackId ? await queryClient.fetchQuery(queries.news.detail(fallbackId)) : null);
           if (!item)
             return toolUnavailable({
               reason: '그 새소식은 찾을 수 없거나 지금 볼 수 없는 소식이에요.',
-              offer: '대신 최근 새소식을 살펴볼까요?',
+              offer: '대신 최근 새소식 목록을 살펴볼까요?',
             });
-          useAgentChatStore.getState().setMentionedNewsId(item.id);
           return toolText({
             id: item.id,
             title: item.title,
@@ -346,6 +376,7 @@ export function useGlobalAgentTools() {
         // "보여줘"는 조회로 분류되곤 해서 조회 의도에도 둔다 — 소식 하나를 순서로 집거나 방금 다룬 소식을 가리켜 열어 달라고 할 때만 후보다
         extraKinds: ['read'],
         requires: (request) => opensNews(request),
+        focus: (_input, result) => newsFocus(resultJson(result)),
         description:
           'Open the detail screen of one news item (새소식) so the user can read it. rank 1 = the newest (가장 최근·최신), 2 = the second newest. Also opens the news just talked about in the conversation (그거 보여줘). Use this for 보여줘/열어줘 on one news item.',
         inputSchema: {
@@ -367,7 +398,7 @@ export function useGlobalAgentTools() {
               offer: '대신 가장 최근 새소식을 열까요?',
             });
           // "그거 보여줘" — 방금 대화에서 다룬 소식(볼 수 있는 소식일 때만)
-          const mentionedId = useAgentChatStore.getState().mentionedNewsId;
+          const mentionedId = useAgentChatStore.getState().focus.news?.id;
           const mentioned =
             context.request && opensMentionedNews(context.request)
               ? items.find((n) => n.id === mentionedId)
@@ -375,13 +406,13 @@ export function useGlobalAgentTools() {
           // 채팅 밖(답변 뒤 버튼·WebMCP)에서는 id 로 집을 수 있다 — 채팅에서는 모델이 지어낸 id 일 수 있어 쓰지 않는다
           const byId = context.request ? undefined : items.find((n) => n.id === input.id);
           const item = mentioned ?? byId ?? items[rank - 1];
-          useAgentChatStore.getState().setMentionedNewsId(item.id);
           const path = `/whats-new/${item.id}`;
+          const opened = { path, id: item.id, title: item.title };
           if (window.location.pathname === path)
-            return toolText({ moved: false, path, id: item.id, message: `이미 '${item.title}' 새소식을 보고 있어요.` });
+            return toolText({ moved: false, ...opened, message: `이미 '${item.title}' 새소식을 보고 있어요.` });
           latest.current.router.push(path);
           const arrived = await waitForPath(path);
-          return toolText({ moved: true, path, arrived, id: item.id, message: `'${item.title}' 새소식을 열었어요.` });
+          return toolText({ moved: true, arrived, ...opened, message: `'${item.title}' 새소식을 열었어요.` });
         },
       },
     ],

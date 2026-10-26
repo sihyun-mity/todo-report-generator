@@ -579,6 +579,7 @@ const createHistoryAgentTools = (): Array<AgentTool> => [
     followUp: (input) =>
       typeof input.date === 'string'
         ? {
+            ask: '이 보고서를 폼으로 불러올까요?',
             actions: [
               {
                 id: `load-report-${input.date}`,

@@ -1,5 +1,6 @@
 import type {
   AgentChatTurn,
+  AgentFocus,
   AgentFollowUp,
   AgentQuickAction,
   AgentRequestScope,
@@ -159,7 +160,7 @@ const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'chat',
     kind: null,
-    hint: 'greetings, small talk, questions about what you can do or how to use the app (인사, 사용법)',
+    hint: 'greetings, small talk, questions about what you can do or how to use the app, or about this conversation itself — why something failed, what you just did (인사, 사용법, 실패 사유는?, 방금 뭐 했어?)',
   },
   {
     label: 'read_reports',
@@ -243,7 +244,15 @@ const THEME_REQUEST = /모드|테마|다크|라이트|밝게|어둡게|밝은|�
 // 묻는 말 — 쓰기 의도로 잘못 분류돼 맞는 쓰기 도구가 없으면 거절하지 않고 조회로 다시 고른다.
 // "프로젝트 단위말고 작업 단위로 세줘"를 추가로, "내일 할 업무는 몇가지야?"를 쓰기 의도로 분류해 "처리할 기능이 없어요"로 끝났다.
 const QUESTION_REQUEST =
-  /[?？]|몇|뭐|무엇|무슨|어떤|어떻게|얼마|언제|어디|알려|보여|세\s*줘|세어|세봐|계산|있어|했어|했나/;
+  /[?？]|몇|뭐|무엇|무슨|어떤|어떻게|얼마|언제|어디|알려|알고\s*싶|궁금|보여|세\s*줘|세어|세봐|계산|있어|했어|했나/;
+
+// 옮기거나 열어 달라는 말 — 화면 이동 의도는 이 말이 있을 때만 믿는다
+const NAVIGATE_REQUEST =
+  /이동|가\s*줘|가자|갈래|가고\s*싶|열어|열기|띄워|들어가|켜\s*줘|보여|화면|페이지|창|돌아가|뒤로|홈/;
+
+// 앞 요청을 다시 해 달라는 말
+const RETRY_REQUEST =
+  /^(다시|재시도|한\s*번\s*더)(\s*(시도|해|부탁|요청|해\s*봐|해\s*줘|해\s*주세요|해\s*줄래|해요|주세요|줘|봐|해\s*봐요))*[\s.!~요]*$/;
 
 // 사용자의 데이터(보고서·기록·새소식)를 묻는 말 — 대화 의도로 분류돼도 도구 없이 답하면 지어내므로 조회로 돌린다.
 // 사용법을 묻는 말("어떻게 해?")은 대화 그대로 둔다(앱 안내로 답한다).
@@ -258,7 +267,8 @@ const APP_GUIDE = `- Home (보고서 작성): pick the report date, then write p
 - Members (logged in) keep history in their account across devices. Guests keep it only in this browser (up to 100 reports). Logging in is optional (top bar 로그인 button).
 - Settings (members only): email, password, GitHub account link, passkeys, logged-in devices, writing reminder notifications (작성 알림), saved data management, account deletion.
 - 새소식 (top bar) shows service news and updates.
-- Nano (you) can fill, edit, save, copy and look up reports, change the color mode and move between screens. Nano runs on-device AI in Chrome; conversations stay on this device.`;
+- Nano (you) can fill, edit, save, copy and look up reports (this form and saved history: dates, counts, summaries of a day or a period), tell or open service news, change the color mode, open GitHub import and move between screens. Nano runs on-device AI in Chrome; conversations stay on this device.
+- How Nano reads requests: 알려줘/알고 싶어/뭐야 = tell the answer in the chat; 보여줘/열어줘/가줘 on a screen or one item = open it on screen; 그거/그날/그 작업 = the thing talked about just before ("talkingAbout" in the situation); 다시/다시 해줘 = do the previous request again.`;
 
 // 앞 대화를 잇는 말 — 모델이 새 요청이라고 판단해도 이런 말이 있으면 앞 대화를 지우지 않는다(잘못 지우면 되묻기·후속 요청이 끊긴다)
 const FOLLOW_UP_REQUEST =
@@ -319,6 +329,8 @@ type RunOptions = {
   onFreshStart?: () => void;
   // 지금 상황(화면·회원 여부·작성 중인 보고서·저장 기록·새소식) — 매 요청 처음에 한 번 읽어 모든 단계 프롬프트에 넣는다
   getSituation?: (scope: AgentRequestScope) => Promise<Record<string, unknown>>;
+  // 이번 요청이 가리킨 대상·도구가 다룬 대상 — 다음 요청의 "그거·그날·그 작업"을 풀 수 있게 기억한다
+  onFocus?: (patch: AgentFocus) => void;
 };
 
 // 이번 요청의 결과. route 가 'notes' 면 부탁이 아니라 업무 메모라서 대화 대신 메모 정리(structureNotes)로 넘긴다.
@@ -403,6 +415,39 @@ const describeChangeLine = (line: string) => {
 };
 
 const TASK_LINE = /^([＋－]) (금일|익일) · (.+?) · (.+?)(?: (\d+)%)?$/;
+
+// 의도 분류에 넘기는 "이 화면에서 할 수 있는 일" — 도구 제목만 넘기던 때는 Nano가 자기가 무엇을 할 수 있는지 몰라
+// 묻는 말을 화면 이동으로 고르거나 할 수 있는 일을 할 수 없다고 했다. 제목 + 설명 첫 문장을 짧게 붙인다(컨텍스트가 작아 자른다)
+const CAPABILITY_HINT_MAX_CHARS = 90;
+const capabilityCatalog = (tools: ReadonlyArray<AgentTool>) =>
+  [...new Map(tools.map((t) => [t.title, t])).values()]
+    .map((t) => {
+      const first = t.description.split(/(?<=\.)\s/)[0];
+      return `- ${t.title}: ${first.length > CAPABILITY_HINT_MAX_CHARS ? `${first.slice(0, CAPABILITY_HINT_MAX_CHARS)}…` : first}`;
+    })
+    .join('\n');
+
+// 도구가 다룬 대상 — 다음 요청의 "그거·그날·그 작업"이 가리킬 것. 도구가 정하지 않으면 입력의 작업·날짜와 넣은 줄로 정한다.
+// 무엇을 다뤘는지 알 수 없는 도구(화면 모드·기간 검색 등)를 실행했으면 "그거"가 앞 대상을 가리킨다고 단정하지 않는다(latest 를 비운다)
+export const focusAfterTool = (
+  tool: AgentTool,
+  input: Record<string, unknown>,
+  result: WebMcpToolResult,
+  changes: ReadonlyArray<string> = []
+): AgentFocus => {
+  if (result.isError) return {};
+  const own = tool.focus?.(input, result);
+  if (own) return own;
+  const text = (key: string) =>
+    typeof input[key] === 'string' && input[key] !== '' ? (input[key] as string) : undefined;
+  const task = text('new_text') ?? text('task');
+  if (task) return { task: { section: text('section'), project: text('project'), task } };
+  const added = changes.map((line) => TASK_LINE.exec(line)).find((m) => m?.[1] === '＋');
+  if (added) return { task: { section: added[2], project: added[3], task: added[4] } };
+  const date = text('date');
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return { reportDate: date };
+  return { latest: undefined };
+};
 
 // 같은 작업을 뺀 줄과 넣은 줄이 짝을 이루면 옮기기(또는 작업 내용 고치기)로 묶는다 — 줄마다 말하면
 // "지웠어요. 넣었어요. 세부 항목을 넣었어요."처럼 옮긴 일이 지우고 새로 쓴 일로 들렸다.
@@ -491,6 +536,7 @@ export async function runAgentChatTurn({
   onThinking,
   onFreshStart,
   getSituation,
+  onFocus,
 }: Readonly<RunOptions>): Promise<AgentChatTurnResult> {
   // 모델을 기다리는 사이 화면을 옮겨도 요청할 때의 화면을 기준으로 한다
   const scope: AgentRequestScope = { path: window.location.pathname };
@@ -603,8 +649,16 @@ export async function runAgentChatTurn({
     // 다음 단계 후보를 그 의도의 도구로 좁힌다. 대화(인사·사용법)면 도구 없이 바로 답한다.
     // 이 화면에서 할 수 있는 일(도구 제목)을 함께 넘겨, 할 수 없는 요청을 비슷한 의도에 억지로 넣지 않고 "unsupported" 로 고르게 한다.
     const intents = [...INTENTS, ...(canWriteFromNotes ? [NOTES_INTENT] : []), UNSUPPORTED_INTENT];
-    const capabilities = [...new Set(getTools().map((t) => t.title))].join(', ');
-    const request = [...history].reverse().find((t) => t.role === 'user')?.text ?? '';
+    const capabilities = capabilityCatalog(getTools());
+    // "다시 시도해"는 앞 요청을 다시 처리한다 — 문장 그대로 쓰면 요청 문장으로 후보를 거르는 규칙(requires 등)이 모든 도구를 빼
+    // "처리할 기능이 없어요"로 끝났다. 앞 요청 문장을 이번 요청으로 삼는다(대화 기록에는 그대로 남는다)
+    const userTexts = history.filter((t) => t.role === 'user').map((t) => t.text);
+    const said = userTexts.at(-1) ?? '';
+    const retried = RETRY_REQUEST.test(said.trim())
+      ? userTexts.slice(0, -1).findLast((t) => !RETRY_REQUEST.test(t.trim()))
+      : undefined;
+    const request = retried ?? said;
+    if (retried) think('retry', `앞 요청을 다시 처리해요: ${retried}`, 'done');
     think('intent', '요청을 이해하는 중');
     // 앞 대화가 있으면 이번 요청이 그 대화를 잇는지도 함께 고른다 — 관계없는 새 요청이면 앞 대화를 버리고 새 대화로 시작한다.
     // 앞 대화를 계속 넘기면 지난 요청·지난 결과가 섞여 엉뚱한 기간을 정리하거나 앞 요청을 이어서 처리했다.
@@ -615,16 +669,18 @@ export async function runAgentChatTurn({
     const intentProperties = {
       ...(hasPast ? { follow_up: { type: 'boolean' } } : {}),
       wants: { type: 'string', maxLength: 120 },
+      about: { type: 'string', maxLength: 80 },
       intent: { type: 'string', enum: intents.map((i) => i.label) },
     };
     const {
       intent,
       follow_up: continues,
       wants,
+      about,
     } = JSON.parse(
       await ask(
         (conversation) =>
-          `## About the app\n${APP_GUIDE}\n\n${situationBlock}## What the app can do here\n${capabilities}\n\n## Conversation\n${conversation}\n\n## Task\nFirst write in "wants" what the user wants, in a few plain English words (e.g. "open the newest news item", "switch to dark mode", "add a task to tomorrow"), using the conversation and the situation. Then classify the kind of the user's last message.\n${intents.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}\n\nA question about reports (how many, what, when) is read_reports, never a change to the report.\n\nThe last message may continue the conversation:\n- If the assistant just asked a question, the message answers it — classify by the original request it completes.\n- If the user asks to retry (다시 해줘, 다시), classify by the earlier request being retried.\n- If it refines the previous question or answer (e.g. 프로젝트 말고 작업 단위로 세줘, 날짜별로 보여줘), classify it like the previous request.\n- A short follow-up (e.g. 진행률도 똑같이 해줘, 그것도, 그거 말고) adjusts what the previous request just changed — classify by what it asks to do to those items (e.g. a progress change is edit_report).${hasPast ? '\n\nAlso set follow_up: true if the last message continues the earlier conversation (answers the assistant, refines, retries or refers to earlier requests, results or items); false if it is a new request that does not need the earlier conversation.' : ''}`,
+          `## About the app\n${APP_GUIDE}\n\n${situationBlock}## What the app can do here\n${capabilities}\n\n## Conversation\n${conversation}\n\n## Task\nFirst write in "wants" what the user wants, in a few plain English words (e.g. "open the newest news item", "switch to dark mode", "add a task to tomorrow"), using the conversation and the situation. Then write in "about" the specific thing the message refers to — resolve words like 그거, 그날, 그 작업, 이 소식 from the conversation and "talkingAbout" in the situation (e.g. "task 토큰 로그인 안정성 검증", "report 2026-10-20", "the newest news"); leave it empty if nothing specific. Then classify the kind of the user's last message.\n- 알려줘, 알고 싶어, 뭐야, 궁금해 ask Nano to tell the answer in the chat (read_reports). Only 이동, 가줘, 열어줘, 보여줘 on a screen or item ask to move or open something (go_to_screen).${retried ? `\n- The last message asks to retry; classify the earlier request "${retried}".` : ''}\n${intents.map((i) => `- ${i.label}: ${i.hint}`).join('\n')}\n\nA question about reports (how many, what, when) is read_reports, never a change to the report.\n\nThe last message may continue the conversation:\n- If the assistant just asked a question, the message answers it — classify by the original request it completes.\n- If the user asks to retry (다시 해줘, 다시), classify by the earlier request being retried.\n- If it refines the previous question or answer (e.g. 프로젝트 말고 작업 단위로 세줘, 날짜별로 보여줘), classify it like the previous request.\n- A short follow-up (e.g. 진행률도 똑같이 해줘, 그것도, 그거 말고) adjusts what the previous request just changed — classify by what it asks to do to those items (e.g. a progress change is edit_report).${hasPast ? '\n\nAlso set follow_up: true if the last message continues the earlier conversation (answers the assistant, refines, retries or refers to earlier requests, results or items); false if it is a new request that does not need the earlier conversation.' : ''}`,
         {
           type: 'object',
           properties: intentProperties,
@@ -632,10 +688,12 @@ export async function runAgentChatTurn({
           additionalProperties: false,
         }
       )
-    ) as { intent?: string; follow_up?: boolean; wants?: string };
+    ) as { intent?: string; follow_up?: boolean; wants?: string; about?: string };
     think('intent', `요청 이해: ${INTENT_TITLES[intent ?? ''] ?? intent}`, 'done');
     // 다음 단계에 넘길 사용자의 뜻
-    const wantsLine = wants ? `The user wants: ${wants}\n` : '';
+    const wantsLine = `${wants ? `The user wants: ${wants}\n` : ''}${about ? `It is about: ${about}\n` : ''}${retried ? `This retries the earlier request: ${retried}\n` : ''}`;
+    // 이번 요청이 가리킨 대상을 기억한다 — 다음 요청의 "그거"를 풀 때 지금 상황(talkingAbout)으로 넘어간다
+    if (about) onFocus?.({ subject: about });
     // 이어지는 말("그거", "다시", 되묻기에 대한 답)이 보이면 모델이 새 요청이라 해도 앞 대화를 지우지 않는다
     const lastAssistant = history.findLast((t) => t.role === 'assistant');
     const answersQuestion =
@@ -663,6 +721,12 @@ export async function runAgentChatTurn({
     }
     // 다음 단계에 알려 줄 의도 — 분류를 믿지 않기로 했으면 요청 문장으로 고르게 한다
     let intentNote = unsupported ? 'it may be something the app cannot do' : intent;
+    // 화면 이동 의도인데 옮기거나 열어 달라는 말이 없으면 묻는 말로 본다 — "가장 최근 소식 알고싶어"에 새소식 화면으로 옮겨 갔다
+    if (kind === 'navigate' && !NAVIGATE_REQUEST.test(request)) {
+      kind = QUESTION_REQUEST.test(request) ? 'read' : 'any';
+      intentNote = 'the user did not ask to move; decide only from what the request asks';
+      think('intent', '요청 이해: 화면 이동이 아니라 다시 찾아볼게요', 'done');
+    }
     if (kind === 'setting' && !THEME_REQUEST.test(request)) {
       kind = 'any';
       intentNote = 'the first guess was wrong; decide only from what the request asks';
@@ -820,6 +884,7 @@ export async function runAgentChatTurn({
       }
       signal.throwIfAborted();
       onToolEnd(tool, result);
+      onFocus?.(focusAfterTool(tool, input, result, changes));
       executed.push({ tool, input, result, changes });
       added.push({
         role: 'tool',
@@ -911,11 +976,11 @@ export async function runAgentChatTurn({
           .join('\n')}\n\n`;
     const rules = kind
       ? '- Answer what the user asked, organized from the tool results. Use dates and weekdays exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" (or total/byMonth) of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.\n- To summarize a period, use "tasks" (each task with its days and progress change) first, and "days" for what happened on a specific day.\n- If the tool results do not contain what was asked, say so plainly instead of guessing.'
-      : '- Reply to the greeting or question. For how-to questions answer only from "About the app"; if it is not there, say you are not sure. If asked what you can do, answer from "What you can do on this screen". Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now".';
+      : '- Reply to the greeting or question. For questions about this conversation (why something failed, what you just did), answer from the conversation in plain words. For how-to questions answer only from "About the app"; if it is not there, say you are not sure. If asked what you can do, answer from "What you can do on this screen". Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now".';
     think('answer', '답을 쓰는 중');
     const answer = await ask(
       (conversation) =>
-        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.${kind ? "\n- Base the reply only on the tool results after the user's last message. Earlier assistant replies answered other requests; never repeat them." : ''}\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".`,
+        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.\n- Use the newest tool results first. Earlier messages and results are context: use them for follow-up questions (e.g. why something failed, what you just did — explain [tool … failed] lines in plain words). Do not copy an earlier reply word for word.\n- If a tool failed in this request, say so briefly and why, then give what you could find.\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".`,
       null,
       (text) => onAnswer(toPlainAnswer(text, !kind))
     );

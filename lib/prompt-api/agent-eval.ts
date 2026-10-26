@@ -1,6 +1,6 @@
 import type { AgentChange, AgentChatTurn, AgentRequestScope, AgentTool, Project } from '@/types';
 import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
-import { useReportFormStore } from '@/stores';
+import { useAgentChatStore, useReportFormStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
 import { runAgentChatTurn } from '.';
 
@@ -257,6 +257,41 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     ],
   },
   { name: '새소식 화면 이동', turns: [{ say: '새소식 화면으로 가줘', expect: ['navigate'] }] },
+  // 묻는 말은 화면을 옮기지 않고 답한다 — "알고싶어"에 새소식 화면으로 옮겨 갔다
+  {
+    name: '새소식 묻기',
+    turns: [{ say: '가장 최근 소식 알고싶어', expect: ['list_news', 'get_news'], forbid: ['navigate', 'open_news'] }],
+  },
+  // "다시 시도해"는 앞 요청을 다시 처리한다 — 문장 그대로 후보를 걸러 "처리할 기능이 없어요"로 끝났다
+  {
+    name: '다시 시도',
+    turns: [
+      { say: '가장 최근 새소식 알려줘', expect: ['list_news', 'get_news'] },
+      { say: '다시 시도해', expect: ['list_news', 'get_news'] },
+    ],
+  },
+  // 앞 요청에서 다룬 작업을 "그거"로 가리킨다 — 새소식에만 있던 이어받기를 보고서 작업에도
+  {
+    name: '작업 가리켜 고치기',
+    form: BASE_FORM,
+    turns: [
+      { say: '토큰 로그인 작업 진행률 몇이야?', expect: [] },
+      { say: '그거 80%로 바꿔줘', expect: ['set_task_progress'] },
+    ],
+    check: (form) =>
+      form.today.flatMap((p) => p.tasks).find((t) => t.content === TOKEN)?.progress === 80
+        ? null
+        : '토큰 로그인 진행률이 80 이 아니다',
+  },
+  // 대화 자체를 묻는 말은 대화에서 답한다(도구 결과에만 묶어 두었더니 엉뚱한 답을 했다)
+  {
+    name: '방금 한 일 묻기',
+    form: BASE_FORM,
+    turns: [
+      { say: '토큰 로그인 작업 진행률 50%로 바꿔줘', expect: ['set_task_progress'] },
+      { say: '방금 뭐 했어?', expect: [], answer: /토큰|진행률|50/ },
+    ],
+  },
   // 지금 상황(Situation now)으로 답해야 하는 질문 — 도구 없이도 회원 여부·화면을 안다
   {
     name: '로그인 상태',
@@ -342,6 +377,8 @@ export async function runAgentEval({
           store.setBucket('today', toProjects(scenario.form.today));
           store.setBucket('tomorrow', toProjects(scenario.form.tomorrow));
         }
+        // 시나리오마다 새 대화 — 앞 시나리오에서 다룬 대상("그거")이 넘어오지 않게
+        useAgentChatStore.getState().clearFocus();
         const undos: Array<NonNullable<AgentChange['undo']>> = [];
         const history: Array<AgentChatTurn> = [];
         const logs: Array<TurnLog> = [];
@@ -355,6 +392,7 @@ export async function runAgentEval({
               history,
               getTools,
               getSituation,
+              onFocus: (patch) => useAgentChatStore.getState().updateFocus(patch),
               canWriteFromNotes: false,
               signal: new AbortController().signal,
               context: {
