@@ -31,6 +31,9 @@ export const COMMIT_IMPORT_MEMORY_STORAGE_KEY = 'commit-import-memory';
 export const COMMIT_IMPORT_AI_NOTICE_STORAGE_KEY = 'trg:commit-import-ai-notice';
 // 기억할 세부 항목 표기 보정 / 저장 대기 연결 최대 개수
 export const COMMIT_IMPORT_DETAIL_EDIT_LIMIT = 20;
+// 세부 항목 피드백 횟수 감쇠율 — 보고서 날짜가 바뀐 저장마다 기존 횟수에 곱한다. 0.85 면 4번 저장 뒤 영향이 절반,
+// 15번 뒤 10% 아래. 누적만 하면 오래 쓸수록 "아낄지" 판단이 굳어 습관이 바뀌어도 뒤집히지 않았다.
+export const COMMIT_IMPORT_DETAIL_FEEDBACK_DECAY = 0.85;
 export const COMMIT_IMPORT_PENDING_LINK_LIMIT = 300;
 // 세부 항목 표기 보정을 프롬프트 예시로 넘기는 개수
 export const COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT = 8;

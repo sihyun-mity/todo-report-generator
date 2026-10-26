@@ -124,7 +124,8 @@ export type CommitImportMemory = {
   detailEdits: Array<DetailEdit>;
   // AI 가 제안한 세부 항목을 사용자가 지운 횟수 / 그대로 둔(또는 고친) 횟수 / 사용자가 직접 추가한 줄 수
   // — 제안을 얼마나 아껴야 하는지의 신호. added 가 없으면 "아끼라"는 쪽으로만 기울어 되돌아오지 않는다.
-  detailFeedback: { removed: number; kept: number; added: number };
+  // 횟수는 보고서 날짜가 바뀔 때마다 감쇠해(소수) 최근 습관을 따른다. decayedOn = 마지막으로 감쇠한 보고서 날짜('YYYY-MM-DD').
+  detailFeedback: { removed: number; kept: number; added: number; decayedOn?: string };
   // 최근 새 작업 진행률 보정(최신순) — 다음 진행률 유추에 예시로 넘긴다
   progressEdits: Array<ProgressEdit>;
   // 분류에서 뺄 저장소(개인 프로젝트 등) — 커밋 조회부터 건너뛴다

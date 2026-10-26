@@ -1,5 +1,6 @@
 import {
   COMMIT_IMPORT_DETAIL_EDIT_LIMIT,
+  COMMIT_IMPORT_DETAIL_FEEDBACK_DECAY,
   COMMIT_IMPORT_IMPORTED_TASK_LIMIT,
   COMMIT_IMPORT_MEMORY_STORAGE_KEY,
   COMMIT_IMPORT_PENDING_LINK_LIMIT,
@@ -121,11 +122,14 @@ const mergeMemories = (remote: CommitImportMemory, local: CommitImportMemory): C
     repoProjects: { ...local.repoProjects, ...remote.repoProjects },
     scopeTasks: { ...local.scopeTasks, ...remote.scopeTasks },
     detailEdits: pushDetailEdits(local.detailEdits, remote.detailEdits),
-    detailFeedback: {
-      removed: Math.max(remote.detailFeedback.removed, local.detailFeedback.removed),
-      kept: Math.max(remote.detailFeedback.kept, local.detailFeedback.kept),
-      added: Math.max(remote.detailFeedback.added, local.detailFeedback.added),
-    },
+    // DB 쪽이 감쇠를 시작했으면 그대로 쓴다 — 예전 로컬 누적값과 큰 쪽을 고르면 감쇠한 옛 습관이 되살아난다
+    detailFeedback: remote.detailFeedback.decayedOn
+      ? remote.detailFeedback
+      : {
+          removed: Math.max(remote.detailFeedback.removed, local.detailFeedback.removed),
+          kept: Math.max(remote.detailFeedback.kept, local.detailFeedback.kept),
+          added: Math.max(remote.detailFeedback.added, local.detailFeedback.added),
+        },
     progressEdits: pushProgressEdits(local.progressEdits, remote.progressEdits),
     excludedRepos: [...new Set([...remote.excludedRepos, ...local.excludedRepos])].sort(),
     repoSkips: maxCounts(remote.repoSkips, local.repoSkips),
@@ -294,6 +298,21 @@ export const rememberCommitImport = (
     };
   });
 
+// 이번 저장에서 센 횟수(delta)를 더한다. 보고서 날짜가 바뀐 뒤 처음 횟수가 바뀌는 저장이면 기존 횟수를 먼저 감쇠해
+// 최근 습관을 따르게 한다 — 같은 날짜 보고서를 여러 번 저장해도, 확정만 하고 저장하지 않아도(횟수는 저장 때만 센다)
+// 더 감쇠하지 않는다. 남김을 지움으로 옮기는 음수 delta 는 0 아래로 내려가지 않게 한다.
+const applyDetailFeedback = (
+  current: CommitImportMemory['detailFeedback'],
+  delta: { removed: number; kept: number; added: number },
+  reportDateKey: string
+): CommitImportMemory['detailFeedback'] => {
+  if (!delta.removed && !delta.kept && !delta.added) return current;
+  const decay = current.decayedOn === reportDateKey ? 1 : COMMIT_IMPORT_DETAIL_FEEDBACK_DECAY;
+  const next = (key: 'removed' | 'kept' | 'added') =>
+    Math.max(0, Math.round((current[key] * decay + delta[key]) * 1000) / 1000);
+  return { removed: next('removed'), kept: next('kept'), added: next('added'), decayedOn: reportDateKey };
+};
+
 // 보고서를 저장할 때 호출 — 가져온 항목들이 폼에서 최종적으로 어떤 이름·문구가 됐는지 읽어 기억한다.
 // reportDateKey 는 저장하는 보고서 날짜 — 가져온 뒤 날짜를 바꿔 저장했으면 등록 기록도 그 날짜로 옮긴다.
 // 작업이 남아 있는데 제안 세부 항목만 지워졌다면 "제안이 필요 없었다"로 센다. 사라진 항목의 연결은 버리고,
@@ -305,7 +324,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
     const scopeTasks = { ...memory.scopeTasks };
     const edits: Array<DetailEdit> = [];
     const progressEdits: Array<ProgressEdit> = [];
-    const feedback = { ...memory.detailFeedback };
+    const feedback = { removed: 0, kept: 0, added: 0 };
     const alive: Array<CommitImportLink> = [];
     // 같은 작업을 여러 번 가져오면(다시 가져와 기존 작업에 세부 항목을 덧붙인 경우) 작업마다 `details` 연결이 여럿 생긴다.
     // 앞선 연결의 known 에는 뒤에 AI 가 넣은 줄이 없어 그 줄을 "직접 추가"로 잘못 센다 — 작업 단위로 known 과
@@ -394,7 +413,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       const detail = task.details.find((d) => d.id === link.detailId);
       if (!detail || !detail.content.trim()) {
         feedback.removed += 1;
-        if (counted) feedback.kept = Math.max(0, feedback.kept - 1);
+        if (counted) feedback.kept -= 1;
         continue;
       }
       if (!counted) feedback.kept += 1;
@@ -412,7 +431,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       repoProjects,
       scopeTasks,
       detailEdits: pushDetailEdits(memory.detailEdits, edits),
-      detailFeedback: feedback,
+      detailFeedback: applyDetailFeedback(memory.detailFeedback, feedback, reportDateKey),
       progressEdits: pushProgressEdits(memory.progressEdits, progressEdits),
       importedTasks: [...importedTasks.values()],
       pendingLinks: alive,
