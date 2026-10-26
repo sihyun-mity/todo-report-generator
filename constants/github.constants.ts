@@ -58,3 +58,8 @@ export const COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS = 30_000;
 export const COMMIT_CLASSIFY_COMPLETE_HOLD_MS = 700;
 // 기존 작업 연결 임계 점수(0-10). PoC 3개 세트에서 일치 ≥7, 불일치 ≤5 로 갈렸다.
 export const COMMIT_TASK_MATCH_THRESHOLD = 7;
+// 보정 메모리에 기억한 작업명(`저장소#scope` → 작업명)을 쓸지 확인하는 임계 점수(0-10). 후보가 그 작업 하나뿐이라 비교할
+// 다른 작업이 없어 같은 영역이면 7-8 점을 쉽게 줬다 — 작업 연결(7)보다 높게 둔다. PoC(react-user-web 커밋, 같은 작업 12·
+// 같은 영역 다른 작업 12건, 각 4회를 두 번 채점 쌍으로): 같은 작업 모두 8-10, 다른 작업 오통과 7 에서 5/24 → 8 에서 3/24.
+// 같은 작업 최저점이 8 이라 여유가 없다 — 프롬프트를 바꾸면 다시 검증한다.
+export const COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE = 8;

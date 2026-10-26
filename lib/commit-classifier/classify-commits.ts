@@ -2,6 +2,7 @@ import {
   COMMIT_IMPORT_DEFAULT_PROGRESS,
   COMMIT_IMPORT_DETAIL_EXAMPLE_LIMIT,
   COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT,
+  COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE,
   COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE,
   COMMIT_TASK_MATCH_THRESHOLD,
 } from '@/constants';
@@ -327,7 +328,7 @@ export async function classifyCommits({
         group.map((c) => c.message),
         `${scopeKey} 커밋 ${group.length}건이 전에 정한 ${quote(name)} 작업인지 보고 있어요`
       );
-      if (scoreOf(first.scores) < COMMIT_TASK_MATCH_THRESHOLD) {
+      if (scoreOf(first.scores) < COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE) {
         first.thought.conclude('전에 정한 작업과 달라 다시 판정해요');
         return [];
       }
@@ -340,7 +341,7 @@ export async function classifyCommits({
           [commit.message],
           `${quote(stripCommitPrefix(commit.message))} 커밋이 ${quote(name)} 작업인지 확인하고 있어요`
         );
-        if (scoreOf(recheck.scores) >= COMMIT_TASK_MATCH_THRESHOLD) {
+        if (scoreOf(recheck.scores) >= COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE) {
           recheck.thought.conclude(`전에 정한 대로 ${quote(name)} 작업으로 정리해요`);
           confirmed.push(commit);
         } else {
