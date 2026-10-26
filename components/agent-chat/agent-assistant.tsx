@@ -2,13 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import type { AgentChange, AgentChatMessage, AgentChatTurn, AgentToolContext } from '@/types';
+import type {
+  AgentAction,
+  AgentChange,
+  AgentChatMessage,
+  AgentChatTurn,
+  AgentSuggestion,
+  AgentToolContext,
+} from '@/types';
 import { useResetOnHide } from '@/hooks';
 import { downloadPromptModel, getPromptApiAvailability, runAgentChatTurn, structureNotes } from '@/lib/prompt-api';
 import { agentToolsFor } from '@/lib/webmcp';
 import { useAgentChatStore, useAgentToolsStore, useReportFormStore } from '@/stores';
 import { createId } from '@/utils';
-import { AgentChatPanel, useGlobalAgentTools } from '.';
+import { AgentPanel, useAgentSuggestions, useGlobalAgentTools } from '.';
 
 // 모델이 던진 오류를 사용자 문구로 바꾼다
 const errorMessage = (error: unknown) => {
@@ -19,16 +26,15 @@ const errorMessage = (error: unknown) => {
   return 'AI 응답을 만들지 못했어요. 다시 시도해 주세요.';
 };
 
-// (app) 그룹 레이아웃에 한 번 마운트되는 AI 도우미 — 전역 에이전트 도구를 등록하고 채팅 대화를 들고 있다.
-// 레이아웃이 화면 이동에도 유지되므로 대화는 (app) 화면 사이를 오가도 이어진다. 응답은 Chrome 내장 모델(Gemini Nano)이 이 기기에서 만든다.
+// (app) 그룹 레이아웃에 한 번 마운트되는 서비스 에이전트 — 전역 도구를 등록하고, 대화·상황 제안·빠른 작업을 들고 있다.
+// 레이아웃이 화면 이동에도 유지되므로 대화는 (app) 화면 사이를 오가도 이어진다. 대화 응답은 Chrome 내장 모델(Gemini Nano)이
+// 이 기기에서 만들고, 상황 제안·빠른 작업은 모델 없이 도구를 바로 실행한다(모델이 없는 브라우저에서도 동작).
 export function AgentAssistant() {
   useGlobalAgentTools();
 
-  const isOpen = useAgentChatStore((s) => s.isOpen);
-  const setOpen = useAgentChatStore((s) => s.setOpen);
   const setRunning = useAgentChatStore((s) => s.setRunning);
-  const layout = useAgentChatStore((s) => s.layout);
-  const setLayout = useAgentChatStore((s) => s.setLayout);
+  const availability = useAgentChatStore((s) => s.availability);
+  const { suggestions, quickActions } = useAgentSuggestions();
   const allTools = useAgentToolsStore((s) => s.tools);
   const tools = agentToolsFor(allTools, 'chat');
   // 메모 초안은 폼 반영 도구(fill_report, WebMCP 전용이지만 레지스트리에는 있다)로 넣는다 — 보고서 작성 화면에서만 있다
@@ -37,7 +43,7 @@ export function AgentAssistant() {
   const [messages, setMessages] = useState<Array<AgentChatMessage>>([]);
   const [turns, setTurns] = useState<Array<AgentChatTurn>>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [availability, setAvailability] = useState<LanguageModelAvailability | null>(null);
+  const [isNotesMode, setIsNotesMode] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   // 컨텍스트 창에 맞추느라 앞부분 대화를 모델에게 넘기지 못한 적이 있는지
   const [isContextTrimmed, setIsContextTrimmed] = useState(false);
@@ -48,33 +54,34 @@ export function AgentAssistant() {
   // 변경 카드의 되돌리기 — 도구 메시지 id → undo
   const undoFns = useRef(new Map<string, NonNullable<AgentChange['undo']>>());
 
-  // AI 모드로 열어 두었으면 다음 방문에도 연다 — SSR·첫 렌더는 닫힌 상태로 맞추고 마운트 뒤에 적용한다
+  // 데스크톱 패널을 접어 두었으면 그대로 — SSR·첫 렌더는 기본값(펼침)으로 맞추고 마운트 뒤에 적용한다
   useEffect(() => {
     useAgentChatStore.getState().restore();
   }, []);
 
-  // ⌘K / Ctrl+K 로 어디서든 열고 닫는다(한글 조합 중에는 넘긴다)
+  // 모델 가용성은 패널이 늘 보이므로 마운트 때 확인한다 — 홈 입력창·제안이 AI 필요 여부를 가른다
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k' || event.isComposing) return;
-      event.preventDefault();
-      useAgentChatStore.getState().toggle();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  // 열 때마다 가용성을 다시 본다 — 다른 화면(커밋 가져오기)에서 모델을 받았거나 브라우저 설정이 바뀌었을 수 있다
-  useEffect(() => {
-    if (!isOpen) return;
     let cancelled = false;
     void getPromptApiAvailability().then((next) => {
-      if (!cancelled) setAvailability(next);
+      if (!cancelled) useAgentChatStore.getState().setAvailability(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, []);
+
+  // ⌘K / Ctrl+K — 데스크톱은 패널을 펼치고 입력칸으로, 모바일은 시트를 열고 닫는다(한글 조합 중에는 넘긴다)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k' || event.isComposing) return;
+      event.preventDefault();
+      const store = useAgentChatStore.getState();
+      if (store.isOpen) store.setOpen(false);
+      else store.reveal();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const patchMessage = (id: string, patch: Partial<AgentChatMessage>) =>
     setMessages((prev) => prev.map((m) => (m.id === id ? ({ ...m, ...patch } as AgentChatMessage) : m)));
@@ -95,6 +102,7 @@ export function AgentAssistant() {
   // 화면 밖으로 나가면(로그인 화면 등으로 이동해 레이아웃째 숨겨짐) 진행 중인 응답을 멈추고 패널을 닫아 둔다
   useResetOnHide(() => {
     stop();
+    setIsNotesMode(false);
     useAgentChatStore.getState().hide();
   });
 
@@ -104,7 +112,7 @@ export function AgentAssistant() {
       const id = createId();
       pendingConfirms.current.set(id, resolve);
       setMessages((prev) => [...prev, { id, role: 'confirm', options, status: 'pending' }]);
-      setOpen(true);
+      useAgentChatStore.getState().reveal();
     });
 
   const answerConfirm = (id: string, ok: boolean) => {
@@ -195,6 +203,7 @@ export function AgentAssistant() {
   // 메모로 보고서 쓰기: 메모를 정리해 초안 카드로 보여 준다. 폼에는 사용자가 "폼에 추가"를 눌러야 들어간다.
   const submitNotes = async (notes: string) => {
     if (isRunning || notes.trim() === '') return;
+    setIsNotesMode(false);
     const controller = begin();
     setMessages((prev) => [...prev, { id: createId(), role: 'user', text: `메모로 보고서 쓰기\n${notes.trim()}` }]);
     try {
@@ -298,18 +307,96 @@ export function AgentAssistant() {
     toast.success('변경을 되돌렸어요.');
   };
 
-  // 패널을 닫으면 응답에 기다리던 확인은 취소로 본다 — 보이지 않는 카드가 도구 실행을 붙잡지 않게
-  const close = () => {
-    settleConfirms(false);
-    setOpen(false);
+  // 상황 제안·빠른 작업이 고른 도구를 모델 없이 바로 실행한다 — 채팅 도구와 같은 context 라 확인 카드·변경 카드·되돌리기가 따라온다.
+  // 결과는 모델도 알 수 있게 대화 기록에 도구 턴으로 남긴다.
+  const runTool = async (name: string, title: string, input: Record<string, unknown> = {}) => {
+    const tool = useAgentToolsStore.getState().tools.find((t) => t.name === name);
+    if (!tool) {
+      toast.error('이 화면에서는 할 수 없는 작업이에요.');
+      return;
+    }
+    if (isRunning) return;
+    const controller = begin();
+    const toolMessageId = createId();
+    const captured: { change: AgentChange | null } = { change: null };
+    setMessages((prev) => [...prev, { id: toolMessageId, role: 'tool', title, status: 'running' }]);
+    try {
+      const result = await tool.execute(input, {
+        confirm: requestConfirm,
+        reportChange: (next) => {
+          captured.change = next;
+        },
+      });
+      const applied = captured.change;
+      if (applied?.undo) undoFns.current.set(toolMessageId, applied.undo);
+      patchMessage(toolMessageId, {
+        status: result.isError ? 'error' : 'done',
+        ...(applied ? { changes: applied.lines, undo: applied.undo ? 'available' : undefined } : {}),
+      });
+      const text = result.content.map((c) => c.text).join('\n');
+      // 바꾸는 것 없이 끝난 결과(예: 가져올 미완료 업무 없음)는 사용자에게도 알린다
+      if (result.isError) setMessages((prev) => [...prev, { id: createId(), role: 'error', text }]);
+      else if (!applied && /"changed":false/.test(text)) {
+        const message = /"message":"([^"]+)"/.exec(text)?.[1];
+        if (message)
+          setMessages((prev) => [...prev, { id: createId(), role: 'assistant', text: message, streaming: false }]);
+      }
+      setTurns((prev) => [
+        ...prev,
+        { role: 'user', text: `[The user ran "${title}" from the suggestions]` },
+        {
+          role: 'tool',
+          name,
+          input,
+          result: text,
+          isError: !!result.isError,
+          untrusted: !!tool.annotations?.untrustedContentHint,
+        },
+      ]);
+    } catch (error) {
+      console.error('[agent-tool]', error);
+      patchMessage(toolMessageId, { status: 'error' });
+    } finally {
+      end(controller);
+    }
   };
+
+  // 상황 제안·빠른 작업·홈 입력창이 넘긴 할 일을 처리한다
+  const runAction = (action: AgentAction) => {
+    if (action.type === 'prompt') void send(action.text);
+    else if (action.type === 'tool') void runTool(action.tool, action.title, action.input);
+    else if (action.text) void submitNotes(action.text);
+    else {
+      setIsNotesMode(true);
+      useAgentChatStore.getState().reveal();
+    }
+  };
+
+  // 제안을 실행하면 이번 세션에서는 다시 권하지 않는다
+  const runSuggestion = (suggestion: AgentSuggestion) => {
+    useAgentChatStore.getState().dismiss(suggestion.id);
+    runAction(suggestion.action);
+  };
+
+  // 다른 곳(홈 입력창·제안 알약)이 store 에 넘긴 할 일을 받는다 — 구독 콜백에서 최신 핸들러를 쓰도록 ref 로 둔다
+  const runActionRef = useRef(runAction);
+  useEffect(() => {
+    runActionRef.current = runAction;
+  });
+  useEffect(
+    () =>
+      useAgentChatStore.subscribe((state, prev) => {
+        if (state.request && state.request !== prev.request) runActionRef.current(state.request.action);
+      }),
+    []
+  );
 
   // 클릭 핸들러에서만 호출한다 — Chrome 이 모델 다운로드 시작에 사용자 활성화를 요구한다
   const download = async () => {
     setDownloadProgress(0);
     try {
       await downloadPromptModel(setDownloadProgress);
-      setAvailability(await getPromptApiAvailability());
+      useAgentChatStore.getState().setAvailability(await getPromptApiAvailability());
     } catch {
       toast.error('온디바이스 AI 모델을 내려받지 못했습니다.');
     } finally {
@@ -317,27 +404,29 @@ export function AgentAssistant() {
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <AgentChatPanel
+    <AgentPanel
       availability={availability}
       downloadProgress={downloadProgress}
       messages={messages}
       toolNames={tools.map((t) => t.name)}
       isRunning={isRunning}
+      isContextTrimmed={isContextTrimmed}
+      suggestions={suggestions}
+      quickActions={quickActions}
+      canWriteFromNotes={canWriteFromNotes}
+      isNotesMode={isNotesMode}
+      onNotesModeChange={setIsNotesMode}
       onSend={send}
+      onSubmitNotes={submitNotes}
+      onRunAction={runAction}
+      onRunSuggestion={runSuggestion}
+      onDismissSuggestion={(suggestion) => useAgentChatStore.getState().dismiss(suggestion.id)}
       onStop={stop}
       onReset={reset}
-      onClose={close}
       onDownload={download}
       onAnswerConfirm={answerConfirm}
       onUndo={undoChange}
-      isContextTrimmed={isContextTrimmed}
-      layout={layout}
-      onToggleLayout={() => setLayout(layout === 'docked' ? 'floating' : 'docked')}
-      canWriteFromNotes={canWriteFromNotes}
-      onSubmitNotes={submitNotes}
       onApplyDraft={applyDraft}
       onDiscardDraft={discardDraft}
     />

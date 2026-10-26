@@ -21,6 +21,7 @@ import {
   type ProjectListFocusRequest,
   type RemoveOptions,
 } from '.';
+import { AgentComposer } from '@/components';
 import { useProjects, useReportAgentTools, useReportHistory, useResetOnHide, type UseProjectsReturn } from '@/hooks';
 import { confirm, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { COPY_FEEDBACK_DURATION_MS, UNDO_TOAST_DURATION_MS } from '@/constants';
@@ -618,6 +619,9 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
           onOpenImport={() => setIsImportModalOpen(true)}
           onImportLocal={canImportLocal ? handleImportLocal : undefined}
         />
+
+        {/* AI 입력창 — 부탁하기·메모로 쓰기·빠른 작업(GitHub 가져오기 먼저). 도우미 패널과 같은 에이전트로 이어진다 */}
+        <AgentComposer />
 
         {isFormReady ? (
           <ProjectBoard>

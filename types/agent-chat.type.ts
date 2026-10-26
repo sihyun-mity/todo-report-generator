@@ -35,21 +35,63 @@ export type AgentChatTurn =
       untrusted: boolean;
     };
 
+// 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 AI 도우미에 넘긴다.
+// prompt 는 AI(Gemini Nano)에게 묻고, tool 은 모델 없이 도구를 바로 실행하며, notes 는 메모로 보고서 쓰기를 연다(text 가 있으면 바로 정리).
+export type AgentAction =
+  | { type: 'prompt'; text: string }
+  | { type: 'tool'; tool: string; title: string; input?: Record<string, unknown> }
+  | { type: 'notes'; text?: string };
+
+// 상황 제안(One UI 식) — 지금 상태·화면을 보고 고른 다음 할 일. needsAi 면 모델을 쓸 수 있을 때만 보여 준다.
+export type AgentSuggestion = {
+  id: string;
+  title: string;
+  reason: string;
+  action: AgentAction;
+  needsAi: boolean;
+  // 가장 많이 쓰는 기능(GitHub 가져오기) — 무지개 빛으로 강조한다
+  emphasis?: boolean;
+};
+
+// 빠른 작업 — 지금 화면에서 바로 할 수 있는 일(대부분 모델 없이 도구를 바로 실행)
+export type AgentQuickAction = {
+  id: string;
+  label: string;
+  action: AgentAction;
+  needsAi: boolean;
+  emphasis?: boolean;
+};
+
 export type AgentChatStore = {
+  // 모바일(lg 미만) 전체 화면 시트 열림
   isOpen: boolean;
   setOpen: (isOpen: boolean) => void;
-  toggle: () => void;
+  // 화면이 숨겨져(로그인 화면 이동 등) 닫을 때 — 사용자가 닫은 게 아니다
   hide: () => void;
+  // 데스크톱(lg 이상)은 늘 오른쪽에 있다 — 펼친 패널 / 접은 레일. 이 기기에 기억한다.
+  expanded: boolean;
+  setExpanded: (expanded: boolean) => void;
+  // ⌘K·홈 입력창 등에서 "도우미를 보여 줘" — 데스크톱은 펼치고 모바일은 시트를 연다. 입력칸 포커스 신호도 올린다.
+  reveal: () => void;
+  focusSignal: number;
   // 채팅이 요청을 처리하는 중 — 그동안 페이지 본문 조작을 막는다(AgentBusyGuard)
   isRunning: boolean;
   setRunning: (isRunning: boolean) => void;
-  // 떠 있는 패널(필요할 때 부르기) / AI 모드(데스크톱은 오른쪽 열로 붙이고 그보다 좁으면 전체 화면)
-  layout: AgentChatLayout;
-  setLayout: (layout: AgentChatLayout) => void;
+  // 온디바이스 모델 가용성(null = 확인 전). 홈 입력창·제안이 AI 필요 여부를 가른다.
+  availability: LanguageModelAvailability | null;
+  setAvailability: (availability: LanguageModelAvailability) => void;
+  // 지금 경로 — 화면별 제안에 쓴다(AgentPathTracker 가 채운다)
+  pathname: string;
+  setPathname: (pathname: string) => void;
+  // 다른 곳(홈 입력창·제안 알약)이 도우미에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
+  request: { id: number; action: AgentAction } | null;
+  // reveal: false 면 도우미를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일
+  submit: (action: AgentAction, options?: { reveal?: boolean }) => void;
+  // 이번 세션에서 닫은(또는 실행한) 제안 — 같은 제안을 다시 띄우지 않는다
+  dismissed: ReadonlySet<string>;
+  dismiss: (id: string) => void;
   restore: () => void;
 };
-
-export type AgentChatLayout = 'floating' | 'docked';
 
 export type AgentToolsStore = {
   // 지금 화면에 등록된 도구 — 전역 도구와 보이는 화면의 도구가 함께 들어 있다

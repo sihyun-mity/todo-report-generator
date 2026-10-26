@@ -115,7 +115,9 @@ export function useGlobalAgentTools() {
             return toolText({ moved: false, path, message: '이미 이 화면입니다.' });
           latest.current.router.push(path);
           const arrived = await waitForPath(path);
-          return toolText({ moved: true, path, arrived });
+          const label =
+            input.page === 'news_detail' ? '새소식' : AGENT_PAGES[input.page as PageKey].label.split(' — ')[0];
+          return toolText({ moved: true, path, arrived, message: `${label} 화면으로 이동했어요.` });
         },
       },
       {

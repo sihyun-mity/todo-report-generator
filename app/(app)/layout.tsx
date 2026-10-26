@@ -3,6 +3,8 @@ import {
   AgentAssistant,
   AgentBusyGuard,
   AgentLayoutShell,
+  AgentPathTracker,
+  AgentSuggestionPill,
   AppTopBar,
   PasskeyRegisterBanner,
   ThemePromptDialog,
@@ -10,7 +12,7 @@ import {
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
-  // AgentLayoutShell: 바깥 틀(isolate 스태킹 컨텍스트). AI 모드로 열리면 데스크톱에서 채팅 열 너비만큼 비운다
+  // AgentLayoutShell: 바깥 틀(isolate 스태킹 컨텍스트). 데스크톱에서는 늘 있는 AI 도우미 너비만큼 오른쪽을 비운다
   return (
     <AgentLayoutShell>
       <AppTopBar />
@@ -20,8 +22,15 @@ export default function AppLayout({ children }: LayoutProps<'/'>) {
         {children}
       </AgentBusyGuard>
 
-      {/* AI 도우미(채팅): (auth) 경로에는 두지 않도록 (app) 그룹 layout 에 마운트. 열기 버튼은 AppTopBar 에 있다 */}
+      {/* AI 도우미(서비스 에이전트): (auth) 경로에는 두지 않도록 (app) 그룹 layout 에 마운트. 데스크톱은 늘 오른쪽에 있고
+          모바일은 상단바 버튼·⌘K·홈 입력창·제안 알약으로 연다 */}
       <AgentAssistant />
+      {/* 어느 화면에서나 지금 할 만한 일을 알려 주는 상황 제안 알약 */}
+      <AgentSuggestionPill />
+      {/* 화면별 제안용 경로 — usePathname 이 동적 세그먼트 프리렌더에서 suspend 하므로 좁게 감싼다 */}
+      <Suspense>
+        <AgentPathTracker />
+      </Suspense>
 
       {/* 첫 진입 화면 모드 선택 dialog: 다이얼로그 큐에서 가장 먼저(새소식보다 앞서) 노출된다 */}
       <ThemePromptDialog />

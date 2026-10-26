@@ -322,8 +322,15 @@ export async function runAgentChatTurn({
 
     // 실패·취소·미실행은 모델에게 맡기지 않고 정해진 문구로 답한다 — "실패 또는 취소"라고 알려 줘도 Nano 가 "바꿨어요"라고 답했다
     const writes = executed.filter((e) => e.tool.kind !== 'read');
+    // 이동·열기(화면 이동, GitHub 가져오기 창 열기)가 성공했으면 모델 답변을 기다리지 않고 도구가 돌려준 안내로 끝낸다 —
+    // 답변을 만드는 몇 초 동안 본문이 잠겨(AgentBusyGuard) 막 연 창을 바로 쓸 수 없었다.
+    const opened = writes.at(-1);
+    const openedMessage =
+      opened && opened.tool.kind === 'navigate' && !opened.result.isError
+        ? (/"message":"([^"]+)"/.exec(resultText(opened.result))?.[1] ?? `${opened.tool.title} 완료했어요.`)
+        : null;
     const fixed =
-      kind && executed.length === 0
+      (openedMessage ?? (kind && executed.length === 0))
         ? '이 화면에서는 그 요청을 처리하지 못했어요. 다른 화면으로 이동하거나 조금 다르게 말해 주세요.'
         : writes.length > 0 && writes.every((e) => e.result.isError)
           ? `요청을 처리하지 않았어요. ${resultText(writes.at(-1)!.result)}`

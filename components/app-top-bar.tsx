@@ -84,8 +84,9 @@ export function AppTopBar() {
   };
 
   return (
-    <div className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70">
-      <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 sm:px-6 lg:px-12">
+    // h-14(테두리 포함): 데스크톱 오른쪽 AI 도우미 패널 헤더와 같은 높이 — 두 헤더의 아래 줄이 한 줄로 이어진다
+    <div className="sticky top-0 z-40 h-14 w-full border-b border-zinc-200 bg-white/70 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/70">
+      <div className="mx-auto flex h-full w-full max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-12">
         <Link
           href="/"
           aria-label="홈으로"

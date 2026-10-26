@@ -78,14 +78,17 @@ export const AGENT_HIGHLIGHT_DATE_ID = 'report-date';
 /** 변경 카드에 바로 보여 주는 줄 수 — 넘으면 "외 N건"으로 접는다 */
 export const AGENT_CHANGE_VISIBLE_LINES = 6;
 
-/** AI 모드(도킹) 여부·열림 상태를 기억하는 localStorage 키 */
-export const AGENT_CHAT_LAYOUT_STORAGE_KEY = 'trg:agent-chat-layout';
+/** 데스크톱 AI 도우미 패널을 펼쳐 둘지(접으면 레일) 기억하는 localStorage 키 */
+export const AGENT_PANEL_STORAGE_KEY = 'trg:agent-panel';
 
 /** "메모로 보고서 쓰기"에 넣을 수 있는 메모 길이(글자) — Nano 컨텍스트 창(약 9천 토큰)에 프롬프트·응답과 함께 들어가도록 */
 export const AGENT_NOTES_MAX_CHARS = 3_000;
 
-/** 빈 대화 첫 화면에 보여 주는 추천 수 */
-export const AGENT_RECOMMENDATION_LIMIT = 3;
+/** 패널·홈 입력창에 보여 주는 상황 제안 수 */
+export const AGENT_SUGGESTION_LIMIT = 4;
+
+/** 상황 제안 알약을 띄우기 전 기다리는 시간 — 입력 중 상태가 출렁일 때마다 떴다 사라지지 않게 */
+export const AGENT_SUGGESTION_PILL_DELAY_MS = 1_500;
 
 /** 음성을 서버(브라우저 음성 인식 서비스)로 보내는 데 동의했는지 기억하는 localStorage 키 */
 export const AGENT_VOICE_CLOUD_CONSENT_KEY = 'trg:agent-voice-cloud-consent';
