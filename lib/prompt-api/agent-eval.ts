@@ -1,6 +1,6 @@
 import type { AgentChange, AgentChatTurn, AgentRequestScope, AgentTool, Project } from '@/types';
 import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
-import { useAgentChatStore, useReportFormStore } from '@/stores';
+import { useAgentChatStore, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
 import { runAgentChatTurn } from '.';
 
@@ -20,7 +20,8 @@ type EvalTurn = {
   // 실행하면 실패
   forbid?: ReadonlyArray<string>;
   // 답변이 이 패턴에 맞아야 한다 — 지금 상황(회원 여부·화면 등)을 알고 답하는지 본다
-  answer?: RegExp;
+  // 함수면 실행할 때 정한다(로그인 여부처럼 돌리는 환경에 따라 맞는 답이 다를 때)
+  answer?: RegExp | (() => RegExp);
 };
 
 export type AgentEvalScenario = {
@@ -205,7 +206,7 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     },
   },
   {
-    name: '구역 교체',
+    name: '업무 통째로 바꾸기',
     form: BASE_FORM,
     turns: [
       { say: '익일 업무를 "배포 준비" 작업 하나로 바꿔줘', expect: ['replace_report_section', 'add_report_tasks'] },
@@ -295,7 +296,17 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
   // 지금 상황(Situation now)으로 답해야 하는 질문 — 도구 없이도 회원 여부·화면을 안다
   {
     name: '로그인 상태',
-    turns: [{ say: '나 지금 로그인 되어 있어?', expect: [], answer: /로그인|회원|게스트|비회원/ }],
+    // 게스트에게 "로그인되어 계세요"라고 답한 적이 있다 — 지금 로그인 상태에 맞게 답했는지 본다
+    turns: [
+      {
+        say: '나 지금 로그인 되어 있어?',
+        expect: [],
+        answer: () =>
+          useReportHistoryStore.getState().mode === 'user'
+            ? /로그인(되어|돼)\s*있|회원/
+            : /게스트|비회원|로그인(되어|돼)\s*있지\s*않|로그인하지\s*않|로그인\s*안/,
+      },
+    ],
   },
   { name: '지금 화면', turns: [{ say: '지금 무슨 화면이야?', expect: [], answer: /보고서|홈|작성/ }] },
   {
@@ -342,7 +353,8 @@ const fromProjects = (projects: ReadonlyArray<Project>): Array<EvalProject> =>
       })),
     }));
 
-type TurnLog = { say: string; tools: Array<string>; answer: string; problem: string | null };
+// thinking — 끝난 생각 단계(고른 의도·할 일). 틀린 시나리오에서 어디서 갈라졌는지 본다
+type TurnLog = { say: string; tools: Array<string>; answer: string; thinking: Array<string>; problem: string | null };
 export type AgentEvalResult = {
   scenario: string;
   run: number;
@@ -388,6 +400,7 @@ export async function runAgentEval({
             const tools: Array<string> = [];
             const failed: Array<string> = [];
             let answer = '';
+            const thinking = new Map<string, string>();
             const { turns } = await runAgentChatTurn({
               history,
               getTools,
@@ -405,6 +418,9 @@ export async function runAgentEval({
               // 실패한 시도(빈 구역에서 이름 바꾸기 등)는 쓰기로 세지 않는다 — 다른 도구로 다시 골라 해내면 통과다
               onToolEnd: (tool, result) => {
                 if (result.isError) failed.push(tool.name);
+              },
+              onThinking: (step) => {
+                if (step.status === 'done') thinking.set(step.key, step.label);
               },
               onAnswer: (text) => {
                 answer = text;
@@ -426,9 +442,10 @@ export async function runAgentEval({
               else if (writes.some((name) => !turn.expect!.includes(name)))
                 problem = `다른 쓰기 도구 실행: ${writes.join(', ')}`;
             }
-            if (!problem && turn.answer && !turn.answer.test(answer))
-              problem = `답변이 ${turn.answer} 에 맞지 않음: ${answer.slice(0, 80)}`;
-            logs.push({ say: turn.say, tools, answer, problem });
+            const expected = typeof turn.answer === 'function' ? turn.answer() : turn.answer;
+            if (!problem && expected && !expected.test(answer))
+              problem = `답변이 ${expected} 에 맞지 않음: ${answer.slice(0, 80)}`;
+            logs.push({ say: turn.say, tools, answer, thinking: [...thinking.values()], problem });
           }
           const state = useReportFormStore.getState();
           const formProblem =

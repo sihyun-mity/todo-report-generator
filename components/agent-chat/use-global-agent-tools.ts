@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toolError, toolText, toolUnavailable } from '@/lib/webmcp';
 import { queries } from '@/providers';
 import { useAgentChatStore } from '@/stores';
-import { isNewsId, newsIdFromPath } from '@/utils';
+import { dayLabel, isNewsId, kstDateKey, newsIdFromPath } from '@/utils';
 import { useTheme } from '..';
 
 type PageKey = keyof typeof AGENT_PAGES;
@@ -75,6 +75,12 @@ const resultJson = (result: WebMcpToolResult) => {
   } catch {
     return null;
   }
+};
+
+// 소식 발행일 — KST 날짜에 요일을 붙인다("2026-10-26 10/26(월)"). 요일이 없으면 모델이 지어냈다(월요일을 화요일로)
+const newsDate = (publishedAt: string) => {
+  const key = kstDateKey(new Date(publishedAt));
+  return `${key} ${dayLabel(key)}`;
 };
 
 type NewsRef = { id: string; title: string };
@@ -173,6 +179,8 @@ export function useGlobalAgentTools() {
         name: 'navigate',
         title: '화면 이동',
         kind: 'navigate',
+        // 소식 하나를 열어 달라는 요청은 open_news 가 연다 — 함께 두면 "그거 보여줘"에 새소식 목록 화면으로 옮겼다
+        requires: (request) => !opensNews(request),
         // 지금 화면을 알아야 "이미 이 화면"·"뒤로" 같은 요청을 판단한다
         inputContext: () => ({ currentPath: window.location.pathname }),
         description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news); to open the newest or the n-th news use open_news instead. settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
@@ -232,7 +240,13 @@ export function useGlobalAgentTools() {
           if (next !== 'light' && next !== 'dark' && next !== 'system')
             return toolError('theme 은 "light", "dark", "system" 중 하나여야 합니다.');
           const prev = latest.current.theme;
-          if (prev === next) return toolText({ changed: false, theme: next });
+          // 바뀐 게 없으면 이유를 알린다 — 없을 때 "바뀐 것은 없어요."로만 끝났다
+          if (prev === next)
+            return toolText({
+              changed: false,
+              theme: next,
+              message: `이미 ${THEME_LABELS[next]}${next === 'system' ? '이에요' : '예요'}.`,
+            });
           latest.current.setTheme(next);
           toast.success(`${THEME_LABELS[next]}로 변경되었습니다.`);
           context.reportChange?.({
@@ -292,7 +306,7 @@ export function useGlobalAgentTools() {
             news: items.slice(0, AGENT_NEWS_LIST_LIMIT).map((n) => ({
               id: n.id,
               title: n.title,
-              publishedAt: n.published_at.slice(0, 10),
+              publishedAt: newsDate(n.published_at),
             })),
           });
         },
@@ -364,7 +378,7 @@ export function useGlobalAgentTools() {
           return toolText({
             id: item.id,
             title: item.title,
-            publishedAt: item.published_at.slice(0, 10),
+            publishedAt: newsDate(item.published_at),
             content: item.content.slice(0, AGENT_NEWS_CONTENT_MAX_CHARS),
           });
         },

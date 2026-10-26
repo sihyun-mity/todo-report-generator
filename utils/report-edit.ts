@@ -41,7 +41,11 @@ const pickByName = <T>(
   label: Readonly<{ name: string; object: string; subject: string }>
 ): Array<T> | string => {
   const named = items.filter((item) => nameOf(item).trim() !== '');
-  const q = query.trim();
+  // "토큰 로그인 작업"처럼 종류 이름을 붙여 부르면 뗀다 — 모델이 요청 문구를 그대로 넣어 "찾지 못했습니다"로 끝났다.
+  // 붙인 채로 맞는 이름이 있으면(이름 자체가 "…작업"으로 끝나면) 그대로 쓴다
+  const raw = query.trim();
+  const stripped = raw.replace(/\s*(작업|업무|프로젝트|세부\s*항목|항목)$/, '').trim();
+  const q = stripped !== '' && !named.some((item) => sameText(nameOf(item), raw)) ? stripped : raw;
   const exact = named.filter((item) => sameText(nameOf(item), q));
   const found =
     exact.length > 0
@@ -216,7 +220,7 @@ export const moveProject = (
 ): Record<ProjectsBucket, Array<Project>> | string => {
   const project = buckets[from][index];
   if (from === to) {
-    if (position === undefined) return '같은 구역 안에서 옮기려면 position(1부터)을 주세요.';
+    if (position === undefined) return '같은 금일·익일 업무 안에서 옮기려면 position(1부터)을 주세요.';
     const rest = buckets[from].filter((_p, i) => i !== index);
     return { ...buckets, [from]: insertAt(rest, project, position) } as Record<ProjectsBucket, Array<Project>>;
   }

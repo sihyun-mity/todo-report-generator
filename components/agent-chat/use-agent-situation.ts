@@ -69,17 +69,20 @@ export function useAgentSituation() {
             task: [SECTION_LABELS[focus.task.section ?? ''], focus.task.project, focus.task.task]
               .filter(Boolean)
               .join(' · '),
+            ...(focus.task.detail ? { detailLine: focus.task.detail } : {}),
           }
         : {}),
     };
 
     return {
       screen: screenOf(scope.path, titleOf(newsIdFromPath(scope.path))),
+      // 참·거짓으로 분명히 준다 — 설명 문장으로만 주었더니 게스트에게 "로그인되어 계세요"라고 답했다
+      loggedIn: mode === 'user' ? true : mode === 'guest' ? false : 'unknown',
       user:
         mode === 'user'
-          ? 'member (logged in; reports are saved in the account)'
+          ? '회원 — reports are saved in the account'
           : mode === 'guest'
-            ? 'guest (not logged in; reports are saved only in this browser; logging in is optional)'
+            ? '게스트(비회원), NOT logged in — reports are saved only in this browser; logging in is optional'
             : 'unknown',
       colorTheme: latest.current,
       reportForm: {

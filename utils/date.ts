@@ -16,6 +16,18 @@ export const kstDateKey = (date: Date = new Date()): string =>
     day: '2-digit',
   }).format(date);
 
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 날짜 키('YYYY-MM-DD')를 요일이 붙은 짧은 표기('10/19(월)')로 만든다.
+ *
+ * Nano 도구 결과에 요일을 데이터로 넣는 데 쓴다 — 없으면 모델이 요일을 지어냈다(2026-10-26 월요일을 화요일로 답했다).
+ */
+export const dayLabel = (date: string): string => {
+  const [year, month, day] = date.split('-').map(Number);
+  return `${month}/${day}(${WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()]})`;
+};
+
 /** 연/월/일을 날짜 키('YYYY-MM-DD')로 만든다. */
 export const toDateKey = (year: number, month: number, day: number): string =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;

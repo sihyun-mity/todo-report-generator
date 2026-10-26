@@ -22,7 +22,7 @@ export function AgentComposer() {
     useAgentChatStore.getState().submit(action, { reveal: action.type !== 'tool' });
 
   return (
-    <section aria-label="Nano에게 부탁하기" className="mb-8 space-y-3">
+    <section aria-label="Nano에게 요청하기" className="mb-8 space-y-3">
       {isReady && (
         <AgentInputBox
           placeholder="요청하거나 오늘 한 일을 적어 보세요"

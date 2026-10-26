@@ -68,7 +68,7 @@ const INTENT_TITLES: Record<string, string> = {
   read_reports: '보고서·새소식 조회',
   add_to_report: '보고서에 추가',
   edit_report: '보고서 일부 고치기',
-  rewrite_report: '구역·폼 통째로 바꾸기',
+  rewrite_report: '금일·익일 업무 통째로 바꾸기',
   clear_report: '폼 비우기',
   save_or_export: '저장·복사·내보내기',
   go_to_screen: '화면 이동',
@@ -85,8 +85,8 @@ const MODEL_OWNER_TITLES: Record<ModelOwner, string> = {
 
 // 도구 입력을 생각 과정에 한 줄로 — 영어 키 대신 한국어 이름, 구역은 금일·익일로
 const INPUT_LABELS: Record<string, string> = {
-  section: '구역',
-  to_section: '옮길 구역',
+  section: '업무',
+  to_section: '옮길 곳',
   project: '프로젝트',
   to_project: '옮길 프로젝트',
   task: '작업',
@@ -181,7 +181,7 @@ const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'rewrite_report',
     kind: 'replace',
-    hint: 'replace a whole section with new content, or fill the whole form from a saved report or a pasted report text (익일 업무를 "배포 준비" 하나로 바꿔줘, 구역 통째로 바꿔줘, 새로 써줘, 불러오기, 텍스트 적용)',
+    hint: 'replace a whole section with new content, or fill the whole form from a saved report or a pasted report text (익일 업무를 "배포 준비" 하나로 바꿔줘, 금일 업무 통째로 바꿔줘, 새로 써줘, 불러오기, 텍스트 적용)',
   },
   // "삭제"만 보고 초기화로 고르지 않게 — "중복 작업 삭제해줘"를 초기화로 골라 폼 전체를 지웠다
   {
@@ -235,7 +235,37 @@ const KIND_GUARDS: Partial<Record<AgentToolKind, { pattern: RegExp; fallback: Ag
     pattern: /초기화|전부|전체|모두|싹|비워|처음부터|리셋|reset|clear|다\s*(지워|삭제|없애)/i,
     fallback: 'edit',
   },
+  // 기록에 남기거나 파일을 내려받는 일 — 전체 도구에서 다시 고르다 저장을 골라도 그 말이 없으면 실행하지 않는다
+  // "저장된·저장한 보고서"는 대상을 가리킬 뿐 저장하라는 말이 아니다("지난주 저장된 보고서 기록 삭제해줘"에 내보내기를 실행했다)
+  save: { pattern: /저장(?!된|한|돼|되어)|복사|내보내|다운|백업|파일|클립보드|기록에\s*남/, fallback: 'edit' },
 };
+const SAVE_REQUEST = KIND_GUARDS.save!.pattern;
+const WRITE_KINDS: ReadonlyArray<AgentToolKind> = [...FORM_KINDS, 'save'];
+// 넣으라는 말 — 추가 의도는 이 말이 있을 때만 믿는다
+const ADD_REQUEST =
+  /추가|넣어|넣자|넣을|더해|적어|써\s*줘|채워|가져와|가져오|복사|그대로|반복|똑같이|옮겨|올려|등록|기록해|남겨/;
+// 지우라는 말
+const DELETE_REQUEST = /삭제|지워|지우|빼|없애|제거|날려|치워/;
+// 의도 분류를 믿지 않기로 했을 때 요청의 말로 종류를 가늠한다 — 전체 도구에서 다시 고르게 하면 엉뚱한 일을 골랐다
+// ("내일 할 일에도 넣어줘"를 화면 이동으로 분류한 뒤 전체 도구에서 GitHub 가져오기를 열었다)
+const EDIT_REQUEST = /이름|바꿔|고쳐|수정|변경|진행률|날짜|순서/;
+const kindFromWords = (request: string): AgentToolKind | 'any' =>
+  ADD_REQUEST.test(request)
+    ? 'add'
+    : DELETE_REQUEST.test(request) || EDIT_REQUEST.test(request)
+      ? 'edit'
+      : QUESTION_REQUEST.test(request)
+        ? 'read'
+        : 'any';
+// 통째로 바꾸기(교체·불러오기·텍스트 적용)라는 말
+const REWRITE_REQUEST =
+  /통째|전부|전체|새로|하나로|로만|만\s*남기|불러|가져|텍스트|붙여|복원|적용|다시\s*써|비우고|교체/;
+// 금일·익일 업무 하나를 통째로 다시 쓰라는 말
+const REPLACE_SECTION_REQUEST =
+  /(금일|익일|오늘|내일)[^.?!]*?(하나로|로만|만\s*남기|통째로|전부\s*바꿔|싹\s*바꿔|새로\s*써)/;
+// 바꾸거나 해 달라는 말 — 묻는 말에 이 말이 없으면 쓰기 도구를 실행하지 않는다
+const CHANGE_REQUEST =
+  /줘|주세요|주실|주라|해\s*봐|하자|해라|할래|바꿔|넣어|넣자|지워|추가|삭제|옮겨|고쳐|만들어|채워|비워|저장|복사|불러|내보내|올려|내려|정리해|합쳐|빼/;
 
 // 화면 모드 요청 — 화면 모드 의도인데 이 말이 없으면 분류를 믿지 않고 전체 도구에서 다시 고른다.
 // "가장 최근 새소식 보여줘"를 화면 모드로 분류해, 남은 조회 후보로 목록을 읽고 "새 소식 11가지"라고 답했다.
@@ -277,7 +307,9 @@ const FOLLOW_UP_REQUEST =
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // "지난달"·"이번 주" 같은 표현을 기간으로 바꿀 수 있게 오늘 날짜를 프롬프트마다 넣는다(이 기기 시각 기준)
-const todayLine = () => {
+// 기간은 도구를 고르고 입력을 만들 때만 넘긴다 — 답변 단계에도 넘기면 "작성 중인 보고서 요약해줘"에 이번 주·지난달 범위를
+// 늘어놓고 지난달을 잘못 옮겨 적었다(답에 필요한 날짜는 도구 결과에 있다)
+const todayLine = (withPeriods = true) => {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const key = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -286,6 +318,7 @@ const todayLine = () => {
   const monday = day(-((now.getDay() + 6) % 7));
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+  if (!withPeriods) return `Today: ${key(now)} (${WEEKDAYS[now.getDay()]})`;
   return [
     `Today: ${key(now)} (${WEEKDAYS[now.getDay()]})`,
     `this week (이번 주): ${key(monday)} ~ ${key(day(6, monday))}`,
@@ -296,11 +329,36 @@ const todayLine = () => {
 
 // 프롬프트로 막아도 Nano 가 마크다운 강조·코드 표기·이모지를 섞곤 해 표시 전에 걷어 낸다
 // 대화 의도가 아니면 Nano 가 습관처럼 붙이는 "안녕하세요!" 도 뗀다
+// 답에 쓴 날짜의 요일을 실제 요일로 고친다 — 도구 결과에 "10/26(월)"을 줘도 "2026년 10월 26일 금요일"로 옮겨 쓰며 요일을 지어냈다.
+// 연도가 없으면 올해로 본다
+// "X요일" 이나 "(X)" 꼴만 요일로 본다 — 날짜 뒤의 "일정"·"월간" 같은 낱말을 요일로 고치지 않게
+const DATE_WITH_WEEKDAY =
+  /((?:\d{4}년\s*)?)(\d{1,2})월\s*(\d{1,2})일(\s*)(?:\(([월화수목금토일])\)|([월화수목금토일])요일)/g;
+const fixWeekday = (
+  match: string,
+  yearPart: string,
+  month: string,
+  day: string,
+  space: string,
+  inParens: string | undefined
+) => {
+  const year = /\d{4}/.exec(yearPart)?.[0];
+  const date = new Date(year ? Number(year) : new Date().getFullYear(), Number(month) - 1, Number(day));
+  if (Number.isNaN(date.getTime())) return match;
+  const weekday = '일월화수목금토'[date.getDay()];
+  // "(X)" 와 "X요일" 은 모두 세 글자다
+  const head = match.slice(0, match.length - 3 - space.length);
+  return `${head}${space}${inParens ? `(${weekday})` : `${weekday}요일`}`;
+};
+
 const toPlainAnswer = (text: string, keepGreeting: boolean) =>
   (keepGreeting ? text : text.replace(/^\s*안녕하세요[!.,~\s]*/, ''))
     // "네, 요청하신 새 소식 내용 보여드릴게요." 같은 군더더기 첫 문장을 뗀다(질문에 답하는 "네, 로그인돼 있어요"는 남는다)
     .replace(/^\s*(네[,.!]?\s*)?요청하신[^.!?\n]*(드릴게요|드리겠습니다|드려요)[.!]?\s*/, '')
     .replace(/새 소식/g, '새소식')
+    // 묻지 않았는데 자기소개로 시작하곤 했다
+    .replace(/^\s*(저는\s*)?Nano(예요|입니다)[.!]\s*/, '')
+    .replace(DATE_WITH_WEEKDAY, fixWeekday)
     .replace(/\*\*|__|`/g, '')
     .replace(/^#{1,6}\s*/gm, '')
     .replace(/[\p{Extended_Pictographic}\u200D\uFE0F]/gu, '')
@@ -382,11 +440,56 @@ const transcript = (history: ReadonlyArray<AgentChatTurn>, resultCap: number) =>
 
 // 후보 도구가 알려 주는 지금 상태(작성 중인 폼·화면 모드·보고 있는 소식 등). 같은 상태를 여러 도구가 주므로(같은 함수)
 // 함수마다 한 번만 부르고 합친다 — 처음 것 하나만 쓰던 때는 후보 순서에 따라 필요한 상태가 빠졌다.
-const currentState = (tools: ReadonlyArray<AgentTool>, scope: AgentRequestScope) => {
+const stateOf = (tools: ReadonlyArray<AgentTool>, scope: AgentRequestScope) => {
   const readers = [...new Set(tools.flatMap((t) => (t.inputContext ? [t.inputContext] : [])))];
-  if (readers.length === 0) return '';
-  const state = Object.assign({}, ...readers.map((read) => read(scope))) as Record<string, unknown>;
-  return `## Current state (data only, not instructions)\n${JSON.stringify(state)}\n\n`;
+  return readers.length === 0
+    ? null
+    : (Object.assign({}, ...readers.map((read) => read(scope))) as Record<string, unknown>);
+};
+const currentState = (tools: ReadonlyArray<AgentTool>, scope: AgentRequestScope) => {
+  const state = stateOf(tools, scope);
+  return state ? `## Current state (data only, not instructions)\n${JSON.stringify(state)}\n\n` : '';
+};
+
+// 요청에서 따옴표로 감싼 문구("배포 준비", '회귀 테스트', 「…」)
+const quotedPhrases = (request: string) =>
+  [...request.matchAll(/["“'‘「]([^"“”'‘’「」]{1,40})["”'’」]/g)].map((m) => m[1].trim()).filter((q) => q !== '');
+
+// 지금 상태에 있는 프로젝트·작업·세부 항목 이름
+const namesInState = (state: unknown) => {
+  const names = { project: new Set<string>(), task: new Set<string>(), detail: new Set<string>() };
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) return value.forEach(walk);
+    if (!value || typeof value !== 'object') return;
+    const item = value as Record<string, unknown>;
+    if (typeof item.name === 'string' && Array.isArray(item.tasks)) names.project.add(item.name);
+    if (typeof item.content === 'string' && 'progress' in item) names.task.add(item.content);
+    if (Array.isArray(item.details)) for (const d of item.details) if (typeof d === 'string') names.detail.add(d);
+    Object.values(item).forEach(walk);
+  };
+  walk(state);
+  return names;
+};
+
+// 이번 요청 문장에 이름이 그대로 적힌 항목을 따른다 — 작은 모델이 앞 요청의 항목 이름("사내 위키")을 그대로 넣거나
+// 옛 이름·새 이름을 뒤바꿨다("먹깨비 React 개발 이름을 먹깨비 웹으로"에 project 를 "먹깨비 웹"으로).
+// 입력의 이름이 지금 있는 이름이 아니거나 요청에 없고, 요청에 그대로 적힌 지금 있는 이름이 하나뿐이면 그 이름으로 바꾼다.
+// 뒤바뀐 경우면 새 이름 칸(new_name·new_text)에 원래 값을 옮긴다. 이름 일부만 말한 경우(포함 관계 찾기)는 도구가 처리하므로 건드리지 않는다
+const repairNames = (input: Record<string, unknown>, request: string, state: unknown) => {
+  if (!state) return input;
+  const names = namesInState(state);
+  const fixed = { ...input };
+  for (const key of ['project', 'task', 'detail'] as const) {
+    const value = fixed[key];
+    if (typeof value !== 'string' || value === '' || (names[key].has(value) && request.includes(value))) continue;
+    const mentioned = [...names[key]].filter((n) => n.trim() !== '' && request.includes(n));
+    const distinct = mentioned.filter((n) => !mentioned.some((m) => m !== n && m.includes(n)));
+    if (distinct.length !== 1 || distinct[0] === value) continue;
+    for (const newKey of ['new_name', 'new_text'])
+      if (fixed[newKey] === distinct[0] && request.includes(value)) fixed[newKey] = value;
+    fixed[key] = distinct[0];
+  }
+  return fixed;
 };
 
 // 쓰기 도구가 오류 없이 끝났지만 아무것도 바꾸지 않았다(예: 옮길 미완료 업무 없음)
@@ -415,6 +518,7 @@ const describeChangeLine = (line: string) => {
 };
 
 const TASK_LINE = /^([＋－]) (금일|익일) · (.+?) · (.+?)(?: (\d+)%)?$/;
+const DETAIL_LINE = /^([＋－]) (금일|익일) · (.+?) · (.+) › (.+)$/;
 
 // 의도 분류에 넘기는 "이 화면에서 할 수 있는 일" — 도구 제목만 넘기던 때는 Nano가 자기가 무엇을 할 수 있는지 몰라
 // 묻는 말을 화면 이동으로 고르거나 할 수 있는 일을 할 수 없다고 했다. 제목 + 설명 첫 문장을 짧게 붙인다(컨텍스트가 작아 자른다)
@@ -440,6 +544,17 @@ export const focusAfterTool = (
   if (own) return own;
   const text = (key: string) =>
     typeof input[key] === 'string' && input[key] !== '' ? (input[key] as string) : undefined;
+  // 세부 항목을 다뤘으면 그 줄(고쳤으면 새 문구)까지 — new_text 를 작업명으로 보면 "방금 고친 세부 항목 지워줘"에 옛 문구로 찾았다
+  const detail = text('detail');
+  if (detail && text('task'))
+    return {
+      task: {
+        section: text('section'),
+        project: text('project'),
+        task: text('to_task') ?? text('task')!,
+        detail: text('new_text') ?? detail,
+      },
+    };
   const task = text('new_text') ?? text('task');
   if (task) return { task: { section: text('section'), project: text('project'), task } };
   const added = changes.map((line) => TASK_LINE.exec(line)).find((m) => m?.[1] === '＋');
@@ -458,6 +573,25 @@ const describeChanges = (lines: ReadonlyArray<string>, renamed: boolean): Array<
   });
   const used = new Set<number>();
   const sentences: Array<string> = [];
+  // 같은 작업 아래 세부 항목을 뺀 줄과 넣은 줄은 고치기로 묶는다 — "넣었어요. 지웠어요."로 들렸다
+  const details = lines.map((line) => DETAIL_LINE.exec(line));
+  for (const [i, removed] of details.entries()) {
+    if (!removed || removed[1] !== '－' || used.has(i)) continue;
+    const j = details.findIndex(
+      (added, k) =>
+        !used.has(k) &&
+        !!added &&
+        added[1] === '＋' &&
+        added[2] === removed[2] &&
+        added[3] === removed[3] &&
+        added[4] === removed[4]
+    );
+    if (j === -1) continue;
+    used.add(i).add(j);
+    sentences.push(
+      `${removed[2]} '${removed[4]}' 아래의 ${eul(`'${removed[5]}'`)} ${euro(`'${details[j]![5]}'`)} 고쳤어요`
+    );
+  }
   for (const [i, removed] of parsed.entries()) {
     if (!('sign' in removed) || removed.sign !== '－' || used.has(i)) continue;
     const j = parsed.findIndex(
@@ -581,7 +715,9 @@ export async function runAgentChatTurn({
   const ask = (
     buildPrompt: (conversation: string) => string,
     schema: object | null,
-    onText?: (text: string) => void
+    onText?: (text: string) => void,
+    // 이번 주·지난주·지난달 범위를 함께 넘길지 — 답변 단계는 오늘 날짜만 넘긴다(todayLine 참고)
+    withPeriods = true
   ) => {
     // 다른 작업(GitHub 커밋 분류 등)이 모델을 쓰고 있으면 번갈아 돌아 느려진다 — 기다리는 이유를 알린다
     const other = otherModelOwner('chat');
@@ -600,7 +736,7 @@ export async function runAgentChatTurn({
           turns.findLastIndex((t) => t.role === 'user')
         );
         const render = (dropped: number, cap: number) =>
-          buildPrompt(`${todayLine()}\n${transcript(turns.slice(dropped), cap)}`);
+          buildPrompt(`${todayLine(withPeriods)}\n${transcript(turns.slice(dropped), cap)}`);
 
         let dropped = 0;
         let cap = AGENT_CHAT_TOOL_RESULT_MAX_CHARS;
@@ -658,7 +794,14 @@ export async function runAgentChatTurn({
       ? userTexts.slice(0, -1).findLast((t) => !RETRY_REQUEST.test(t.trim()))
       : undefined;
     const request = retried ?? said;
-    if (retried) think('retry', `앞 요청을 다시 처리해요: ${retried}`, 'done');
+    if (retried) {
+      think('retry', `앞 요청을 다시 처리해요: ${retried}`, 'done');
+      // 모델이 보는 마지막 요청에도 다시 할 요청을 적는다 — "다시 시도해"만 보면 할 일이 없다고 골랐다
+      const last = history.findLastIndex((t) => t.role === 'user');
+      conversation = history.map((t, i) =>
+        i === last && t.role === 'user' ? { ...t, text: `${t.text} (= ${retried})` } : t
+      );
+    }
     think('intent', '요청을 이해하는 중');
     // 앞 대화가 있으면 이번 요청이 그 대화를 잇는지도 함께 고른다 — 관계없는 새 요청이면 앞 대화를 버리고 새 대화로 시작한다.
     // 앞 대화를 계속 넘기면 지난 요청·지난 결과가 섞여 엉뚱한 기간을 정리하거나 앞 요청을 이어서 처리했다.
@@ -723,14 +866,55 @@ export async function runAgentChatTurn({
     let intentNote = unsupported ? 'it may be something the app cannot do' : intent;
     // 화면 이동 의도인데 옮기거나 열어 달라는 말이 없으면 묻는 말로 본다 — "가장 최근 소식 알고싶어"에 새소식 화면으로 옮겨 갔다
     if (kind === 'navigate' && !NAVIGATE_REQUEST.test(request)) {
-      kind = QUESTION_REQUEST.test(request) ? 'read' : 'any';
+      kind = kindFromWords(request);
       intentNote = 'the user did not ask to move; decide only from what the request asks';
       think('intent', '요청 이해: 화면 이동이 아니라 다시 찾아볼게요', 'done');
     }
     if (kind === 'setting' && !THEME_REQUEST.test(request)) {
-      kind = 'any';
+      kind = kindFromWords(request);
       intentNote = 'the first guess was wrong; decide only from what the request asks';
       think('intent', '요청 이해: 화면 모드 요청이 아니라 다시 찾아볼게요', 'done');
+    }
+    // 추가 의도인데 넣으라는 말이 없으면 믿지 않는다 — "먹깨비 React 개발 프로젝트는 삭제해줘"를 추가로 골라 작업 추가를 실행했다
+    if (kind === 'add' && !ADD_REQUEST.test(request)) {
+      kind = kindFromWords(request);
+      intentNote = 'the user did not ask to add anything; decide only from what the request asks';
+      think(
+        'intent',
+        `요청 이해: ${kind === 'edit' ? '보고서 일부 고치기' : '추가 요청이 아니라 다시 찾아볼게요'}`,
+        'done'
+      );
+    }
+    // 금일·익일 업무를 통째로 바꾸라는 말이면 작은 수정이 아니라 교체다 — "익일 업무를 '배포 준비' 작업 하나로 바꿔줘"를 작은 수정으로 골라
+    // 작업 이름만 바꿨다
+    // 통째로 바꾸기로 분류됐어도 그런 말이 없으면 작은 수정이다 — "보고서 날짜를 어제로 바꿔줘"에 구역 다시 쓰기를 골랐다
+    if (kind === 'replace' && !REWRITE_REQUEST.test(request)) {
+      kind = 'edit';
+      intentNote = 'edit_report';
+      think('intent', '요청 이해: 보고서 일부 고치기', 'done');
+    }
+    if (kind === 'edit' && REPLACE_SECTION_REQUEST.test(request)) {
+      kind = 'replace';
+      intentNote = 'rewrite_report';
+      think('intent', '요청 이해: 금일·익일 업무 통째로 바꾸기', 'done');
+    }
+    // 저장·복사·내보내기는 기록에 남거나 파일을 내려받는다 — 그 말이 없으면 믿지 않는다("진행률 50%로 바꿔줘"에 저장을 골랐다)
+    if (kind === 'save' && !SAVE_REQUEST.test(request)) {
+      kind = kindFromWords(request);
+      intentNote = 'the user did not ask to save, copy or export; decide only from what the request asks';
+      think('intent', '요청 이해: 저장 요청이 아니라 다시 찾아볼게요', 'done');
+    }
+    // 묻기만 하고 바꿔 달라는 말이 없으면 바꾸지 않는다 — "방금 뭐 했어?"에 진행률을 다시 바꿨다
+    if (
+      kind &&
+      kind !== 'any' &&
+      WRITE_KINDS.includes(kind) &&
+      QUESTION_REQUEST.test(request) &&
+      !CHANGE_REQUEST.test(request)
+    ) {
+      kind = DATA_QUESTION.test(request) ? 'read' : null;
+      intentNote = 'the user only asks a question; do not change anything';
+      think('intent', `요청 이해: ${kind ? '보고서·새소식 조회' : '대화'}`, 'done');
     }
     const lockIfForm = (k: AgentToolKind | 'any' | null) => {
       if (k && k !== 'any' && FORM_KINDS.includes(k)) onFormLock?.();
@@ -786,9 +970,25 @@ export async function runAgentChatTurn({
       return { turns: added, route: 'question' };
     }
 
+    // "다시 시도해" — 앞 요청이 바꾼 것 없이 끝났으면(실패·조회만) 그때 부른 도구를 같은 입력으로 다시 부른다.
+    // 모델에 다시 고르게 하면 앞 요청 문장을 붙여 줘도 "할 수 없음"을 골랐다. 바꾼 게 있었으면 되풀이하면 두 번 바뀌므로 모델에 맡긴다
+    const replay: Array<{ name: string; input: Record<string, unknown> }> = [];
+    if (retried) {
+      const start = history.findLastIndex((t) => t.role === 'user' && t.text === retried);
+      const previousTools = history.slice(start + 1).flatMap((t) => (t.role === 'tool' ? [t] : []));
+      if (!previousTools.some((t) => !t.isError && (t.changes?.length ?? 0) > 0))
+        replay.push(...previousTools.map((t) => ({ name: t.name, input: t.input })));
+    }
+
+    // "할 수 없음"을 한 번 다시 보게 했는지와 그때 덧붙이는 지시
+    let rechecked = false;
+    let pickNote = '';
+
     for (let step = 0; kind && step < AGENT_CHAT_MAX_TOOL_STEPS; step++) {
       if (step > 0) await goHomeIfNeeded(kind);
       const tools = candidateTools(getTools(), kind, request, scope);
+      const planned = replay.shift();
+      const plannedTool = planned ? getTools().find((t) => t.name === planned.name) : undefined;
       const state = currentState(tools, scope);
       // 실행해야 하는 요청인데 아직 아무 도구도 돌리지 않았으면 "answer" 를 빼 둔다 — 남겨 두면 실행 없이 "바꿨다"고 답했다
       // 되묻기·할 수 없음은 늘 둔다 — 빠진 정보를 지어내거나 비슷한 도구로 대신하는 것보다 묻거나 멈추는 편이 낫다
@@ -802,18 +1002,20 @@ export async function runAgentChatTurn({
         ...tools.map((t) => t.name),
       ];
       think(`pick-${step}`, '할 일을 고르는 중');
-      const decision = JSON.parse(
-        await ask(
-          (conversation) =>
-            `## Available tools\n${toolCatalog(tools)}\n\n${situationBlock}${state}## Conversation\n${conversation}\n\n## Task\n${wantsLine}Pick the next action for the user's last request (${intentNote}).\n- If a tool is needed, pick the tool that does exactly what the user asked.\n- If no tool does what the user asked, pick "${CANNOT}". Never use a different tool as a substitute (e.g. clearing the whole form to delete one task).\n- If the tool results so far are enough, pick "${ANSWER}".\n- If the request lacks information the tool needs and it is neither in the conversation nor in the current state, pick "${ASK}" to ask the user. Do not ask when the request is clear enough to act.\n- Do not call a tool that just succeeded again for the same purpose.\n- A short follow-up (진행률도 똑같이, 그것도) refers to the items the previous request just changed (see the latest [tool … changed] lines) — act on those items.\n- 금일 = today, 익일 = tomorrow.`,
-          {
-            type: 'object',
-            properties: { next: { type: 'string', enum: options } },
-            required: ['next'],
-            additionalProperties: false,
-          }
-        )
-      ) as { next?: string };
+      const decision = plannedTool
+        ? { next: plannedTool.name }
+        : (JSON.parse(
+            await ask(
+              (conversation) =>
+                `## Available tools\n${toolCatalog(tools)}\n\n${situationBlock}${state}## Conversation\n${conversation}\n\n## Task\n${wantsLine}Pick the next action for the user's last request (${intentNote}).\n- If a tool is needed, pick the tool that does exactly what the user asked.\n- If no tool does what the user asked, pick "${CANNOT}". Never use a different tool as a substitute (e.g. clearing the whole form to delete one task).\n- If the tool results so far are enough, pick "${ANSWER}".\n- If the request lacks information the tool needs and it is neither in the conversation nor in the current state, pick "${ASK}" to ask the user. Do not ask when the request is clear enough to act.\n- Do not call a tool that just succeeded again for the same purpose.\n- A short follow-up (진행률도 똑같이, 그것도) refers to the items the previous request just changed (see the latest [tool … changed] lines) — act on those items.\n- 금일 = today, 익일 = tomorrow.${pickNote}`,
+              {
+                type: 'object',
+                properties: { next: { type: 'string', enum: options } },
+                required: ['next'],
+                additionalProperties: false,
+              }
+            )
+          ) as { next?: string });
 
       if (decision.next === ASK) {
         think(`pick-${step}`, '빠진 정보를 물어보기로 했어요', 'done');
@@ -827,11 +1029,27 @@ export async function runAgentChatTurn({
           kind = 'read';
           continue;
         }
+        // 바꿔 달라는 분명한 요청인데 아무것도 해 보기 전에 "할 수 없음"을 골랐으면 한 번만 다시 보게 한다 —
+        // "먹깨비 React 개발 프로젝트는 삭제해줘"처럼 맞는 도구가 후보에 있는데도 할 수 없다고 했다
+        if (
+          !rechecked &&
+          kind !== 'any' &&
+          kind !== 'read' &&
+          WRITE_KINDS.includes(kind) &&
+          executed.length === 0 &&
+          CHANGE_REQUEST.test(request) &&
+          tools.length > 0
+        ) {
+          rechecked = true;
+          pickNote = `\n- You picked "${CANNOT}" once. Check again: the available tools above cover most report changes (adding, deleting, moving, renaming tasks, projects and details). Pick the tool that matches the user's words; pick "${CANNOT}" only if none of them does it.`;
+          think(`pick-${step}`, '맞는 기능을 한 번 더 찾아볼게요', 'done');
+          continue;
+        }
         think(`pick-${step}`, '맞는 기능이 없어 바꾸지 않기로 했어요', 'done');
         cannotDo = true;
         break;
       }
-      const tool = tools.find((t) => t.name === decision.next);
+      const tool = plannedTool ?? tools.find((t) => t.name === decision.next);
       if (!tool) {
         think(`pick-${step}`, '찾은 내용으로 답하기로 했어요', 'done');
         break;
@@ -845,21 +1063,52 @@ export async function runAgentChatTurn({
         lockIfForm(kind);
         continue;
       }
+      // 지우라는 요청에 넣거나 저장·내보내는 도구는 맞지 않는다 — 할 수 없는 일(기록 삭제)을 다시 찾다가 내보내기를 골랐다
+      if (
+        !plannedTool &&
+        (tool.kind === 'add' || tool.kind === 'save') &&
+        DELETE_REQUEST.test(request) &&
+        !ADD_REQUEST.test(request) &&
+        !SAVE_REQUEST.test(request)
+      ) {
+        think(`pick-${step}`, '맞는 기능이 없어 바꾸지 않기로 했어요', 'done');
+        cannotDo = true;
+        break;
+      }
       // "할 수 없는 일"을 다시 찾다가 폼을 바꾸는 도구를 골랐으면 이제 잠근다
       lockIfForm(tool.kind);
 
-      if (hasInputs(tool)) think(`input-${step}`, `${tool.title} 내용을 정하는 중`);
-      const input = hasInputs(tool)
-        ? (JSON.parse(
+      if (hasInputs(tool) && !planned) think(`input-${step}`, `${tool.title} 내용을 정하는 중`);
+      const makeInput = async (must = '') =>
+        repairNames(
+          JSON.parse(
             await ask(
               (conversation) =>
-                `${situationBlock}${state}## Conversation\n${conversation}\n\n## Task\n${wantsLine}Write the JSON input for the tool "${tool.name}".\nTool description: ${tool.description}\nReflect the user's request, the current state and the tool results so far.\n- Include only the items the user mentioned. Do not invent examples or placeholder items.\n- When the user refers to existing content (e.g. 오늘 한 업무, 그 작업), copy its names and text exactly from the current state.\n- A short follow-up (진행률도 똑같이, 그것도) is about the items the previous request just changed (the latest [tool … changed] lines): use their section and text.\n- Keep the user's Korean wording for names and task text. Never use the request sentence itself as a name or task.\n- Omit optional values you do not know.`,
+                `${situationBlock}${state}## Conversation\n${conversation}\n\n## Task\n${wantsLine}Write the JSON input for the tool "${tool.name}".\nTool description: ${tool.description}\nReflect the user's request, the current state and the tool results so far.\n- Include only the items the user mentioned. Do not invent examples or placeholder items.\n- When the user refers to existing content (e.g. 오늘 한 업무, 그 작업), copy its names and text exactly from the current state.\n- A short follow-up (진행률도 똑같이, 그것도) is about the items the previous request just changed (the latest [tool … changed] lines): use their section and text.\n- Keep the user's Korean wording for names and task text. Never use the request sentence itself as a name or task.\n- Omit optional values you do not know.${must}`,
               inputConstraint(tool),
               // 생성 중인 입력을 그대로 보여 준다(GitHub 커밋 분류의 "AI가 생각하는 과정"처럼) — 닫히지 않은 JSON 이라 끝부분만
               (text) => think(`input-${step}`, `${tool.title} 내용을 정하는 중`, 'running', text.slice(-120))
             )
-          ) as Record<string, unknown>)
-        : {};
+          ) as Record<string, unknown>,
+          request,
+          stateOf(tools, scope)
+        );
+      let input = planned ? planned.input : hasInputs(tool) ? await makeInput() : {};
+      // 따옴표로 적은 문구는 넣거나 바꾸는 입력에 그대로 있어야 한다 — "익일 업무를 '배포 준비' 하나로 바꿔줘"에
+      // 지금 있는 작업을 그대로 넣었다. 빠졌으면 그 문구를 반드시 넣으라고 적어 한 번 다시 만든다
+      // 그래도 빠졌으면 실행하지 않는다(엉뚱한 내용으로 넣거나 바꾸지 않게)
+      let blocked: Array<string> = [];
+      if (!planned && (tool.kind === 'add' || tool.kind === 'replace')) {
+        const missingIn = (value: Record<string, unknown>) =>
+          quotedPhrases(request).filter((q) => !JSON.stringify(value).includes(q));
+        const missing = missingIn(input);
+        if (missing.length > 0) {
+          input = await makeInput(
+            `\n- The input must contain exactly these texts from the request: ${missing.map((q) => `"${q}"`).join(', ')}. Do not copy other existing items unless the user asked.`
+          );
+          blocked = missingIn(input);
+        }
+      }
       if (hasInputs(tool)) think(`input-${step}`, `${tool.title} 내용`, 'done', describeInput(input));
 
       // 작은 모델이 같은 호출을 되풀이하는 경우를 끊는다
@@ -871,16 +1120,29 @@ export async function runAgentChatTurn({
       const changes: Array<string> = [];
       let result: WebMcpToolResult;
       try {
-        result = await tool.execute(input, {
-          ...context,
-          request,
-          reportChange: (change) => {
-            changes.push(...change.lines);
-            context.reportChange?.(change);
-          },
-        });
+        result =
+          blocked.length > 0
+            ? {
+                content: [
+                  { type: 'text', text: `요청에 적힌 "${blocked.join('", "')}"이(가) 입력에 없어 실행하지 않았어요.` },
+                ],
+                isError: true,
+              }
+            : await tool.execute(input, {
+                ...context,
+                request,
+                reportChange: (change) => {
+                  changes.push(...change.lines);
+                  context.reportChange?.(change);
+                },
+              });
       } catch (error) {
         result = { content: [{ type: 'text', text: `Tool failed: ${String(error)}` }], isError: true };
+      }
+      // 결과 형식이 어긋나면(content 가 배열이 아님) 루프 전체가 멈추지 않게 실패로 다룬다
+      if (!Array.isArray(result?.content)) {
+        console.error('[agent-chat] 도구 결과 형식이 올바르지 않음', tool.name, result);
+        result = { content: [{ type: 'text', text: '도구 결과를 읽지 못했습니다.' }], isError: true };
       }
       signal.throwIfAborted();
       onToolEnd(tool, result);
@@ -969,26 +1231,33 @@ export async function runAgentChatTurn({
     }
 
     // 여기부터는 조회·대화 답변이다. 대화(인사·사용법)일 때만 할 수 있는 일 목록을 넘긴다 — 늘 넘기면 묻지 않아도 목록을 늘어놓았다
+    // 지금 상황은 대화 답변에만 넘긴다 — 조회 답변에 넘기면 새소식을 묻는데 작성 중인 폼 요약을 섞어 답했다(답할 근거는 도구 결과다)
     const answerContext = kind
-      ? situationBlock
+      ? ''
       : `## About the app\n${APP_GUIDE}\n\n${situationBlock}## What you can do on this screen\n${getTools()
           .map((t) => `- ${t.title}`)
           .join('\n')}\n\n`;
     const rules = kind
       ? '- Answer what the user asked, organized from the tool results. Use dates and weekdays exactly as they appear in the tool results or the "Today" line; never guess a weekday.\n- For "how many" questions, never count by yourself: use the numbers in "counts" (or total/byMonth) of the tool results. Tasks (작업·업무) and projects (프로젝트) are different; when the user asks about 업무 or 작업, give the task count. Over several days, give the count where the same task is counted once, then the per-day numbers if helpful.\n- To summarize a period, use "tasks" (each task with its days and progress change) first, and "days" for what happened on a specific day.\n- If the tool results do not contain what was asked, say so plainly instead of guessing.'
-      : '- Reply to the greeting or question. For questions about this conversation (why something failed, what you just did), answer from the conversation in plain words. For how-to questions answer only from "About the app"; if it is not there, say you are not sure. If asked what you can do, answer from "What you can do on this screen". Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now".';
+      : '- Reply to the greeting or question. For questions about this conversation (why something failed, what you just did), answer from the conversation in plain words. For how-to questions answer only from "About the app"; if it is not there, say you are not sure. If asked what you can do, answer from "What you can do on this screen" in 2-4 short sentences grouped by purpose (e.g. writing and editing the report, looking up saved reports, news, screen and color mode) with one or two example requests — never list every item. Questions about the user (logged in or guest), the current screen, the report being written, how many reports are saved or the news can be answered from "Situation now" (loggedIn: false means a guest who is NOT logged in). Answer only what was asked — do not add other facts from the situation.';
+    // 조회로 답하면 그 도구가 권하는 다음 할 일을 답 끝에 붙인다 — 답을 쓰기 전에 정해 모델이 같은 질문을 또 붙이지 않게 한다
+    // ("더 자세히 보시겠어요?" 뒤에 "화면에서 자세히 보시겠어요?"가 이어졌다)
+    const lastRead = executed.findLast((e) => e.tool.kind === 'read' && !e.result.isError);
+    const followUp = usable(lastRead?.tool.followUp?.(lastRead.input, lastRead.result, scope));
+    const offerRule = followUp?.ask
+      ? '\n- The app adds a follow-up question after your reply. Do not end with your own offer or question (e.g. 더 자세히 보시겠어요?).'
+      : '';
     think('answer', '답을 쓰는 중');
     const answer = await ask(
       (conversation) =>
-        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.\n- Use the newest tool results first. Earlier messages and results are context: use them for follow-up questions (e.g. why something failed, what you just did — explain [tool … failed] lines in plain words). Do not copy an earlier reply word for word.\n- If a tool failed in this request, say so briefly and why, then give what you could find.\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".`,
+        `${answerContext}## Conversation\n${conversation}\n\n## Task\nReply to the user's last message briefly, in natural Korean (해요체).\n${rules}\n- Do not invent facts or changes that are not in the tool results.\n- Use the newest tool results first. Earlier messages and results are context: use them for follow-up questions (e.g. why something failed, what you just did — explain [tool … failed] lines in plain words). Do not copy an earlier reply word for word.\n- If a tool failed in this request, say so briefly and why, then give what you could find.\n- Write dates exactly as the tool results give them (e.g. 10/26(월)); never convert them or add a weekday yourself.\n- Start with the answer itself, like a helpful colleague. No preamble such as "확인해 봤어요", "결과를 보니", "요청하신 ~". Do not restate the question, today's date or the current screen unless asked.\n- If the results are empty (no saved reports, 0 tasks), say so in one short sentence and, if useful, suggest one next step. Do not list zero counts.\n- No tool names (English identifiers), no markdown (**, #, tables, code), no emoji. Write lists as lines starting with "- ".${offerRule}`,
       null,
-      (text) => onAnswer(toPlainAnswer(text, !kind))
+      (text) => onAnswer(toPlainAnswer(text, !kind)),
+      false
     );
     think('answer', '답을 썼어요', 'done');
     // 조회로 답했으면 그 도구가 권하는 다음 할 일을 붙인다 — 새소식 목록을 답한 뒤 "자세히 보시겠어요?" + 열기 버튼.
     // 예전에는 조회로 끝나 "그거 보여줘"를 다시 말해야 했고, 그 말도 본문을 다시 읽어 늘어놓았다.
-    const lastRead = executed.findLast((e) => e.tool.kind === 'read' && !e.result.isError);
-    const followUp = usable(lastRead?.tool.followUp?.(lastRead.input, lastRead.result, scope));
     const text = [toPlainAnswer(answer, !kind).trim(), followUp?.ask].filter(Boolean).join('\n');
     if (followUp?.ask) onAnswer(text);
     added.push({ role: 'assistant', text });

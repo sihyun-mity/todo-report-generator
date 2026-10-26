@@ -8,10 +8,11 @@ import type {
   ReportDate,
   ReportFormSnapshot,
   ReportHistoryItem,
+  Task,
   WebMcpJsonSchema,
   WebMcpToolResult,
 } from '@/types';
-import { useAgentHighlightStore, useReportFormStore, useReportHistoryStore } from '@/stores';
+import { useAgentChatStore, useAgentHighlightStore, useReportFormStore, useReportHistoryStore } from '@/stores';
 import {
   AGENT_CHANGE_PREVIEW_MAX_LINES,
   AGENT_HIGHLIGHT_DATE_ID,
@@ -25,6 +26,7 @@ import {
   areAllAttemptedProjectsValid,
   createEmptyProject,
   createId,
+  dayLabel,
   dedupeTasks,
   diffReportForm,
   downloadReportHistory,
@@ -57,7 +59,8 @@ const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const QUERY_STOP_WORDS_REGEX =
   /^(지난\s?주|이번\s?주|저번\s?주|지난\s?달|이번\s?달|저번\s?달|오늘|어제|최근|전체|모두|보고서|기록|업무|요약|정리)(\s*(보고서|기록|업무|요약|정리))*$/;
 
-const BUCKET_LABEL: Record<ProjectsBucket, string> = { today: '금일 업무 구역', tomorrow: '익일 업무 구역' };
+// 사용자에게 보이는 이름 — "구역"이라는 말은 쓰지 않는다(화면에 없는 말이다)
+const BUCKET_LABEL: Record<ProjectsBucket, string> = { today: '금일 업무', tomorrow: '익일 업무' };
 const BUCKET_SHORT: Record<ProjectsBucket, string> = { today: '금일', tomorrow: '익일' };
 
 // 채팅 답변 한 문장(AgentTool.summarize)에 넣는 값 — 모델이 준 입력이라 문자열이 아니면 비운다
@@ -72,6 +75,8 @@ const MOVE_REQUEST = /옮겨|옮기|이동|순서|보내|위로|아래로|맨\s*
 // "프로젝트"만 말하고 "작업"은 말하지 않았으면 프로젝트 단위 요청이다 — "사내 위키 프로젝트는 통째로 내일로 옮겨줘"에
 // 작업 하나만 옮겼고, "프로젝트는 삭제해줘"에 작업을 지웠다
 const PROJECT_REQUEST = /프로젝트/;
+// 지우는 도구는 지우라는 말이 있을 때만 — "진행률도 똑같이 해줘"에 작업 삭제를 골랐다
+const DELETE_REQUEST = /삭제|지워|지우|빼|없애|제거|날려|치워/;
 const isProjectOnly = (request: string) => PROJECT_REQUEST.test(request) && !/작업|업무/.test(request);
 const ALL_TODAY_REQUEST = /오늘\s*(한|했던|의)?\s*(업무|작업|일)|금일\s*(업무|작업)|전부|모두|그대로|반복|매일|똑같이/;
 
@@ -100,13 +105,17 @@ const toAgentReport = (item: ReportHistoryItem) => ({
   savedAt: item.timestamp,
 });
 
-const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-// 'YYYY-MM-DD' → '10/19(월)'. 요일을 데이터로 준다 — 없으면 모델이 요일을 지어냈다(2026-10-19 월요일을 화요일로 답했다)
-const dayLabel = (date: string) => {
-  const [year, month, day] = date.split('-').map(Number);
-  return `${month}/${day}(${WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()]})`;
+// 세부 항목을 이름으로 찾되, 못 찾았고 대화에서 방금 다룬 세부 항목(focus)이 이 작업 아래에 있으면 그 줄로 본다 —
+// 고친 직후 "방금 고친 세부 항목 지워줘"에 모델이 앞 호출의 옛 문구를 그대로 넣어 매번 실패했다
+const findDetailOrFocused = (task: Task, detail: string): number | string => {
+  const index = findDetail(task, detail);
+  if (typeof index !== 'string') return index;
+  const focused = useAgentChatStore.getState().focus.task;
+  if (!focused?.detail || focused.task.trim() !== task.content.trim()) return index;
+  const again = findDetail(task, focused.detail);
+  return typeof again === 'string' ? index : again;
 };
 
 // 기록을 저장(복사)한 시각 — "언제 저장했어?"·"몇 시에 썼어?"에 답할 수 있게
@@ -375,8 +384,38 @@ const resolveTaskInput = (input: Record<string, unknown>) => {
   if (typeof otherRefs !== 'string') return { section: other, projects: store[other], refs: otherRefs };
   // 빈 구역을 고치려 했다면 새로 넣는 요청이다 — "익일 업무를 '배포 준비' 하나로 바꿔줘"에 빈 익일에서 작업 이름 바꾸기를 골랐다
   if (!projects.some(hasProjectContent))
-    return `${BUCKET_LABEL[section]}이 비어 있어 고칠 작업이 없습니다. 이 구역에 새로 넣으려면 replace_report_section 이나 add_report_tasks 를 쓰세요.`;
+    return `${BUCKET_LABEL[section]}가 비어 있어 고칠 작업이 없습니다. 여기에 새로 넣으려면 replace_report_section 이나 add_report_tasks 를 쓰세요.`;
   return refs;
+};
+
+// 세부 항목 하나 — 받은 작업 아래에서 찾고, 없으면 구역(→ 다른 구역)에서 그 문구와 똑같은 세부 항목이 하나뿐일 때 그 줄로 본다.
+// 모델이 세부 항목이 없는 다른 작업명을 넣어 "찾지 못했습니다"로 끝나곤 했다(세부 항목 문구는 맞았다)
+const resolveDetailInput = (input: Record<string, unknown>, detail: string) => {
+  const target = resolveTaskInput(input);
+  let failure = typeof target === 'string' ? target : null;
+  if (typeof target !== 'string') {
+    const ref = target.refs[0];
+    const index = findDetailOrFocused(target.projects[ref.projectIndex].tasks[ref.taskIndex], detail);
+    if (typeof index !== 'string') return { section: target.section, projects: target.projects, ref, index };
+    failure = index;
+  }
+  const store = useReportFormStore.getState();
+  const first = parseSectionInput(input.section) ?? 'today';
+  const sections: Array<ProjectsBucket> = first === 'today' ? ['today', 'tomorrow'] : ['tomorrow', 'today'];
+  // 받은 문구로 못 찾으면 대화에서 방금 다룬 세부 항목으로도 찾는다("방금 고친 세부 항목 지워줘")
+  const texts = [detail, useAgentChatStore.getState().focus.task?.detail].filter((t): t is string => !!t);
+  for (const text of texts)
+    for (const section of sections) {
+      const hits = store[section].flatMap((p, projectIndex) =>
+        p.tasks.flatMap((t, taskIndex) => {
+          const index = t.details.findIndex((d) => d.content.trim() === text.trim());
+          return index === -1 ? [] : [{ ref: { projectIndex, taskIndex }, index }];
+        })
+      );
+      if (hits.length === 1) return { section, projects: store[section], ...hits[0] };
+      if (hits.length > 1) break;
+    }
+  return failure ?? '세부 항목을 찾지 못했습니다.';
 };
 
 // ───────────── 폼 변경 ─────────────
@@ -794,7 +833,7 @@ export const useReportAgentTools = ({
           const fresh = parsed[0].tasks.filter((t) => !elsewhere.has(t.content));
           if (fresh.length === 0)
             return toolError(
-              '이미 이 구역의 다른 프로젝트에 있는 작업만 들어 있습니다. 사용자가 말한 새 작업만 넣어 다시 부르세요.'
+              '이미 같은 업무의 다른 프로젝트에 있는 작업만 들어 있습니다. 사용자가 말한 새 작업만 넣어 다시 부르세요.'
             );
           const projects = appendProjects(current, [{ ...parsed[0], tasks: fresh }]);
           return changeResult(
@@ -1033,7 +1072,7 @@ export const useReportAgentTools = ({
         name: 'remove_report_task',
         title: '작업 삭제',
         kind: 'edit',
-        requires: (request) => !isProjectOnly(request),
+        requires: (request) => DELETE_REQUEST.test(request) && !isProjectOnly(request),
         description:
           'Delete one task from one section (작업 삭제해줘, 빼줘, 안 했어). Everything else is kept. A project left with no tasks is removed. To merge duplicated tasks, use remove_duplicate_tasks.',
         inputContext: currentFormState,
@@ -1162,7 +1201,7 @@ export const useReportAgentTools = ({
         name: 'remove_report_project',
         title: '프로젝트 삭제',
         kind: 'edit',
-        requires: (request) => PROJECT_REQUEST.test(request),
+        requires: (request) => DELETE_REQUEST.test(request) && PROJECT_REQUEST.test(request),
         summarize: (input, changes) =>
           `${quoted(input.project)} 프로젝트와 작업 ${changes.filter((line) => !line.includes(' › ')).length}개를 지웠어요`,
         description: 'Delete one whole project and all its tasks from one section (프로젝트 삭제해줘, 통째로 빼줘).',
@@ -1254,18 +1293,15 @@ export const useReportAgentTools = ({
           required: ['section', 'task', 'detail', 'new_text'],
         },
         execute: async (input, context) => {
-          const target = resolveTaskInput(input);
-          if (typeof target === 'string') return toolError(target);
           const detail = parseTextInput(input.detail, 'detail');
           const text = parseTextInput(input.new_text, 'new_text');
           if (typeof detail !== 'string') return toolError(detail.error);
           if (typeof text !== 'string') return toolError(text.error);
-          const ref = target.refs[0];
-          const index = findDetail(target.projects[ref.projectIndex].tasks[ref.taskIndex], detail);
-          if (typeof index === 'string') return toolError(index);
-          const projects = updateTasks(target.projects, [ref], (t) => ({
+          const target = resolveDetailInput(input, detail);
+          if (typeof target === 'string') return toolError(target);
+          const projects = updateTasks(target.projects, [target.ref], (t) => ({
             ...t,
-            details: t.details.map((d, i) => (i === index ? { ...d, content: text } : d)),
+            details: t.details.map((d, i) => (i === target.index ? { ...d, content: text } : d)),
           }));
           return changeResult(
             await applyFormChange(
@@ -1281,7 +1317,7 @@ export const useReportAgentTools = ({
         name: 'remove_task_detail',
         title: '세부 항목 삭제',
         kind: 'edit',
-        requires: (request) => DETAIL_REQUEST.test(request),
+        requires: (request) => DELETE_REQUEST.test(request) && DETAIL_REQUEST.test(request),
         description: 'Delete one detail line (세부 항목) under a task. The task stays.',
         inputContext: currentFormState,
         inputSchema: {
@@ -1295,16 +1331,13 @@ export const useReportAgentTools = ({
           required: ['section', 'task', 'detail'],
         },
         execute: async (input, context) => {
-          const target = resolveTaskInput(input);
-          if (typeof target === 'string') return toolError(target);
           const detail = parseTextInput(input.detail, 'detail');
           if (typeof detail !== 'string') return toolError(detail.error);
-          const ref = target.refs[0];
-          const index = findDetail(target.projects[ref.projectIndex].tasks[ref.taskIndex], detail);
-          if (typeof index === 'string') return toolError(index);
-          const projects = updateTasks(target.projects, [ref], (t) => ({
+          const target = resolveDetailInput(input, detail);
+          if (typeof target === 'string') return toolError(target);
+          const projects = updateTasks(target.projects, [target.ref], (t) => ({
             ...t,
-            details: t.details.filter((_d, i) => i !== index),
+            details: t.details.filter((_d, i) => i !== target.index),
           }));
           return changeResult(
             await applyFormChange(
@@ -1340,7 +1373,7 @@ export const useReportAgentTools = ({
           const detail = parseTextInput(input.detail, 'detail');
           if (typeof detail !== 'string') return toolError(detail.error);
           const fromRef = from.refs[0];
-          const index = findDetail(from.projects[fromRef.projectIndex].tasks[fromRef.taskIndex], detail);
+          const index = findDetailOrFocused(from.projects[fromRef.projectIndex].tasks[fromRef.taskIndex], detail);
           if (typeof index === 'string') return toolError(index);
           const toSection = input.to_section === undefined ? from.section : parseSectionInput(input.to_section);
           if (!toSection) return toolError('to_section 은 "today" 또는 "tomorrow" 여야 합니다.');
@@ -1424,12 +1457,12 @@ export const useReportAgentTools = ({
       },
       {
         name: 'replace_report_section',
-        title: '보고서 구역 바꾸기',
+        title: '금일·익일 업무 통째로 바꾸기',
         kind: 'replace',
         // 작은 수정의 마지막 수단으로도 두므로 바꾸라는 말이 있을 때만 — "프로젝트 통째로 옮겨줘"에 옮기기 대신 이걸 골라 원래 자리에 남겼다
         requires: (request) => /바꿔|바꾸|교체|새로|다시\s*써|덮어|대신/.test(request),
         description:
-          'Rewrite one whole section of the report form with the given projects — only when the user asks to replace or rewrite the section (구역을 이걸로 바꿔줘, 새로 써줘). For a change to one task, project or detail, use the edit tools instead. Shows the user exactly what will be removed and asks to confirm.',
+          'Rewrite one whole section of the report form with the given projects — only when the user asks to replace or rewrite the section (익일 업무를 이걸로 바꿔줘, 통째로 바꿔줘, 새로 써줘). For a change to one task, project or detail, use the edit tools instead. Shows the user exactly what will be removed and asks to confirm.',
         inputContext: currentFormState,
         inputSchema: {
           type: 'object',
@@ -1450,11 +1483,11 @@ export const useReportAgentTools = ({
                 confirm: {
                   when: 'removal',
                   title: '작성 중인 내용 교체',
-                  intro: `에이전트가 ${BUCKET_LABEL[section]}을 이렇게 바꾸려고 합니다.`,
+                  intro: `에이전트가 ${BUCKET_LABEL[section]}를 이렇게 바꾸려고 합니다.`,
                   confirmText: '교체',
                   danger: true,
                 },
-                success: `에이전트가 ${BUCKET_LABEL[section]}을 바꿨습니다.`,
+                success: `에이전트가 ${BUCKET_LABEL[section]}를 바꿨습니다.`,
               }
             ),
             '바뀐 내용이 없습니다.'
@@ -1502,6 +1535,8 @@ export const useReportAgentTools = ({
         name: 'load_report',
         title: '저장된 보고서 불러오기',
         kind: 'replace',
+        // 불러오라는 말이 있을 때만 — "보고서 날짜를 어제로 바꿔줘"에 어제 보고서를 불러오려 했다
+        requires: (request) => /불러|가져|복원|기록|저장된|저장한|그대로\s*(써|쓰|채워)/.test(request),
         description:
           'Load the saved report for a date into the form (replaces date, today and tomorrow). Asks the user to confirm if content would be lost. To only view it, use get_report.',
         inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },

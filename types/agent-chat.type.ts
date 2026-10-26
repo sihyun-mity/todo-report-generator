@@ -77,7 +77,8 @@ export type AgentFocus = {
   news?: { id: string; title: string };
   // YYYY-MM-DD — 조회·불러오기한 저장 보고서 날짜
   reportDate?: string;
-  task?: { section?: string; project?: string; task: string };
+  // detail — 그 작업 아래에서 다룬 세부 항목 줄(고쳤으면 새 문구)
+  task?: { section?: string; project?: string; task: string; detail?: string };
   latest?: 'news' | 'report' | 'task';
 };
 
