@@ -17,6 +17,7 @@ import {
   ReportHistory,
   ReportPreview,
   ReportPreviewSkeleton,
+  ReportToolbar,
   getItemDateKey,
   type ProjectListFocusRequest,
   type RemoveOptions,
@@ -615,92 +616,98 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     setIsImportModalOpen(false);
   };
 
-  // 두 열(폼 | 미리보기)은 화면 너비가 아니라 본문 폭(홈 main 의 @container)으로 나눈다 — 데스크톱에서 Nano 패널을 펼치면
+  // 제목 → Nano 입력창(가로 폭 전체) → 두 열(폼 | 미리보기·기록) 순으로 쌓는다. Nano는 날짜·복원과 관계없이 더 넓은 일을 하므로
+  // 날짜 선택·텍스트 복원(ReportToolbar)보다 위에 두고, 미리보기도 제목 옆이 아니라 업무 목록과 같은 높이에서 시작한다.
+  // 두 열은 화면 너비가 아니라 본문 폭(홈 main 의 @container)으로 나눈다 — 데스크톱에서 Nano 패널을 펼치면
   // 본문이 400px 줄어 lg 기준으로는 폼 열이 200px 안팎으로 찌그러졌다. 좁으면 모바일처럼 폼 아래에 미리보기·기록을 쌓는다
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-x-8 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-12 lg:pb-28 @min-[60rem]:flex-row">
-      <div className="flex-1 overflow-hidden">
-        <ReportHeader
-          reportDate={reportDate}
-          onChangeDate={setReportDate}
-          onOpenImport={() => setIsImportModalOpen(true)}
-          onImportLocal={canImportLocal ? handleImportLocal : undefined}
-        />
+    <div className="mx-auto w-full max-w-5xl p-4 pb-28 sm:p-6 sm:pb-28 lg:p-12 lg:pb-28">
+      <ReportHeader />
 
-        {/* AI 입력창 — 부탁과 업무 메모를 하나로 받고(Nano가 가른다) 빠른 작업(GitHub 가져오기 먼저)을 둔다. Nano 패널과 같은 에이전트로 이어진다 */}
-        <AgentComposer />
+      {/* AI 입력창 — 부탁과 업무 메모를 하나로 받고(Nano가 가른다) 빠른 작업(GitHub 가져오기 먼저)을 둔다. Nano 패널과 같은 에이전트로 이어진다 */}
+      <AgentComposer />
 
-        {isFormReady ? (
-          <ProjectBoard>
-            <ProjectList
-              title="금일 업무 진행 현황"
-              accent="today"
-              projects={today.projects}
-              onAddProject={today.addProject}
-              onRemoveProject={todayRemove.removeProject}
-              onUpdateProjectName={today.updateProjectName}
-              onAddTask={today.addTask}
-              onUpdateTask={today.updateTask}
-              onRemoveTask={todayRemove.removeTask}
-              onAddDetail={today.addDetail}
-              onUpdateDetail={today.updateDetail}
-              onRemoveDetail={todayRemove.removeDetail}
-              onImportGithub={openGithubImport}
-              focusRequest={todayFocusRequest}
-            />
-            <ProjectList
-              title="익일 업무 진행 예정"
-              accent="tomorrow"
-              projects={tomorrow.projects}
-              onAddProject={tomorrow.addProject}
-              onRemoveProject={tomorrowRemove.removeProject}
-              onUpdateProjectName={tomorrow.updateProjectName}
-              onAddTask={tomorrow.addTask}
-              onUpdateTask={tomorrow.updateTask}
-              onRemoveTask={tomorrowRemove.removeTask}
-              onAddDetail={tomorrow.addDetail}
-              onUpdateDetail={tomorrow.updateDetail}
-              onRemoveDetail={tomorrowRemove.removeDetail}
-              onImportIncomplete={handleImportIncomplete}
-              focusRequest={tomorrowFocusRequest}
-            />
-          </ProjectBoard>
-        ) : (
-          <>
-            <ProjectListSkeleton title="금일 업무 진행 현황" accent="today" />
-            <ProjectListSkeleton title="익일 업무 진행 예정" accent="tomorrow" showImportButton />
-          </>
-        )}
-      </div>
-
-      <div className="w-full @min-[60rem]:sticky @min-[60rem]:top-12 @min-[60rem]:h-fit @min-[60rem]:w-80">
-        {isFormReady ? (
-          <ReportPreview
-            text={reportText}
+      <div className="flex flex-col gap-x-8 @min-[60rem]:flex-row">
+        <div className="flex-1 overflow-hidden">
+          <ReportToolbar
             reportDate={reportDate}
-            copied={copied}
-            copyError={copyError}
-            isCopyDisabled={isCopyDisabled}
-            isResetDisabled={!hasAnyData}
-            onCopy={handleCopy}
-            onReset={handleReset}
+            onChangeDate={setReportDate}
+            onOpenImport={() => setIsImportModalOpen(true)}
+            onImportLocal={canImportLocal ? handleImportLocal : undefined}
           />
-        ) : (
-          <ReportPreviewSkeleton />
-        )}
 
-        <ReportHistory
-          history={history}
-          allDateKeys={allReportDates}
-          serverDateKey={serverDateKey}
-          mode={historyMode}
-          isLoaded={isHistoryLoaded}
-          loadingMonths={loadingMonths}
-          focusRequest={historyFocus}
-          loadMonth={loadMonth}
-          loadHistoryAction={handleLoadHistory}
-          deleteHistoryAction={handleDeleteHistory}
-        />
+          {isFormReady ? (
+            <ProjectBoard>
+              <ProjectList
+                title="금일 업무 진행 현황"
+                accent="today"
+                projects={today.projects}
+                onAddProject={today.addProject}
+                onRemoveProject={todayRemove.removeProject}
+                onUpdateProjectName={today.updateProjectName}
+                onAddTask={today.addTask}
+                onUpdateTask={today.updateTask}
+                onRemoveTask={todayRemove.removeTask}
+                onAddDetail={today.addDetail}
+                onUpdateDetail={today.updateDetail}
+                onRemoveDetail={todayRemove.removeDetail}
+                onImportGithub={openGithubImport}
+                focusRequest={todayFocusRequest}
+              />
+              <ProjectList
+                title="익일 업무 진행 예정"
+                accent="tomorrow"
+                projects={tomorrow.projects}
+                onAddProject={tomorrow.addProject}
+                onRemoveProject={tomorrowRemove.removeProject}
+                onUpdateProjectName={tomorrow.updateProjectName}
+                onAddTask={tomorrow.addTask}
+                onUpdateTask={tomorrow.updateTask}
+                onRemoveTask={tomorrowRemove.removeTask}
+                onAddDetail={tomorrow.addDetail}
+                onUpdateDetail={tomorrow.updateDetail}
+                onRemoveDetail={tomorrowRemove.removeDetail}
+                onImportIncomplete={handleImportIncomplete}
+                focusRequest={tomorrowFocusRequest}
+              />
+            </ProjectBoard>
+          ) : (
+            <>
+              <ProjectListSkeleton title="금일 업무 진행 현황" accent="today" />
+              <ProjectListSkeleton title="익일 업무 진행 예정" accent="tomorrow" showImportButton />
+            </>
+          )}
+        </div>
+
+        <div className="w-full @min-[60rem]:sticky @min-[60rem]:top-12 @min-[60rem]:h-fit @min-[60rem]:w-80">
+          {isFormReady ? (
+            <ReportPreview
+              text={reportText}
+              reportDate={reportDate}
+              copied={copied}
+              copyError={copyError}
+              isCopyDisabled={isCopyDisabled}
+              isResetDisabled={!hasAnyData}
+              onCopy={handleCopy}
+              onReset={handleReset}
+            />
+          ) : (
+            <ReportPreviewSkeleton />
+          )}
+
+          <ReportHistory
+            history={history}
+            allDateKeys={allReportDates}
+            serverDateKey={serverDateKey}
+            mode={historyMode}
+            isLoaded={isHistoryLoaded}
+            loadingMonths={loadingMonths}
+            focusRequest={historyFocus}
+            loadMonth={loadMonth}
+            loadHistoryAction={handleLoadHistory}
+            deleteHistoryAction={handleDeleteHistory}
+          />
+        </div>
       </div>
 
       <ImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onApply={handleImportApply} />
