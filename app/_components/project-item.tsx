@@ -184,7 +184,7 @@ export const ProjectItem = ({
       style={style}
       className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-700/50"
     >
-      {/* AI 도우미가 새로 만든 프로젝트면 머리줄을 잠깐 강조한다 */}
+      {/* Nano가 새로 만든 프로젝트면 머리줄을 잠깐 강조한다 */}
       <div className={cn('mb-4 flex items-center gap-1 rounded-md sm:gap-2', isAgentChanged && 'animate-agent-flash')}>
         <button
           type="button"

@@ -39,10 +39,10 @@ export const AGENT_NEWS_LIST_LIMIT = 10;
 /** `get_news` 가 돌려주는 본문의 최대 길이(글자) */
 export const AGENT_NEWS_CONTENT_MAX_CHARS = 3_000;
 
-/** AI 도우미 사용 예시 — 지금 화면에 tool 이 등록돼 있을 때만 보여 주고, 무작위로 돌려 가며 할 수 있는 일을 알린다 */
+/** Nano 사용 예시 — 지금 화면에 tool 이 등록돼 있을 때만 보여 주고, 무작위로 돌려 가며 할 수 있는 일을 알린다 */
 export const AGENT_CHAT_EXAMPLES: ReadonlyArray<{ text: string; tool: string }> = [
   { text: '지금 작성 중인 보고서를 요약해줘', tool: 'get_current_report' },
-  // 부탁이 아니라 업무 메모 — 도우미가 메모로 알아보고 보고서 초안을 만든다(입력창 하나로 둘 다 받는다는 걸 보여 주는 예시)
+  // 부탁이 아니라 업무 메모 — Nano가 메모로 알아보고 보고서 초안을 만든다(입력창 하나로 둘 다 받는다는 걸 보여 주는 예시)
   { text: '오늘 로그인 오류 고쳤고 결제 페이지 리팩터링 절반 했어. 내일은 QA 회귀 테스트', tool: 'add_report_tasks' },
   { text: '오늘 할 일에 "주간 회의" 프로젝트 "안건 정리" 작업 추가해줘', tool: 'add_report_tasks' },
   { text: '금일 업무에 "API 연동" 작업을 진행률 70%로 추가해줘', tool: 'add_report_tasks' },
@@ -71,7 +71,7 @@ export const AGENT_CHAT_EXAMPLE_ROTATE_MS = 4_000;
 /** 첫 화면에 보여 주는 예시 수 */
 export const AGENT_CHAT_EXAMPLE_COUNT = 4;
 
-/** AI 도우미가 바꾼 칸을 강조하는 시간 — animation.css 의 agent-flash 길이와 맞춘다 */
+/** Nano가 바꾼 칸을 강조하는 시간 — animation.css 의 agent-flash 길이와 맞춘다 */
 export const AGENT_HIGHLIGHT_MS = 2_400;
 
 /** 보고서 날짜를 바꿨을 때 강조 대상으로 쓰는 id */
@@ -80,7 +80,7 @@ export const AGENT_HIGHLIGHT_DATE_ID = 'report-date';
 /** 변경 카드에 바로 보여 주는 줄 수 — 넘으면 "외 N건"으로 접는다 */
 export const AGENT_CHANGE_VISIBLE_LINES = 6;
 
-/** 데스크톱 AI 도우미 패널을 펼쳐 둘지(접으면 레일) 기억하는 localStorage 키 */
+/** 데스크톱 Nano 패널을 펼쳐 둘지(접으면 레일) 기억하는 localStorage 키 */
 export const AGENT_PANEL_STORAGE_KEY = 'trg:agent-panel';
 
 /** "메모로 보고서 쓰기"에 넣을 수 있는 메모 길이(글자) — Nano 컨텍스트 창(약 9천 토큰)에 프롬프트·응답과 함께 들어가도록 */

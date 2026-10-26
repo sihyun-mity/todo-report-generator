@@ -6,7 +6,7 @@ import { AGENT_SUGGESTION_PILL_ID } from '@/constants';
 import { consumeFlashToast } from '@/utils';
 
 // 화면 하단을 가리는 fixed 요소 셀렉터 — 토스트가 이 위로 떠야 한다(여러 개면 가장 높이 올라온 요소 위로)
-// AI 도우미 상황 제안 알약도 하단에 떠 있어 함께 비킨다(모바일에서는 복사 바 위에 알약이 있어 알약 위로 뜬다)
+// Nano 상황 제안 알약도 하단에 떠 있어 함께 비킨다(모바일에서는 복사 바 위에 알약이 있어 알약 위로 뜬다)
 const BOTTOM_BLOCKING_SELECTORS: ReadonlyArray<string> = ['#report-mobile-copy-bar', `#${AGENT_SUGGESTION_PILL_ID}`];
 
 // 차단 요소가 있을 때 그 위로 띄우는 여백 (px)

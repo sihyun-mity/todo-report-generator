@@ -6,7 +6,7 @@ import type { AgentChatMessage, AgentNotesDraft } from '@/types';
 import { AGENT_CHANGE_VISIBLE_LINES } from '@/constants';
 import { cn } from '@/utils';
 
-// AI 도우미 대화의 항목 하나 — 말풍선·도구 실행 줄(+변경 카드)·확인 카드·메모 초안·오류
+// Nano 대화의 항목 하나 — 말풍선·도구 실행 줄(+변경 카드)·확인 카드·메모 초안·오류
 type AgentMessageProps = {
   message: AgentChatMessage;
   isRunning: boolean;

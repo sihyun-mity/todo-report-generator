@@ -5,8 +5,8 @@ import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { useAgentSuggestions } from '.';
 
-// 상단바의 AI 도우미 진입점.
-// - 데스크톱(lg 이상)은 패널을 접었을 때만 입력 모양 버튼("AI 도우미에게 부탁하기 ⌘K")으로 보인다 — GitHub·Vercel 상단 검색창처럼
+// 상단바의 Nano 진입점.
+// - 데스크톱(lg 이상)은 패널을 접었을 때만 입력 모양 버튼("Nano에게 부탁하기 ⌘K")으로 보인다 — GitHub·Vercel 상단 검색창처럼
 //   늘 같은 자리에서 부를 수 있고 본문 폭을 차지하지 않는다. 추천이 있으면 개수를 함께 보여 준다. 펼쳐 두면 패널이 있으므로 숨긴다.
 // - 모바일(lg 미만)은 아이콘 버튼으로 시트를 열고 닫는다. 추천이 있으면 점으로 알린다.
 export function AgentChatButton() {
@@ -25,7 +25,7 @@ export function AgentChatButton() {
         <button
           type="button"
           onClick={reveal}
-          aria-label={`AI 도우미에게 부탁하기${
+          aria-label={`Nano에게 부탁하기${
             followUpCount > 0
               ? `, 확인 필요 ${followUpCount}개`
               : suggestionCount > 0
@@ -35,7 +35,7 @@ export function AgentChatButton() {
           className="hidden h-9 w-72 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-xs text-zinc-500 transition-colors hover:border-zinc-300 hover:bg-zinc-50 lg:flex dark:border-zinc-700/50 dark:bg-card/50 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-[#2c2e33]"
         >
           <Sparkles size={14} className="shrink-0 text-blue-500" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-left">AI 도우미에게 부탁하기</span>
+          <span className="min-w-0 flex-1 truncate text-left">Nano에게 부탁하기</span>
           {followUpCount > 0 ? (
             <span className="shrink-0 animate-pulse rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
               확인 필요 {followUpCount}
@@ -56,8 +56,8 @@ export function AgentChatButton() {
         type="button"
         onClick={() => (isOpen ? useAgentChatStore.getState().setOpen(false) : reveal())}
         aria-expanded={isOpen}
-        aria-label="AI 도우미"
-        title="AI 도우미 (⌘K / Ctrl+K)"
+        aria-label="Nano"
+        title="Nano (⌘K / Ctrl+K)"
         className={cn(
           'relative flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-all sm:px-3 lg:hidden',
           isOpen
@@ -66,7 +66,7 @@ export function AgentChatButton() {
         )}
       >
         <Sparkles size={16} />
-        <span className="hidden sm:inline">AI 도우미</span>
+        <span className="hidden sm:inline">Nano</span>
         {(followUpCount > 0 || suggestionCount > 0) && (
           <span
             className={cn(

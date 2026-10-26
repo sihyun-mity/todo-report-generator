@@ -3,10 +3,11 @@
  * - twinkle: 반짝이는 아이콘 — 회전 로더가 어색한 아이콘(Sparkles 등)에 "작업 중" 신호를 준다.
  * - indeterminate: 진행률을 아직 모를 때(0%) 막대 위를 오가는 구간.
  * - shimmer: 진행 중인 막대 위를 지나는 광택 — 단계 사이 대기가 길어도 멈춘 것처럼 보이지 않게 한다.
- * - agent-flash: AI 도우미가 바꾼 칸을 잠깐 밝혔다가 사라지게 한다(무엇이 바뀌었는지 보이게).
+ * - agent-flash: Nano가 바꾼 칸을 잠깐 밝혔다가 사라지게 한다(무엇이 바뀌었는지 보이게).
  * - agent-pill-in: 상황 제안 알약이 아래에서 살짝 떠오르며 나타난다.
- * - agent-attention-ring: AI 도우미로 넘어갔을 때 봐야 할 곳(입력 상자·후속 동작 카드)에 바깥으로 퍼지는 링을 두 번 띄운다.
- * - agent-attention-edge: AI 도우미 패널이 열리거나 일을 시작할 때 패널 테두리를 안쪽에서 잠깐 밝힌다.
+ * - agent-attention-ring: Nano 로 넘어갔을 때 봐야 할 곳(입력 상자·후속 동작 카드)에 바깥으로 퍼지는 링을 두 번 띄운다.
+ * - agent-attention-edge: Nano 패널이 열리거나 일을 시작할 때 패널 테두리를 안쪽에서 잠깐 밝힌다.
+ * - agent-pill-glow: 상황 제안 알약 둘레에 파란 빛이 은은하게 숨쉬듯 반복된다(떠 있는 동안 눈에 띄게).
  */
 @theme {
   --animate-twinkle: twinkle 1.6s ease-in-out infinite;
@@ -16,6 +17,7 @@
   --animate-agent-pill-in: agent-pill-in 0.25s ease-out;
   --animate-agent-attention-ring: agent-attention-ring 0.9s ease-out 2;
   --animate-agent-attention-edge: agent-attention-edge 1.6s ease-out;
+  --animate-agent-pill-glow: agent-pill-glow 2.4s ease-in-out infinite;
 
   @keyframes twinkle {
     0%,
@@ -81,6 +83,20 @@
       box-shadow:
         inset 0 0 0 2px transparent,
         inset 0 0 40px transparent;
+    }
+  }
+
+  @keyframes agent-pill-glow {
+    0%,
+    100% {
+      box-shadow:
+        0 10px 25px -8px color-mix(in oklab, var(--color-blue-500) 35%, transparent),
+        0 0 0 0 color-mix(in oklab, var(--color-blue-500) 0%, transparent);
+    }
+    50% {
+      box-shadow:
+        0 12px 32px -6px color-mix(in oklab, var(--color-blue-500) 55%, transparent),
+        0 0 0 4px color-mix(in oklab, var(--color-blue-500) 18%, transparent);
     }
   }
 

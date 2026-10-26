@@ -140,7 +140,7 @@ export const TaskItem = ({
   return (
     <div ref={setNodeRef} style={style}>
       <div
-        // AI 도우미가 바꾼 작업이면 잠깐 강조한다. key 로 다시 그리지 않는다 — 입력칸이 다시 마운트돼 포커스를 잃는다.
+        // Nano가 바꾼 작업이면 잠깐 강조한다. key 로 다시 그리지 않는다 — 입력칸이 다시 마운트돼 포커스를 잃는다.
         className={cn('flex items-center gap-1 rounded-md sm:gap-1.5', isAgentChanged && 'animate-agent-flash')}
       >
         <button

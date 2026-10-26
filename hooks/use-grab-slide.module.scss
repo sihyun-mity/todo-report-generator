@@ -1,4 +1,6 @@
 .container {
+  user-select: none;
+
   &:hover {
     cursor: grab;
 

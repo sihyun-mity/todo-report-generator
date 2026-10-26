@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronsRight, Lightbulb, Loader2, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
 import type { AgentAction, AgentChatMessage, AgentQuickAction, AgentSuggestion } from '@/types';
 import { AGENT_CHAT_EXAMPLE_COUNT, AGENT_CHAT_EXAMPLES } from '@/constants';
-import { useDismissLayer, useSignalEffect } from '@/hooks';
+import { useDismissLayer, useGrabSlide, useSignalEffect } from '@/hooks';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { CloseButton, useDismissOnBack } from '..';
@@ -63,7 +63,7 @@ const getServerExampleSeed = () => 0;
 const iconButtonClass =
   'inline-flex shrink-0 items-center justify-center rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
 
-// AI 도우미 패널 — 서비스 에이전트의 본체.
+// Nano 패널 — 서비스 에이전트의 본체.
 // - 데스크톱(lg 이상): 펼치면 오른쪽 400px 열로 붙고 AgentLayoutShell 이 같은 너비(lg:pr-[400px])만큼 본문을 민다.
 //   헤더(h-14 + 아래 테두리)는 상단바와 같은 높이라 줄이 맞는다. 접으면 자리를 완전히 비운다 — 56px 레일로 남기던 때는
 //   열 대부분이 비어 본문 폭만 깎았다. 접은 동안은 상단바의 AgentLauncher(입력 모양 버튼·⌘K)와 제안 알약이 진입점이다.
@@ -100,6 +100,8 @@ export function AgentPanel({
   const baseSeed = useSyncExternalStore(subscribeNever, getClientExampleSeed, getServerExampleSeed);
   // "다른 예시"를 누를 때마다 더해 다시 섞는다
   const [seedOffset, setSeedOffset] = useState(0);
+  // 입력칸 위 가로 칩 줄 — 마우스 드래그로 스크롤
+  const { ref: chipRowRef, style: chipRowStyle } = useGrabSlide();
   const exampleSeed = baseSeed + seedOffset;
 
   const close = () => useAgentChatStore.getState().setOpen(false);
@@ -107,7 +109,7 @@ export function AgentPanel({
   useDismissLayer(panelRef, close, { enabled: isOpen, outsideClick: false });
   useDismissOnBack(isOpen, close);
 
-  // ⌘K·홈 입력창 등에서 도우미를 부르면 입력칸으로 포커스를 옮긴다
+  // ⌘K·홈 입력창 등에서 Nano를 부르면 입력칸으로 포커스를 옮긴다
   useSignalEffect(focusSignal > 0 ? String(focusSignal) : null, () => inputRef.current?.focus());
 
   // 눈을 끌 곳 — 후속 동작이 필요한 카드면 그 카드까지 스크롤한다(효과는 아래 오버레이가 nonce 마다 다시 그린다)
@@ -146,7 +148,7 @@ export function AgentPanel({
   return (
     <aside
       ref={panelRef}
-      aria-label="AI 도우미"
+      aria-label="Nano"
       className={cn(
         'z-45 flex-col bg-white dark:bg-zinc-950',
         isOpen ? 'fixed inset-0 flex h-dvh' : 'hidden',
@@ -157,7 +159,7 @@ export function AgentPanel({
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {/* 도우미로 넘어왔음을 알리는 테두리 빛 — nonce 를 key 로 다시 그려 매번 처음부터 재생한다(빈 장식 요소라 다시 그려도 상태가 없다) */}
+      {/* Nano로 넘어왔음을 알리는 테두리 빛 — nonce 를 key 로 다시 그려 매번 처음부터 재생한다(빈 장식 요소라 다시 그려도 상태가 없다) */}
       {attention && (
         <div
           key={attention.nonce}
@@ -170,7 +172,7 @@ export function AgentPanel({
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 pr-2.5 pl-4 dark:border-zinc-800">
           <Sparkles size={16} className="shrink-0 text-blue-500" aria-hidden />
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AI 도우미</h2>
+            <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Nano</h2>
             <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
               다음 할 일을 추천하고, 말하면 대신 실행해요
             </p>
@@ -183,8 +185,8 @@ export function AgentPanel({
           <button
             type="button"
             onClick={() => useAgentChatStore.getState().setExpanded(false)}
-            aria-label="도우미 접기"
-            title="도우미 접기"
+            aria-label="Nano 접기"
+            title="Nano 접기"
             className={cn(iconButtonClass, 'hidden lg:inline-flex')}
           >
             <ChevronsRight size={16} aria-hidden />
@@ -317,7 +319,14 @@ export function AgentPanel({
 
         {/* 대화 중에도 다음 할 일을 바로 고를 수 있게 — 상황 제안·빠른 작업을 입력칸 위 한 줄로 둔다(후속 동작이 기다릴 때는 안내만 둔다) */}
         {messages.length > 0 && !isRunning && !followUp && (suggestions.length > 0 || quickActions.length > 0) && (
-          <div className="flex shrink-0 [scrollbar-width:none] gap-2 overflow-x-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+          // 마우스로도 끌어서 넘길 수 있게 한다(useGrabSlide) — 끌었으면 놓을 때의 클릭은 칩 실행으로 치지 않는다
+          <div
+            ref={chipRowRef}
+            className={cn(
+              'flex shrink-0 [scrollbar-width:none] gap-2 overflow-x-auto border-t border-zinc-100 px-3 py-2 dark:border-zinc-800',
+              chipRowStyle
+            )}
+          >
             {suggestions.map((s) => (
               <button
                 key={s.id}

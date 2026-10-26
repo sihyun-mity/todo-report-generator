@@ -25,7 +25,7 @@ export const ReportHeader = ({
   onOpenImport,
   onImportLocal,
 }: Readonly<ReportHeaderProps>) => {
-  // AI 도우미가 보고서 날짜를 바꿨으면 날짜 선택을 잠깐 강조한다
+  // Nano가 보고서 날짜를 바꿨으면 날짜 선택을 잠깐 강조한다
   const isDateChanged = useAgentHighlightStore((s) => s.ids.has(AGENT_HIGHLIGHT_DATE_ID));
   return (
     <header className="mb-10">

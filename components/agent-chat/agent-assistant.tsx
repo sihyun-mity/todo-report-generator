@@ -125,7 +125,7 @@ export function AgentAssistant() {
       const id = createId();
       pendingConfirms.current.set(id, resolve);
       setMessages((prev) => [...prev, { id, role: 'confirm', options, status: 'pending' }]);
-      // 사용자가 눌러야 진행된다 — 도우미를 보여 주고 이 카드로 눈을 끈다
+      // 사용자가 눌러야 진행된다 — Nano를 보여 주고 이 카드로 눈을 끈다
       const store = useAgentChatStore.getState();
       store.reveal({ attention: 'none' });
       store.attend('message', id);

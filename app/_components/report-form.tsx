@@ -620,7 +620,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
           onImportLocal={canImportLocal ? handleImportLocal : undefined}
         />
 
-        {/* AI 입력창 — 부탁과 업무 메모를 하나로 받고(도우미가 가른다) 빠른 작업(GitHub 가져오기 먼저)을 둔다. 도우미 패널과 같은 에이전트로 이어진다 */}
+        {/* AI 입력창 — 부탁과 업무 메모를 하나로 받고(Nano가 가른다) 빠른 작업(GitHub 가져오기 먼저)을 둔다. Nano 패널과 같은 에이전트로 이어진다 */}
         <AgentComposer />
 
         {isFormReady ? (

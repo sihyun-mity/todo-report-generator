@@ -14,12 +14,12 @@ type AgentInputBoxProps = {
   onSubmit: (text: string) => void;
   onStop?: () => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
-  // 도우미로 넘어와 여기를 봐야 할 때 — 값이 바뀔 때마다 바깥으로 퍼지는 링을 다시 띄운다
+  // Nano로 넘어와 여기를 봐야 할 때 — 값이 바뀔 때마다 바깥으로 퍼지는 링을 다시 띄운다
   attentionKey?: number | null;
   className?: string;
 };
 
-// AI 도우미 입력 상자 — 패널과 홈 입력창이 같이 쓴다.
+// Nano 입력 상자 — 패널과 홈 입력창이 같이 쓴다.
 // 상자 하나 안에 글 영역(위)과 도구 줄(아래: 안내 · 마이크 · 보내기)을 둔다(Claude·Gemini·GitHub 입력창처럼).
 // 버튼을 글 영역 옆에 세우면 글이 여러 줄이 될 때 버튼과 글줄 높이가 어긋나고, 안내 문구가 버튼에 밀려 두 줄로 꺾였다.
 // 안내 문구(placeholder)는 한 줄에 들어갈 만큼 짧게 쓰고, 예시·단축키는 도구 줄의 hint 로 뺀다.

@@ -62,7 +62,7 @@ export function useSpeechInput(onText: (transcript: string) => void) {
       const ok = await confirm({
         title: '음성 입력',
         description:
-          '이 브라우저는 기기 안에서 음성을 인식할 수 없어, 말한 내용이 브라우저의 음성 인식 서비스(Google)로 전송돼 글자로 바뀌어요.\nAI 도우미의 답변은 계속 이 기기 안에서만 만들어져요.',
+          '이 브라우저는 기기 안에서 음성을 인식할 수 없어, 말한 내용이 브라우저의 음성 인식 서비스(Google)로 전송돼 글자로 바뀌어요.\nNano의 답변은 계속 이 기기 안에서만 만들어져요.',
         confirmText: '계속',
       });
       if (!ok) return;

@@ -13,7 +13,7 @@ const saveExpanded = (expanded: boolean) => {
 
 const isDesktop = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 64rem)').matches;
 
-// 상단바 버튼·AI 도우미·홈 입력창·상황 제안·본문 잠금(AgentBusyGuard)·레이아웃(AgentLayoutShell)이 상태를 나눠 쓴다
+// 상단바 버튼·Nano·홈 입력창·상황 제안·본문 잠금(AgentBusyGuard)·레이아웃(AgentLayoutShell)이 상태를 나눠 쓴다
 export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   isOpen: false,
   setOpen: (isOpen) => set({ isOpen }),

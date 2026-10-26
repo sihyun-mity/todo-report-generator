@@ -5,10 +5,10 @@ import { useAgentChatStore } from '@/stores';
 import { AgentActionChip, AgentInputBox, useAgentSuggestions } from '.';
 
 // 보고서 작성 화면 맨 위의 AI 입력창(GitHub 대시보드의 "Ask anything" 처럼) — 이 서비스의 첫 진입점.
-// 입력창은 하나다: 부탁("지난주 요약해줘")이면 도우미가 대화로 처리하고, 오늘 한 일을 적은 메모면 보고서 초안으로 정리한다 —
-// 어느 쪽인지는 도우미가 가른다(규칙 + 의도 분류). 입력 상자는 패널과 같은 AgentInputBox 를 쓰고,
+// 입력창은 하나다: 부탁("지난주 요약해줘")이면 Nano가 대화로 처리하고, 오늘 한 일을 적은 메모면 보고서 초안으로 정리한다 —
+// 어느 쪽인지는 Nano가 가른다(규칙 + 의도 분류). 입력 상자는 패널과 같은 AgentInputBox 를 쓰고,
 // 바로 할 수 있는 작업 칩은 상자 밖 아래에 둔다(상자 안에 함께 두면 입력 영역이 좁아 보였다). 가장 많이 쓰는 GitHub 가져오기를
-// 맨 앞에 무지개 빛으로 둔다. 도구 칩은 도우미를 열지 않고 바로 실행한다.
+// 맨 앞에 무지개 빛으로 둔다. 도구 칩은 Nano를 열지 않고 바로 실행한다.
 // AI 를 쓸 수 없는 브라우저에서는 입력 상자 없이 칩만 남는다(칩은 모델 없이 동작한다).
 export function AgentComposer() {
   const availability = useAgentChatStore((s) => s.availability);
@@ -20,7 +20,7 @@ export function AgentComposer() {
     useAgentChatStore.getState().submit(action, { reveal: action.type !== 'tool' });
 
   return (
-    <section aria-label="AI 도우미에게 부탁하기" className="mb-8 space-y-3">
+    <section aria-label="Nano에게 부탁하기" className="mb-8 space-y-3">
       {isReady && (
         <AgentInputBox
           placeholder="부탁하거나 오늘 한 일을 적어 보세요"

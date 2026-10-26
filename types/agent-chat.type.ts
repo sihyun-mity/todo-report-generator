@@ -1,6 +1,6 @@
 import type { AgentTool, ConfirmOptions } from '@/types';
 
-// 채팅 대화에 쌓이는 항목. 사용자·도우미 말풍선 외에 도구 실행 단계와 실행 전 확인 카드도 같은 목록에 끼워 보여 준다.
+// 채팅 대화에 쌓이는 항목. 사용자·Nano 말풍선 외에 도구 실행 단계와 실행 전 확인 카드도 같은 목록에 끼워 보여 준다.
 export type AgentChatMessage =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'assistant'; text: string; streaming: boolean }
@@ -35,8 +35,8 @@ export type AgentChatTurn =
       untrusted: boolean;
     };
 
-// 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 AI 도우미에 넘긴다.
-// prompt 는 AI(Gemini Nano)에게 묻고(부탁인지 업무 메모인지는 도우미가 가른다), tool 은 모델 없이 도구를 바로 실행하며,
+// 에이전트가 할 일 — 상황 제안·빠른 작업·홈 입력창이 같은 형태로 Nano에 넘긴다.
+// prompt 는 AI(Gemini Nano)에게 묻고(부탁인지 업무 메모인지는 Nano가 가른다), tool 은 모델 없이 도구를 바로 실행하며,
 // notes 는 업무 메모를 보고서 초안으로 정리한다(text 가 없으면 입력칸으로 데려가 적게 한다).
 export type AgentAction =
   | { type: 'prompt'; text: string }
@@ -72,7 +72,7 @@ export type AgentChatStore = {
   // 데스크톱(lg 이상)은 늘 오른쪽에 있다 — 펼친 패널 / 접은 레일. 이 기기에 기억한다.
   expanded: boolean;
   setExpanded: (expanded: boolean) => void;
-  // ⌘K·홈 입력창 등에서 "도우미를 보여 줘" — 데스크톱은 펼치고 모바일은 시트를 연다.
+  // ⌘K·홈 입력창 등에서 "Nano를 보여 줘" — 데스크톱은 펼치고 모바일은 시트를 연다.
   // attention 으로 사용자가 어디를 봐야 하는지 강조한다: input(입력칸 포커스 + 링, 기본) · panel(작업 시작 — 패널만) · none
   reveal: (options?: { attention?: 'input' | 'panel' | 'none' }) => void;
   focusSignal: number;
@@ -85,7 +85,7 @@ export type AgentChatStore = {
   // 가장 최근 후속 동작 카드 id — 처리 중 안내·상단바에서 "보기"로 그 카드로 데려간다
   followUpId: string | null;
   setFollowUp: (count: number, id: string | null) => void;
-  // 도우미를 보여 주고 기다리는 후속 동작 카드로 눈을 끈다
+  // Nano를 보여 주고 기다리는 후속 동작 카드로 눈을 끈다
   showFollowUp: () => void;
   // 채팅이 요청을 처리하는 중 — 그동안 페이지 본문 조작을 막는다(AgentBusyGuard)
   isRunning: boolean;
@@ -96,9 +96,9 @@ export type AgentChatStore = {
   // 지금 경로 — 화면별 제안에 쓴다(AgentPathTracker 가 채운다)
   pathname: string;
   setPathname: (pathname: string) => void;
-  // 다른 곳(홈 입력창·제안 알약)이 도우미에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
+  // 다른 곳(홈 입력창·제안 알약)이 Nano에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
   request: { id: number; action: AgentAction } | null;
-  // reveal: false 면 도우미를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일
+  // reveal: false 면 Nano를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일
   submit: (action: AgentAction, options?: { reveal?: boolean }) => void;
   // 이번 세션에서 닫은(또는 실행한) 제안 — 같은 제안을 다시 띄우지 않는다
   dismissed: ReadonlySet<string>;
@@ -114,7 +114,7 @@ export type AgentToolsStore = {
 };
 
 export type AgentHighlightStore = {
-  // AI 도우미가 방금 바꾼 항목 id(프로젝트·작업, 보고서 날짜는 AGENT_HIGHLIGHT_DATE_ID) — 잠깐 강조했다가 비운다
+  // Nano가 방금 바꾼 항목 id(프로젝트·작업, 보고서 날짜는 AGENT_HIGHLIGHT_DATE_ID) — 잠깐 강조했다가 비운다
   ids: ReadonlySet<string>;
   // 강조할 id 를 올린다(이전 강조는 바뀐다)
   flash: (ids: ReadonlyArray<string>) => void;
