@@ -89,6 +89,9 @@ export const AGENT_NOTES_MAX_CHARS = 3_000;
 /** 패널·홈 입력창에 보여 주는 상황 제안 수 */
 export const AGENT_SUGGESTION_LIMIT = 4;
 
+/** 상황 제안 알약 바깥 틀의 DOM id — 토스트가 이 요소를 하단 차단 요소로 보고 그 위로 비켜 뜬다(ToasterProvider) */
+export const AGENT_SUGGESTION_PILL_ID = 'agent-suggestion-pill';
+
 /** 상황 제안 알약을 띄우기 전 기다리는 시간 — 입력 중 상태가 출렁일 때마다 떴다 사라지지 않게 */
 export const AGENT_SUGGESTION_PILL_DELAY_MS = 1_500;
 

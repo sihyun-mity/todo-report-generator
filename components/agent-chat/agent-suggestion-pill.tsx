@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Github, Lightbulb, X } from 'lucide-react';
 import type { AgentSuggestion } from '@/types';
-import { AGENT_SUGGESTION_PILL_DELAY_MS } from '@/constants';
+import { AGENT_SUGGESTION_PILL_DELAY_MS, AGENT_SUGGESTION_PILL_ID } from '@/constants';
 import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { useAgentSuggestions } from '.';
@@ -11,6 +11,7 @@ import { useAgentSuggestions } from '.';
 // 어느 화면에서나 지금 할 만한 일을 하나 알려 주는 알약(삼성 One UI 의 상황 제안처럼).
 // 도우미가 이미 펼쳐져 있으면(데스크톱 패널·모바일 시트) 그 안에 같은 제안이 있으므로 숨긴다.
 // 상태가 출렁일 때마다 떴다 사라지지 않게 같은 제안이 잠시 유지된 뒤에 띄운다. 실행하거나 X 로 넘기면 이번 세션에서는 다시 띄우지 않는다.
+// 토스트(ToasterProvider)는 이 알약을 하단 차단 요소로 보고 그 위로 비켜 뜬다(AGENT_SUGGESTION_PILL_ID).
 // 도구를 바로 실행하는 제안은 도우미를 열지 않고 화면에서 결과를 보게 하고(도구가 토스트로 알린다), AI 에게 묻는 일만 도우미를 연다.
 export function AgentSuggestionPill() {
   const { suggestions } = useAgentSuggestions();
@@ -34,6 +35,7 @@ export function AgentSuggestionPill() {
   if (followUpCount > 0 && !isOpen && !isRunning)
     return (
       <div
+        id={AGENT_SUGGESTION_PILL_ID}
         className={cn(
           'pointer-events-none fixed inset-x-0 z-35 flex justify-center px-4',
           'bottom-[calc(env(safe-area-inset-bottom)+5rem)] lg:bottom-6',
@@ -63,6 +65,7 @@ export function AgentSuggestionPill() {
 
   return (
     <div
+      id={AGENT_SUGGESTION_PILL_ID}
       className={cn(
         'pointer-events-none fixed inset-x-0 z-35 flex justify-center px-4',
         // 모바일은 하단 복사 바 위, 데스크톱은 본문 가운데 아래
