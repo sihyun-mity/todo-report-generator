@@ -230,8 +230,12 @@ function ChangeCard({ lines, undo, isRunning, onUndo }: Readonly<ChangeCardProps
           <button
             type="button"
             onClick={onUndo}
-            disabled={isRunning}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-600 transition-colors hover:bg-blue-50 disabled:opacity-40 dark:text-blue-400 dark:hover:bg-blue-950/40"
+            // 처리 중에도 누를 수 있게 둔다(흐리게만) — 누르면 처리 중이라고 알린다
+            aria-disabled={isRunning || undefined}
+            className={cn(
+              'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40',
+              isRunning && 'opacity-40'
+            )}
           >
             <Undo2 size={12} aria-hidden />
             되돌리기
@@ -296,7 +300,6 @@ function DraftCard({ draft, status, isRunning, onApply, onDiscard }: Readonly<Dr
           <button
             type="button"
             onClick={onDiscard}
-            disabled={isRunning}
             className="flex-1 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
             버리기
@@ -304,8 +307,12 @@ function DraftCard({ draft, status, isRunning, onApply, onDiscard }: Readonly<Dr
           <button
             type="button"
             onClick={onApply}
-            disabled={isRunning}
-            className="flex-1 rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-40"
+            // 처리 중에도 누를 수 있게 둔다(흐리게만) — 누르면 처리 중이라고 알린다. 버리기는 AI 를 쓰지 않아 늘 된다
+            aria-disabled={isRunning || undefined}
+            className={cn(
+              'flex-1 rounded-lg bg-blue-500 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-600',
+              isRunning && 'opacity-40'
+            )}
           >
             폼에 추가
           </button>

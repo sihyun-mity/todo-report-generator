@@ -100,6 +100,9 @@ export const AGENT_CHANGE_VISIBLE_LINES = 6;
 /** 데스크톱 Nano 패널을 펼쳐 둘지(접으면 레일) 기억하는 localStorage 키 */
 export const AGENT_PANEL_STORAGE_KEY = 'trg:agent-panel';
 
+// Nano가 처리 중일 때 다른 요청을 시도하면 띄우는 토스트 — 연달아 눌러도 하나만 보이게 같은 id 를 쓴다
+export const AGENT_BUSY_TOAST_ID = 'agent-busy';
+
 /** "메모로 보고서 쓰기"에 넣을 수 있는 메모 길이(글자) — Nano 컨텍스트 창(약 9천 토큰)에 프롬프트·응답과 함께 들어가도록 */
 export const AGENT_NOTES_MAX_CHARS = 3_000;
 

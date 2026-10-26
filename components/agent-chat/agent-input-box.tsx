@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, type RefObject, useId, useRef, useState } from 'react';
 import { ArrowUp, Mic, Square } from 'lucide-react';
+import { useAgentChatStore } from '@/stores';
 import { cn } from '@/utils';
 import { useSpeechInput } from '.';
 
@@ -44,7 +45,12 @@ export function AgentInputBox({
 
   const submit = () => {
     const value = text.trim();
-    if (!value || isRunning || disabled) return;
+    if (!value || disabled) return;
+    // 처리 중이면 보내지 않고 알린다 — 적은 글은 그대로 두어 끝난 뒤 다시 보낼 수 있게 한다
+    if (isRunning) {
+      useAgentChatStore.getState().notifyBusy();
+      return;
+    }
     speech.stop();
     onSubmit(value);
     setText('');
@@ -150,11 +156,14 @@ export function AgentInputBox({
           !disabled && (
             <button
               type="submit"
-              disabled={isRunning || text.trim() === ''}
+              // 처리 중에도 누를 수 있게 둔다(흐리게만) — 누르면 왜 보낼 수 없는지 알린다
+              disabled={text.trim() === ''}
+              aria-disabled={isRunning || undefined}
               aria-label="보내기"
               className={cn(
                 iconButton,
-                'bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white'
+                'bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white',
+                isRunning && 'opacity-30'
               )}
             >
               <ArrowUp size={15} aria-hidden />

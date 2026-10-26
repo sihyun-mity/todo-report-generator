@@ -140,7 +140,7 @@ export function AgentPanel({
   const isReady = availability === 'available';
   // 예시 칩은 바로 보낸다
   const submit = (text: string) => {
-    if (isRunning || !isReady) return;
+    if (!isReady) return;
     onSend(text);
   };
 
@@ -222,7 +222,7 @@ export function AgentPanel({
                       <AgentSuggestionCard
                         key={s.id}
                         suggestion={s}
-                        disabled={isRunning}
+                        busy={isRunning}
                         onRun={onRunSuggestion}
                         onDismiss={onDismissSuggestion}
                       />
@@ -235,7 +235,7 @@ export function AgentPanel({
                   <p className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">빠른 작업</p>
                   <div className="flex flex-wrap gap-2">
                     {quickActions.map((a) => (
-                      <AgentActionChip key={a.id} action={a} disabled={isRunning} onRun={onRunAction} />
+                      <AgentActionChip key={a.id} action={a} busy={isRunning} onRun={onRunAction} />
                     ))}
                   </div>
                 </section>

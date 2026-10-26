@@ -34,7 +34,7 @@ export function AgentComposer() {
         // 넘치면 줄을 바꾼다 — 가로 스크롤(overflow)로 두면 GitHub 칩의 무지개 빛(blur 10px)이 스크롤 영역 경계에서 사각형으로 잘린다
         <div className="flex flex-wrap gap-2">
           {quickActions.map((action) => (
-            <AgentActionChip key={action.id} action={action} disabled={isRunning} onRun={runAction} />
+            <AgentActionChip key={action.id} action={action} busy={isRunning} onRun={runAction} />
           ))}
         </div>
       )}

@@ -90,12 +90,17 @@ export type AgentChatStore = {
   followUpCount: number;
   // 가장 최근 후속 동작 카드 id — 처리 중 안내·상단바에서 "보기"로 그 카드로 데려간다
   followUpId: string | null;
-  setFollowUp: (count: number, id: string | null) => void;
+  // 그중 승인을 기다리는 확인 카드가 있는지 — 처리 중인 요청이 사용자의 답을 기다리며 멈춰 있다
+  awaitingConfirm: boolean;
+  setFollowUp: (count: number, id: string | null, awaitingConfirm: boolean) => void;
   // Nano를 보여 주고 기다리는 후속 동작 카드로 눈을 끈다
   showFollowUp: () => void;
   // 채팅이 요청을 처리하는 중
   isRunning: boolean;
   setRunning: (isRunning: boolean) => void;
+  // 처리 중에 다른 요청(입력·칩·제안·되돌리기)을 시도했을 때 — 무시하지 않고 알린다.
+  // 확인 카드가 기다리면 그 카드로, 아니면 처리 과정이 보이는 패널로 데려간다
+  notifyBusy: () => void;
   // 처리 중인 요청이 작성 중인 폼을 바꿀 수 있다 — 그동안만 페이지 본문 조작을 막는다(AgentBusyGuard).
   // 조회·요약·대화·저장·이동은 폼과 관계가 없어 잠그지 않는다
   formLocked: boolean;

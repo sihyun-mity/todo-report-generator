@@ -64,9 +64,13 @@ export function AgentAssistant() {
   const followUps = messages.filter((m) => (m.role === 'confirm' || m.role === 'draft') && m.status === 'pending');
   const followUpCount = followUps.length;
   const followUpId = followUps.at(-1)?.id ?? null;
+  const awaitingConfirm = followUps.some((m) => m.role === 'confirm');
   useEffect(() => {
-    useAgentChatStore.getState().setFollowUp(followUpCount, followUpId);
-  }, [followUpCount, followUpId]);
+    useAgentChatStore.getState().setFollowUp(followUpCount, followUpId, awaitingConfirm);
+  }, [followUpCount, followUpId, awaitingConfirm]);
+
+  // 처리 중에 들어온 다른 요청은 무시하지 않고 알린다(한 번에 하나만 처리한다)
+  const notifyBusy = () => useAgentChatStore.getState().notifyBusy();
 
   // 데스크톱 패널을 접어 두었으면 그대로 — SSR·첫 렌더는 기본값(펼침)으로 맞추고 마운트 뒤에 적용한다
   useEffect(() => {
@@ -174,7 +178,11 @@ export function AgentAssistant() {
   // 그 밖에는 채팅으로 보내 의도 분류가 메모(work_notes)라고 하면 거기서 메모 정리로 넘긴다.
   // fresh 면 앞 대화와 관계없는 독립 요청이라 앞 대화 기록 없이 시작한다(startFresh 참고).
   const send = async (text: string, { fresh = false }: Readonly<{ fresh?: boolean }> = {}) => {
-    if (isRunning || text.trim() === '') return;
+    if (text.trim() === '') return;
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     if (canWriteFromNotes && looksLikeWorkNotes(text)) {
       void submitNotes(text);
       return;
@@ -326,7 +334,11 @@ export function AgentAssistant() {
 
   // 메모로 보고서 쓰기(규칙으로 메모라고 본 글·메모가 담긴 할 일)
   const submitNotes = async (notes: string) => {
-    if (isRunning || notes.trim() === '') return;
+    if (notes.trim() === '') return;
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     const controller = begin();
     setMessages((prev) => [...prev, { id: createId(), role: 'user', text: notes.trim() }]);
     try {
@@ -342,6 +354,7 @@ export function AgentAssistant() {
     const tool = useAgentToolsStore.getState().tools.find((t) => t.name === 'fill_report');
     if (message?.role !== 'draft' || message.status !== 'pending' || !tool || isRunning) {
       if (!tool) toast.error('보고서 작성 화면에서만 폼에 넣을 수 있어요.');
+      else if (isRunning) notifyBusy();
       return;
     }
     const controller = begin();
@@ -390,7 +403,11 @@ export function AgentAssistant() {
   // 변경 카드의 되돌리기. 그사이 사용자가 직접 고쳤으면 덮어쓰지 않고 알린다. 모델도 알 수 있게 대화 기록에 남긴다.
   const undoChange = (id: string) => {
     const undo = undoFns.current.get(id);
-    if (!undo || isRunning) return;
+    if (!undo) return;
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     undoFns.current.delete(id);
     const ok = undo();
     patchMessage(id, { undo: ok ? 'done' : 'stale' });
@@ -414,7 +431,10 @@ export function AgentAssistant() {
       toast.error('이 화면에서는 할 수 없는 작업이에요.');
       return;
     }
-    if (isRunning) return;
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     const controller = begin();
     const toolMessageId = createId();
     const captured: { change: AgentChange | null } = { change: null };
@@ -465,7 +485,10 @@ export function AgentAssistant() {
   // 엉뚱한 기간을 정리하거나 앞 요청을 이어서 처리했다. 다만 사용자가 아직 처리하지 않은 후속 동작(폼에 넣지 않은 초안)이
   // 있으면 화면의 대화는 지우지 않고 모델에 넘기는 기록만 새로 시작한다(초안을 잃지 않게).
   const startFresh = (text: string) => {
-    if (isRunning) return;
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     if (followUpCount === 0) reset();
     void send(text, { fresh: true });
   };
@@ -483,6 +506,11 @@ export function AgentAssistant() {
 
   // 제안을 실행하면 이번 세션에서는 다시 권하지 않는다
   const runSuggestion = (suggestion: AgentSuggestion) => {
+    // 처리 중이라 실행하지 못한 제안은 넘기지 않는다 — 끝난 뒤 다시 누를 수 있게
+    if (isRunning) {
+      notifyBusy();
+      return;
+    }
     useAgentChatStore.getState().dismiss(suggestion.id);
     runAction(suggestion.action);
   };

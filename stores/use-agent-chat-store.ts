@@ -1,6 +1,7 @@
+import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import type { AgentChatStore } from '@/types';
-import { AGENT_PANEL_STORAGE_KEY } from '@/constants';
+import { AGENT_BUSY_TOAST_ID, AGENT_PANEL_STORAGE_KEY } from '@/constants';
 
 // 데스크톱 패널을 펼쳐 둘지(접으면 레일)는 이 기기에 기억한다. 저장소를 못 쓰면 기억하지 못할 뿐이다.
 const saveExpanded = (expanded: boolean) => {
@@ -36,7 +37,8 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
     set((s) => ({ attention: { nonce: (s.attention?.nonce ?? 0) + 1, target, messageId } })),
   followUpCount: 0,
   followUpId: null,
-  setFollowUp: (followUpCount, followUpId) => set({ followUpCount, followUpId }),
+  awaitingConfirm: false,
+  setFollowUp: (followUpCount, followUpId, awaitingConfirm) => set({ followUpCount, followUpId, awaitingConfirm }),
   showFollowUp: () => {
     const { followUpId } = get();
     get().reveal({ attention: 'none' });
@@ -44,6 +46,18 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   },
   isRunning: false,
   setRunning: (isRunning) => set({ isRunning }),
+  notifyBusy: () => {
+    // 연달아 눌러도 토스트는 하나만 — 같은 id 로 덮어쓴다
+    if (get().awaitingConfirm) {
+      toast('Nano가 확인을 기다리고 있어요. 카드에서 먼저 골라 주세요.', { id: AGENT_BUSY_TOAST_ID });
+      get().showFollowUp();
+      return;
+    }
+    toast('Nano가 앞 요청을 처리하고 있어요. 끝난 뒤 다시 부탁하거나 멈추기를 눌러 주세요.', {
+      id: AGENT_BUSY_TOAST_ID,
+    });
+    get().reveal({ attention: 'panel' });
+  },
   formLocked: false,
   setFormLocked: (formLocked) => set({ formLocked }),
   availability: null,
