@@ -271,7 +271,7 @@ export function CommitAuthorsMenu({
             {candidates.isPending ? (
               <li className="flex items-center justify-center gap-2 px-3 py-4 text-zinc-500 dark:text-zinc-400">
                 <Loader2 size={13} className="animate-spin" aria-hidden />
-                최근 {GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS}일 커밋 작성자를 불러오고 있어요
+                최근 {GITHUB_COMMIT_AUTHOR_LOOKBACK_DAYS}일 이내 커밋 작성자를 불러오고 있어요
               </li>
             ) : candidates.data && !candidates.data.ok ? (
               <li className="px-3 py-4 text-center text-red-500">
