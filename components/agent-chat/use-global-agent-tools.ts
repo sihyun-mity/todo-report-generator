@@ -3,31 +3,34 @@
 import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AgentTool, Theme } from '@/types';
+import type { AgentTool, News, Theme } from '@/types';
 import { AGENT_NAVIGATE_WAIT_MS, AGENT_NEWS_CONTENT_MAX_CHARS, AGENT_NEWS_LIST_LIMIT, AGENT_PAGES } from '@/constants';
 import { useAgentTools, useRouter } from '@/hooks';
 import { isGuestMode } from '@/lib/guest';
 import { createClient } from '@/lib/supabase/client';
 import { toolError, toolText } from '@/lib/webmcp';
 import { queries } from '@/providers';
+import { useAgentChatStore } from '@/stores';
+import { isNewsId, newsIdFromPath } from '@/utils';
 import { useTheme } from '..';
 
 type PageKey = keyof typeof AGENT_PAGES;
+type NewsDetail = News | null;
+type NewsList = { isMember: boolean; items: Array<News> };
 type PageEntry = { path: string; label: string; memberOnly?: boolean; guestOnly?: boolean };
 
 const PAGE_KEYS = Object.keys(AGENT_PAGES) as Array<PageKey>;
-const NEWS_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// 새소식 상세 화면에서 보고 있는 소식 id(아니면 null)
-const currentNewsId = () => {
-  const id = /^\/whats-new\/([^/]+)$/.exec(window.location.pathname)?.[1];
-  return id && NEWS_ID_REGEX.test(id) ? id : null;
-};
-
-// 상세 화면에서 보고 있는 소식을 가리키는 요청 — 목록을 후보로 두면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다.
+// 상세 화면에서 보고 있는(또는 방금 본) 소식을 가리키는 요청 — 목록을 후보로 두면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다.
 // 반대로 목록이 있어야 하는 요청("다음 소식 열어줘" — 이동할 id 가 목록에 있다)까지 막지 않게, 가리키는 말이 있을 때만 뺀다.
-const CURRENT_NEWS_REQUEST = /지금|현재|보고\s*있|보는|여기|이거|이\s*(새\s*소식|소식|글|공지|내용)/;
+const CURRENT_NEWS_REQUEST =
+  /지금|현재|보고\s*있|보는|보던|봤던|아까|방금|여기|이거|그거|[이그]\s*(새\s*소식|소식|글|공지|내용)/;
 const NEWS_LIST_REQUEST = /목록|최근|다른|다음|이전|전체|모든|모두|지난|여러|\d+\s*개/;
+// 상세 화면 밖에서는 "지금 작성 중인 내용"과 헷갈리지 않게 소식이라는 말이 있어야 소식 하나를 가리킨다고 본다
+const pointsAtOneNews = (request: string) =>
+  /새\s*소식|소식|공지/.test(request) && CURRENT_NEWS_REQUEST.test(request) && !NEWS_LIST_REQUEST.test(request);
+// 방금 본 소식을 분명히 가리키는 말 — 이때는 되묻지 않고 그 소식을 읽는다
+const LAST_NEWS_REQUEST = /아까|방금|보던|봤던|본\s*(새\s*소식|소식|공지)/;
 
 const THEME_LABELS: Record<Theme, string> = { light: '라이트 모드', dark: '다크 모드', system: '시스템 설정' };
 
@@ -66,6 +69,12 @@ export function useGlobalAgentTools() {
   useEffect(() => {
     latest.current = { theme, setTheme, router };
   });
+
+  // 받아 둔 소식 제목(AgentPathTracker 가 상세 화면을 열 때 미리 받는다) — 모델과 되묻는 문장이 어느 소식인지 이름으로 말하게
+  const cachedNewsTitle = (id: string) =>
+    queryClient.getQueryData<NewsDetail>(queries.news.detail(id).queryKey)?.title ??
+    queryClient.getQueryData<NewsList>(queries.news.list().queryKey)?.items.find((n) => n.id === id)?.title ??
+    null;
 
   useAgentTools(
     (): Array<AgentTool> => [
@@ -111,7 +120,7 @@ export function useGlobalAgentTools() {
           const viewer = await resolveViewer();
           let path: string;
           if (input.page === 'news_detail') {
-            if (typeof input.newsId !== 'string' || !NEWS_ID_REGEX.test(input.newsId))
+            if (typeof input.newsId !== 'string' || !isNewsId(input.newsId))
               return toolError('news_detail 로 이동하려면 list_news 결과의 id 를 newsId 로 주세요.');
             path = `/whats-new/${input.newsId}`;
           } else {
@@ -170,9 +179,12 @@ export function useGlobalAgentTools() {
         title: '새소식 목록 조회',
         kind: 'read',
         description: `Return up to ${AGENT_NEWS_LIST_LIMIT} service news/updates (새소식), newest first (id, title, date). Members and guests see different news. Read the body with get_news.`,
-        // 보고 있는 소식을 가리키면 get_news 가 그 소식을 바로 읽는다 — 목록도 함께 가리킬 때만 남긴다
-        requires: (request) =>
-          !currentNewsId() || !CURRENT_NEWS_REQUEST.test(request) || NEWS_LIST_REQUEST.test(request),
+        // 보고 있는(방금 본) 소식을 가리키면 get_news 가 그 소식을 바로 읽는다 — 목록도 함께 가리킬 때만 남긴다.
+        // 가리킬 소식이 없으면 get_news 의 unavailable 이 되묻는다(목록으로 조용히 대신하지 않는다)
+        requires: (request, scope) =>
+          newsIdFromPath(scope.path)
+            ? !CURRENT_NEWS_REQUEST.test(request) || NEWS_LIST_REQUEST.test(request)
+            : !pointsAtOneNews(request),
         inputSchema: { type: 'object', properties: {} },
         annotations: { readOnlyHint: true },
         execute: async () => {
@@ -193,11 +205,33 @@ export function useGlobalAgentTools() {
         title: '새소식 읽기',
         kind: 'read',
         description:
-          'Return the body (markdown) of one news item. id comes from list_news, or currentNewsId when the user is reading one (이 소식).',
-        // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다
-        inputContext: () => {
-          const id = currentNewsId();
-          return id ? { currentNewsId: id } : { currentPath: window.location.pathname };
+          'Return the body (markdown) of one news item. id comes from list_news, currentNewsId when the user is reading one (이 소식), or lastViewedNewsId for the news the user just read (아까 본 소식).',
+        // 새소식 상세 화면에서 "이거 요약해줘" — 보고 있는 소식의 id 를 넘겨 목록 조회 없이 바로 읽게 한다.
+        // 요청할 때의 화면 기준이라 응답을 기다리는 사이 화면을 옮겨도 그 소식을 읽는다. 상세 화면 밖이면 마지막으로 본 소식을 넘긴다.
+        inputContext: (scope) => {
+          const viewing = newsIdFromPath(scope.path);
+          if (viewing) return { currentNewsId: viewing, currentNewsTitle: cachedNewsTitle(viewing) };
+          const last = useAgentChatStore.getState().lastNewsId;
+          return last
+            ? { viewingNews: false, lastViewedNewsId: last, lastViewedNewsTitle: cachedNewsTitle(last) }
+            : { viewingNews: false };
+        },
+        // 소식 하나를 가리켰는데 요청할 때 상세 화면이 아니었으면, 목록 전체로 대신하지 않고 못 찾은 사실과 대안을 묻는다
+        unavailable: (request, scope) => {
+          if (newsIdFromPath(scope.path) || !pointsAtOneNews(request)) return null;
+          const last = useAgentChatStore.getState().lastNewsId;
+          if (last && LAST_NEWS_REQUEST.test(request)) return null;
+          if (last) {
+            const title = cachedNewsTitle(last);
+            return {
+              reason: '지금은 새소식을 보고 있지 않아 어느 소식인지 찾지 못했어요.',
+              offer: `방금 보신 ${title ? `'${title}' ` : ''}소식으로 할까요?`,
+            };
+          }
+          return {
+            reason: '지금 보고 계신 새소식을 찾지 못했어요.',
+            offer: '대신 최근 새소식을 살펴볼까요?',
+          };
         },
         inputSchema: {
           type: 'object',
@@ -206,7 +240,7 @@ export function useGlobalAgentTools() {
         },
         annotations: { readOnlyHint: true },
         execute: async (input) => {
-          if (typeof input.id !== 'string' || !NEWS_ID_REGEX.test(input.id))
+          if (typeof input.id !== 'string' || !isNewsId(input.id))
             return toolError('id 는 list_news 결과의 소식 id 여야 합니다.');
           const item = await queryClient.fetchQuery(queries.news.detail(input.id));
           if (!item) return toolError('볼 수 있는 소식이 아닙니다. list_news 로 id 를 다시 확인하세요.');

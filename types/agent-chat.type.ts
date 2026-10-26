@@ -111,6 +111,8 @@ export type AgentChatStore = {
   // 지금 경로 — 화면별 제안에 쓴다(AgentPathTracker 가 채운다)
   pathname: string;
   setPathname: (pathname: string) => void;
+  // 이번 문서에서 마지막으로 연 새소식 id — 상세 화면을 벗어난 뒤 "아까 보던 소식"을 가리켜도 Nano가 찾게 한다
+  lastNewsId: string | null;
   // 다른 곳(홈 입력창·제안 알약)이 Nano에게 넘긴 할 일 — AgentAssistant 가 받아 처리하고 비운다
   request: { id: number; action: AgentAction } | null;
   // reveal: false 면 Nano를 열지 않는다 — 제안 알약·빠른 작업 칩의 도구 실행처럼 화면에서 바로 결과가 보이는 일

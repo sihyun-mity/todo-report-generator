@@ -11,6 +11,7 @@ export * from './id';
 export * from './josa';
 export * from './meta';
 export * from './navigation';
+export * from './news';
 export * from './next';
 export * from './object';
 export * from './parser';

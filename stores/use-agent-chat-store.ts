@@ -2,6 +2,7 @@ import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import type { AgentChatStore } from '@/types';
 import { AGENT_BUSY_TOAST_ID, AGENT_PANEL_STORAGE_KEY } from '@/constants';
+import { newsIdFromPath } from '@/utils';
 
 // 데스크톱 패널을 펼쳐 둘지(접으면 레일)는 이 기기에 기억한다. 저장소를 못 쓰면 기억하지 못할 뿐이다.
 const saveExpanded = (expanded: boolean) => {
@@ -63,7 +64,8 @@ export const useAgentChatStore = create<AgentChatStore>()((set, get) => ({
   availability: null,
   setAvailability: (availability) => set({ availability }),
   pathname: '/',
-  setPathname: (pathname) => set({ pathname }),
+  setPathname: (pathname) => set((s) => ({ pathname, lastNewsId: newsIdFromPath(pathname) ?? s.lastNewsId })),
+  lastNewsId: null,
   request: null,
   submit: (action, { reveal = true } = {}) => {
     set((s) => ({ request: { id: (s.request?.id ?? 0) + 1, action } }));

@@ -30,11 +30,14 @@ export type AgentTool = {
   surfaces?: ReadonlyArray<AgentToolSurface>;
   // 채팅이 다음 행동을 고르고 입력을 만들 때 함께 보여 줄 지금 상태(예: 작성 중인 폼) — "오늘 한 업무를 내일에도"처럼
   // 화면의 내용을 가리키는 요청을 모델이 지어내지 않고 실제 값으로 채우게 한다
-  inputContext?: () => unknown;
+  inputContext?: (scope: AgentRequestScope) => unknown;
   // inputContext 로 넘기는 지금 상태를 읽기만 하는 조회 도구(예: get_current_report) — 채팅이 상태를 이미 넘길 때는 후보에서 뺀다
   stateReader?: boolean;
   // 요청 문장에 이 말이 있을 때만 채팅 후보로 둔다 — 작은 모델은 요청에 없는 대상(세부 항목·미완료 전체)을 다루는 비슷한 도구를 골랐다
-  requires?: (request: string) => boolean;
+  requires?: (request: string, scope: AgentRequestScope) => boolean;
+  // 요청이 가리키는 대상이 없어 이 도구가 할 수 없는 경우 — 채팅은 비슷한 도구로 조용히 대신하지 않고 못 한 이유와 대안을 되묻는다
+  // (보고 있던 새소식을 요약해 달라고 한 뒤 화면을 벗어나자 목록 전체를 요약했다)
+  unavailable?: (request: string, scope: AgentRequestScope) => AgentToolUnavailable | null;
   // 의도 분류가 이 종류로 갈라져도 후보로 둔다(예: "이 작업 내일로 옮겨줘"가 추가로 분류됐다)
   extraKinds?: ReadonlyArray<AgentToolKind>;
   // 채팅 답변에 쓸 한 문장 — 변경 줄을 하나씩 옮기는 것보다 나을 때(프로젝트 이름 바꾸기·옮기기, 초기화). 성공했을 때만 부른다
@@ -43,6 +46,13 @@ export type AgentTool = {
 };
 
 export type AgentToolSurface = 'webmcp' | 'chat';
+
+// 채팅 요청 하나의 범위. 요청을 보낸 순간의 화면을 기준으로 한다 — 응답을 기다리는 사이 다른 화면으로 옮겨 가도
+// "지금 보고 있는 소식"은 요청할 때 보던 소식이다.
+export type AgentRequestScope = { path: string };
+
+// 도구가 할 수 없는 이유(reason)와 대신 해 줄 수 있는 일을 묻는 문장(offer). 둘 다 사용자에게 보이는 한국어.
+export type AgentToolUnavailable = { reason: string; offer: string };
 
 // read 조회 · add 추가 · edit 항목 하나 고치기(진행률·이름·삭제·옮기기·날짜) · replace 구역·폼 통째로 바꾸기 · reset 초기화 ·
 // save 저장·복사·내보내기 · navigate 이동·열기 · setting 설정 변경
