@@ -4,6 +4,14 @@ import type { ConfirmOptions, WebMcpJsonSchema, WebMcpToolAnnotations, WebMcpToo
 // 되돌리기 어려운 동작은 execute 안에서 confirm 으로 사용자 승인을 받는다 — WebMCP 는 확인 다이얼로그로, 채팅은 대화 안 카드로 묻는다.
 export type AgentToolContext = {
   confirm: (options: ConfirmOptions) => Promise<boolean>;
+  // 바꾼 내용을 알린다 — 채팅은 변경 카드(바뀐 줄 + 되돌리기)로 보여 준다. WebMCP 는 받지 않는다.
+  reportChange?: (change: AgentChange) => void;
+};
+
+// 도구가 바꾼 내용. undo 는 바꾼 뒤 그대로일 때만 되돌리고 true 를 돌려준다(그사이 사용자가 고쳤으면 false — 덮어쓰지 않는다).
+export type AgentChange = {
+  lines: ReadonlyArray<string>;
+  undo?: () => boolean;
 };
 
 // WebMCP 등록과 앱 안 채팅이 함께 쓰는 도구 정의. 한 곳에서 정의해 두 경로에 그대로 넘긴다.

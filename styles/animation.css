@@ -3,11 +3,13 @@
  * - twinkle: 반짝이는 아이콘 — 회전 로더가 어색한 아이콘(Sparkles 등)에 "작업 중" 신호를 준다.
  * - indeterminate: 진행률을 아직 모를 때(0%) 막대 위를 오가는 구간.
  * - shimmer: 진행 중인 막대 위를 지나는 광택 — 단계 사이 대기가 길어도 멈춘 것처럼 보이지 않게 한다.
+ * - agent-flash: AI 도우미가 바꾼 칸을 잠깐 밝혔다가 사라지게 한다(무엇이 바뀌었는지 보이게).
  */
 @theme {
   --animate-twinkle: twinkle 1.6s ease-in-out infinite;
   --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
   --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+  --animate-agent-flash: agent-flash 2.4s ease-out;
 
   @keyframes twinkle {
     0%,
@@ -27,6 +29,18 @@
     }
     100% {
       transform: translateX(250%);
+    }
+  }
+
+  @keyframes agent-flash {
+    0%,
+    35% {
+      background-color: color-mix(in oklab, var(--color-blue-500) 18%, transparent);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-blue-500) 55%, transparent);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: 0 0 0 2px transparent;
     }
   }
 

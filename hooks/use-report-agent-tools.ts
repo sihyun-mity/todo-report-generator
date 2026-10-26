@@ -6,17 +6,21 @@ import type {
   Project,
   ProjectsBucket,
   ReportDate,
+  ReportFormSnapshot,
   ReportHistoryItem,
   WebMcpJsonSchema,
 } from '@/types';
-import { useReportFormStore, useReportHistoryStore } from '@/stores';
+import { useAgentHighlightStore, useReportFormStore, useReportHistoryStore } from '@/stores';
+import { AGENT_HIGHLIGHT_DATE_ID } from '@/constants';
 import { toolError, toolText } from '@/lib/webmcp';
 import { useAgentTools } from '.';
 import {
   areAllAttemptedProjectsValid,
   createEmptyProject,
   createId,
+  diffReportForm,
   downloadReportHistory,
+  isSameReportForm,
   generateReportText,
   hasProjectContent,
   isProjectEmpty,
@@ -164,6 +168,37 @@ const SECTION_SCHEMA: WebMcpJsonSchema = {
 
 const parseSectionInput = (value: unknown): ProjectsBucket | null =>
   value === 'today' || value === 'tomorrow' ? value : null;
+
+const formSnapshot = (): ReportFormSnapshot => {
+  const { reportDate, today, tomorrow } = useReportFormStore.getState();
+  return { reportDate, today, tomorrow };
+};
+
+// 폼을 바꾸기 직전에 부르고, 바꾼 뒤 돌려받은 함수를 부른다 — 바뀐 칸을 강조하고(WebMCP 로 불러도) 채팅에는 변경 카드용
+// 줄과 되돌리기를 넘긴다. 되돌리기는 바꾼 뒤 그대로일 때만 한다(그사이 사용자가 고쳤으면 덮어쓰지 않는다).
+const beginFormChange = (context: AgentToolContext) => {
+  const before = formSnapshot();
+  return () => {
+    const after = formSnapshot();
+    const { lines, changedIds, dateChanged } = diffReportForm(before, after);
+    const { flash } = useAgentHighlightStore.getState();
+    flash([...changedIds, ...(dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
+    if (lines.length === 0) return;
+    context.reportChange?.({
+      lines,
+      undo: () => {
+        if (!isSameReportForm(formSnapshot(), after)) return false;
+        const store = useReportFormStore.getState();
+        store.setReportDate(before.reportDate);
+        store.setBucket('today', [...before.today]);
+        store.setBucket('tomorrow', [...before.tomorrow]);
+        const restored = diffReportForm(after, before);
+        flash([...restored.changedIds, ...(restored.dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
+        return true;
+      },
+    });
+  };
+};
 
 const formHasContent = () => {
   const { today, tomorrow } = useReportFormStore.getState();
@@ -360,7 +395,7 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
             mode: { type: 'string', enum: ['append', 'replace'], description: 'Defaults to append' },
           },
         },
-        execute: async (input, { confirm }) => {
+        execute: async (input, context) => {
           // 작은 모델은 스키마의 모든 필드를 채우는 경향이 있어(추가 요청에 replace·빈 구역까지), 기본값을 덧붙이기로 두고
           // 빈 배열은 "바꾸지 않음"으로 본다. 기존 내용을 지우는 교체는 확인을 받는다.
           const mode = input.mode ?? 'append';
@@ -384,11 +419,12 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
             mode === 'replace' &&
             !(await confirmReplace(
               updates.map(([bucket]) => bucket),
-              confirm
+              context.confirm
             ))
           )
             return toolError('사용자가 교체를 취소했습니다. 덧붙이려면 mode="append" 로 다시 부르세요.');
 
+          const finish = beginFormChange(context);
           const store = useReportFormStore.getState();
           if (date) store.setReportDate(date);
           for (const [bucket, projects] of updates) {
@@ -396,6 +432,7 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
               mode === 'append' ? appendProjects(prev, projects) : orInitial(projects)
             );
           }
+          finish();
           toast.success('에이전트가 보고서 폼을 채웠습니다.');
           return toolText(currentFormSnapshot());
         },
@@ -432,13 +469,15 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           },
           required: ['section', 'project', 'tasks'],
         },
-        execute: async (input) => {
+        execute: async (input, context) => {
           const section = parseSectionInput(input.section);
           if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
           const parsed = parseProjectsInput([{ name: input.project, tasks: input.tasks }], 'input');
           if (typeof parsed === 'string')
             return toolError(parsed.replace('input[0].name', 'project').replace('input[0].', ''));
+          const finish = beginFormChange(context);
           useReportFormStore.getState().setBucket(section, (prev) => appendProjects(prev, parsed));
+          finish();
           toast.success(`에이전트가 ${BUCKET_LABEL[section]}에 작업을 추가했습니다.`);
           return toolText(currentFormSnapshot());
         },
@@ -454,14 +493,16 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           properties: { section: SECTION_SCHEMA, projects: { ...PROJECTS_SCHEMA, minItems: 1 } },
           required: ['section', 'projects'],
         },
-        execute: async (input, { confirm }) => {
+        execute: async (input, context) => {
           const section = parseSectionInput(input.section);
           if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
           const parsed = parseProjectsInput(input.projects, 'projects');
           if (typeof parsed === 'string') return toolError(parsed);
           if (parsed.length === 0) return toolError('projects 에 프로젝트가 1개 이상 필요합니다.');
-          if (!(await confirmReplace([section], confirm))) return toolError('사용자가 교체를 취소했습니다.');
+          if (!(await confirmReplace([section], context.confirm))) return toolError('사용자가 교체를 취소했습니다.');
+          const finish = beginFormChange(context);
           useReportFormStore.getState().setBucket(section, parsed);
+          finish();
           toast.success(`에이전트가 ${BUCKET_LABEL[section]}을 바꿨습니다.`);
           return toolText(currentFormSnapshot());
         },
@@ -477,13 +518,13 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           properties: { text: { type: 'string', description: 'The report text as-is' } },
           required: ['text'],
         },
-        execute: async (input, { confirm }) => {
+        execute: async (input, context) => {
           if (typeof input.text !== 'string') return toolError('text 는 문자열이어야 합니다.');
           const parsed = parseReportText(input.text);
           if (!parsed || (parsed.todayProjects.length === 0 && parsed.tomorrowProjects.length === 0))
             return toolError('보고서 텍스트에서 프로젝트를 찾지 못했습니다.');
           if (formHasContent()) {
-            const ok = await confirm({
+            const ok = await context.confirm({
               title: '텍스트 적용',
               description: '에이전트가 보고서 텍스트를 폼에 적용하려고 합니다.\n현재 작성 중인 내용이 덮어씌워집니다.',
               confirmText: '적용',
@@ -492,9 +533,11 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           }
 
           const store = useReportFormStore.getState();
+          const finish = beginFormChange(context);
           if (parsed.month && parsed.day) store.setReportDate({ month: parsed.month, day: parsed.day });
           store.setBucket('today', orInitial(parsed.todayProjects));
           store.setBucket('tomorrow', orInitial(parsed.tomorrowProjects));
+          finish();
           toast.success('에이전트가 보고서 텍스트를 폼에 적용했습니다.');
           return toolText(currentFormSnapshot());
         },
@@ -506,11 +549,13 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         description:
           "Copy today's tasks under 100% progress to tomorrow. Tasks are added under projects with the same name; tasks already there are skipped.",
         inputSchema: { type: 'object', properties: {} },
-        execute: async () => {
+        execute: async (_input, context) => {
           const { today, tomorrow, setBucket } = useReportFormStore.getState();
           const merged = mergeIncompleteTasks(today, tomorrow);
           if (!merged) return toolText({ changed: false, message: '가져올 새로운 미완료 작업이 없습니다.' });
+          const finish = beginFormChange(context);
           setBucket('tomorrow', merged);
+          finish();
           toast.success('에이전트가 미완료 업무를 익일로 가져왔습니다.');
           return toolText({ changed: true, ...currentFormSnapshot() });
         },
@@ -522,12 +567,12 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         description:
           'Only when the user asks to save: save the current form as the record for the report date, overwriting an existing record for that date. Shows a confirmation and saves only if the user approves. Does not copy to the clipboard.',
         inputSchema: { type: 'object', properties: {} },
-        execute: async (_input, { confirm }) => {
+        execute: async (_input, context) => {
           const { reportDate, today, tomorrow } = useReportFormStore.getState();
           if (!isSavable(today, tomorrow))
             return toolError('저장할 수 없습니다. 내용이 비어 있거나, 작업이 없는 프로젝트가 있습니다.');
 
-          const ok = await confirm({
+          const ok = await context.confirm({
             title: '보고서 저장',
             description: `에이전트가 ${reportDate.month}월 ${reportDate.day}일 보고서를 기록에 저장하려고 합니다.\n같은 날짜 기록이 있으면 덮어씁니다.`,
             confirmText: '저장',
@@ -556,10 +601,12 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           },
           required: ['month', 'day'],
         },
-        execute: async (input) => {
+        execute: async (input, context) => {
           const date = parseMonthDayInput(input);
           if (typeof date === 'string') return toolError(date);
+          const finish = beginFormChange(context);
           useReportFormStore.getState().setReportDate(date);
+          finish();
           toast.success(`보고서 날짜를 ${date.month}월 ${date.day}일로 바꿨습니다.`);
           return toolText({ month: Number(date.month), day: Number(date.day) });
         },
@@ -571,14 +618,14 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         description:
           'Load the saved report for a date into the form (replaces date, today and tomorrow). Asks the user to confirm if the form has content. To only view it, use get_report.',
         inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
-        execute: async (input, { confirm }) => {
+        execute: async (input, context) => {
           const date = parseDateKeyInput(input.date, 'date');
           if (typeof date !== 'string') return toolError(date.error);
           const item = await findSavedReport(date);
           if (typeof item === 'string') return toolError(item);
 
           if (formHasContent()) {
-            const ok = await confirm({
+            const ok = await context.confirm({
               title: '기록 불러오기',
               description: `${item.month}월 ${item.day}일 보고서를 불러오면 현재 작성 중인 내용이 덮어씌워집니다.`,
               confirmText: '불러오기',
@@ -587,9 +634,11 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
           }
 
           const store = useReportFormStore.getState();
+          const finish = beginFormChange(context);
           store.setReportDate({ month: item.month, day: item.day });
           store.setBucket('today', orInitial([...item.todayProjects]));
           store.setBucket('tomorrow', orInitial([...item.tomorrowProjects]));
+          finish();
           callbacks.current.onReplaced();
           toast.success(`${item.month}월 ${item.day}일 보고서를 불러왔습니다.`);
           return toolText(currentFormSnapshot());
@@ -601,16 +650,18 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
         kind: 'reset',
         description: 'Clear the report form. Saved history is not deleted. Shows a confirmation.',
         inputSchema: { type: 'object', properties: {} },
-        execute: async (_input, { confirm }) => {
+        execute: async (_input, context) => {
           if (!formHasContent()) return toolText({ changed: false, message: '폼이 이미 비어 있습니다.' });
-          const ok = await confirm({
+          const ok = await context.confirm({
             title: '폼 초기화',
             description: '작성 중인 내용이 모두 초기화됩니다. 저장된 기록은 그대로 남습니다.',
             confirmText: '초기화',
             variant: 'danger',
           });
           if (!ok) return toolError('사용자가 초기화를 취소했습니다.');
+          const finish = beginFormChange(context);
           useReportFormStore.getState().resetForm();
+          finish();
           callbacks.current.onReplaced();
           toast.success('보고서 폼을 초기화했습니다.');
           return toolText({ changed: true, ...currentFormSnapshot() });
@@ -628,14 +679,14 @@ export const useReportAgentTools = ({ enabled, onSaved, onReplaced, onOpenGithub
             format: { type: 'string', enum: ['txt', 'json'], description: 'File format. Defaults to txt' },
           },
         },
-        execute: async (input, { confirm }) => {
+        execute: async (input, context) => {
           const format = input.format ?? 'txt';
           if (format !== 'txt' && format !== 'json') return toolError('format 은 "txt" 또는 "json" 이어야 합니다.');
           const items = await useReportHistoryStore.getState().fetchAllHistory();
           if (!items) return toolError('보고서 기록을 불러오지 못했습니다.');
           if (items.length === 0) return toolError('내보낼 기록이 없습니다.');
 
-          const ok = await confirm({
+          const ok = await context.confirm({
             title: '기록 내보내기',
             description: `보고서 기록 ${items.length}건을 ${format === 'txt' ? '텍스트(.txt)' : 'JSON(.json)'} 파일로 내려받습니다.`,
             confirmText: '내려받기',

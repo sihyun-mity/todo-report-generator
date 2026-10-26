@@ -35,5 +35,10 @@ declare class LanguageModel {
   // 청크는 직전 청크 이후 새로 생성된 부분(delta)이다
   promptStreaming(input: string, options?: LanguageModelPromptOptions): ReadableStream<string>;
   clone(options?: { signal?: AbortSignal }): Promise<LanguageModel>;
+  // 컨텍스트 창(토큰)과 지금까지 쓴 양. 예전 이름(inputQuota·inputUsage·measureInputUsage)은 웹에서 제거됐다.
+  // 지원하지 않는 버전을 위해 optional 로 둔다.
+  readonly contextWindow?: number;
+  readonly contextUsage?: number;
+  measureContextUsage?(input: string, options?: LanguageModelPromptOptions): Promise<number>;
   destroy(): void;
 }

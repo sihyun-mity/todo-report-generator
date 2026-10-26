@@ -17,6 +17,7 @@ export * from './promise';
 export * from './query';
 export * from './ref';
 export * from './report';
+export * from './report-diff';
 export * from './report-export';
 export * from './scroll';
 export * from './user-agent';

@@ -2,4 +2,8 @@ export * from './agent-assistant';
 export * from './agent-busy-guard';
 export * from './agent-chat-button';
 export * from './agent-chat-panel';
+export * from './agent-layout-shell';
+export * from './report-live-preview';
 export * from './use-global-agent-tools';
+export * from './use-agent-recommendations';
+export * from './use-speech-input';

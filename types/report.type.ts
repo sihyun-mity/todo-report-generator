@@ -139,3 +139,10 @@ export type ReportHistoryStore = {
   fetchAllHistory: () => Promise<Array<ReportHistoryItem> | null>;
   reset: () => void;
 };
+
+// 보고서 폼 한 시점의 상태 — AI 도우미 변경 카드의 차이 계산·되돌리기에 쓴다
+export type ReportFormSnapshot = {
+  reportDate: ReportDate;
+  today: ReadonlyArray<Project>;
+  tomorrow: ReadonlyArray<Project>;
+};

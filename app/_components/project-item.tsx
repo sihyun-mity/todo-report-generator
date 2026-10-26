@@ -5,7 +5,8 @@ import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Project, Task } from '@/types';
-import { createId } from '@/utils';
+import { cn, createId } from '@/utils';
+import { useAgentHighlightStore } from '@/stores';
 import { useSignalEffect } from '@/hooks';
 import { TaskItem, type RemoveOptions, type TaskFocusField } from '.';
 
@@ -175,6 +176,7 @@ export const ProjectItem = ({
   // SortableContext items는 참조가 안정적이어야 한다 — 매 렌더 새 배열이면 dnd-kit이 매 프레임
   // "항목 변경"으로 오인해(itemsHaveChanged) 변위되는 작업에 transition을 꺼 애니메이션 없이 점프한다.
   const taskIds = useMemo(() => project.tasks.map((t) => t.id), [project.tasks]);
+  const isAgentChanged = useAgentHighlightStore((s) => s.ids.has(project.id));
 
   return (
     <div
@@ -182,7 +184,8 @@ export const ProjectItem = ({
       style={style}
       className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-700/50"
     >
-      <div className="mb-4 flex items-center gap-1 sm:gap-2">
+      {/* AI 도우미가 새로 만든 프로젝트면 머리줄을 잠깐 강조한다 */}
+      <div className={cn('mb-4 flex items-center gap-1 rounded-md sm:gap-2', isAgentChanged && 'animate-agent-flash')}>
         <button
           type="button"
           {...attributes}

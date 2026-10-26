@@ -128,13 +128,23 @@ export function useGlobalAgentTools() {
           properties: { theme: { type: 'string', enum: ['light', 'dark', 'system'], description: 'Color theme' } },
           required: ['theme'],
         },
-        execute: async (input) => {
+        execute: async (input, context) => {
           const next = input.theme;
           if (next !== 'light' && next !== 'dark' && next !== 'system')
             return toolError('theme 은 "light", "dark", "system" 중 하나여야 합니다.');
-          if (latest.current.theme === next) return toolText({ changed: false, theme: next });
+          const prev = latest.current.theme;
+          if (prev === next) return toolText({ changed: false, theme: next });
           latest.current.setTheme(next);
           toast.success(`${THEME_LABELS[next]}로 변경되었습니다.`);
+          context.reportChange?.({
+            lines: [`화면 모드 ${THEME_LABELS[prev]} → ${THEME_LABELS[next]}`],
+            // 그사이 사용자가 직접 바꿨으면 되돌리지 않는다
+            undo: () => {
+              if (latest.current.theme !== next) return false;
+              latest.current.setTheme(prev);
+              return true;
+            },
+          });
           return toolText({ changed: true, theme: next });
         },
       },

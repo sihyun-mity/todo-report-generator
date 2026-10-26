@@ -1,11 +1,18 @@
 import { Suspense } from 'react';
-import { AgentAssistant, AgentBusyGuard, AppTopBar, PasskeyRegisterBanner, ThemePromptDialog } from '@/components';
+import {
+  AgentAssistant,
+  AgentBusyGuard,
+  AgentLayoutShell,
+  AppTopBar,
+  PasskeyRegisterBanner,
+  ThemePromptDialog,
+} from '@/components';
 import { NewsDialogMount } from '@/app/(app)/_components';
 
 export default function AppLayout({ children }: LayoutProps<'/'>) {
-  // isolate: 배경 이펙트(-z-10 canvas)가 이 div 의 bg 위·콘텐츠 아래에 정확히 끼도록 스태킹 컨텍스트를 만든다
+  // AgentLayoutShell: 바깥 틀(isolate 스태킹 컨텍스트). AI 모드로 열리면 데스크톱에서 채팅 열 너비만큼 비운다
   return (
-    <div className="isolate min-h-screen-enhanced bg-background text-foreground">
+    <AgentLayoutShell>
       <AppTopBar />
       {/* AI 도우미가 요청을 처리하는 동안 본문 조작을 막는다(상단바·채팅 패널은 바깥이라 그대로 쓴다) */}
       <AgentBusyGuard>
@@ -23,6 +30,6 @@ export default function AppLayout({ children }: LayoutProps<'/'>) {
       <Suspense>
         <NewsDialogMount />
       </Suspense>
-    </div>
+    </AgentLayoutShell>
   );
 }

@@ -16,7 +16,7 @@ export function AgentChatButton() {
       onClick={toggle}
       aria-expanded={isOpen}
       aria-label="AI 도우미"
-      title="AI 도우미"
+      title="AI 도우미 (⌘K / Ctrl+K)"
       className={cn(
         'flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-all sm:px-3',
         isOpen

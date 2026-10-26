@@ -20,11 +20,15 @@ export const AGENT_NAVIGATE_WAIT_MS = 5_000;
 /** 채팅 한 번의 요청에서 모델이 고를 수 있는 도구 호출 수. 넘기면 지금까지의 결과로 답하게 한다. */
 export const AGENT_CHAT_MAX_TOOL_STEPS = 5;
 
-/** 모델에게 다시 넘기는 최근 대화 수 — Gemini Nano 의 입력 한도가 작아 오래된 대화는 뺀다 */
-export const AGENT_CHAT_HISTORY_TURNS = 12;
+/** 대화 기록은 컨텍스트 창에 맞춰 자른다. measureContextUsage 가 없는 브라우저에서만 이 개수로 자른다 */
+export const AGENT_CHAT_FALLBACK_HISTORY_TURNS = 12;
 
-/** 모델에게 넘기는 도구 결과 한 건의 최대 길이(글자) */
-export const AGENT_CHAT_TOOL_RESULT_MAX_CHARS = 1_800;
+/** 프롬프트를 맞출 때 응답을 위해 남겨 두는 토큰 — 구조화 출력(도구 선택·입력)과 답변 */
+export const AGENT_CHAT_OUTPUT_RESERVE_TOKENS = { structured: 768, answer: 1_024 } as const;
+
+/** 모델에게 넘기는 도구 결과 한 건의 최대 길이(글자). 컨텍스트가 모자라면 MIN 까지 반씩 줄인다 */
+export const AGENT_CHAT_TOOL_RESULT_MAX_CHARS = 6_000;
+export const AGENT_CHAT_TOOL_RESULT_MIN_CHARS = 400;
 
 /** 모델 응답 한 번을 기다리는 최대 시간 — 넘기면 중단하고 오류로 알린다 */
 export const AGENT_CHAT_PROMPT_TIMEOUT_MS = 90_000;
@@ -64,3 +68,24 @@ export const AGENT_CHAT_EXAMPLE_ROTATE_MS = 4_000;
 
 /** 첫 화면에 보여 주는 예시 수 */
 export const AGENT_CHAT_EXAMPLE_COUNT = 4;
+
+/** AI 도우미가 바꾼 칸을 강조하는 시간 — animation.css 의 agent-flash 길이와 맞춘다 */
+export const AGENT_HIGHLIGHT_MS = 2_400;
+
+/** 보고서 날짜를 바꿨을 때 강조 대상으로 쓰는 id */
+export const AGENT_HIGHLIGHT_DATE_ID = 'report-date';
+
+/** 변경 카드에 바로 보여 주는 줄 수 — 넘으면 "외 N건"으로 접는다 */
+export const AGENT_CHANGE_VISIBLE_LINES = 6;
+
+/** AI 모드(도킹) 여부·열림 상태를 기억하는 localStorage 키 */
+export const AGENT_CHAT_LAYOUT_STORAGE_KEY = 'trg:agent-chat-layout';
+
+/** "메모로 보고서 쓰기"에 넣을 수 있는 메모 길이(글자) — Nano 컨텍스트 창(약 9천 토큰)에 프롬프트·응답과 함께 들어가도록 */
+export const AGENT_NOTES_MAX_CHARS = 3_000;
+
+/** 빈 대화 첫 화면에 보여 주는 추천 수 */
+export const AGENT_RECOMMENDATION_LIMIT = 3;
+
+/** 음성을 서버(브라우저 음성 인식 서비스)로 보내는 데 동의했는지 기억하는 localStorage 키 */
+export const AGENT_VOICE_CLOUD_CONSENT_KEY = 'trg:agent-voice-cloud-consent';

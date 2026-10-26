@@ -2,6 +2,9 @@
 
 import { ClipboardPaste, HardDriveDownload } from 'lucide-react';
 import type { ReportDate } from '@/types';
+import { AGENT_HIGHLIGHT_DATE_ID } from '@/constants';
+import { useAgentHighlightStore } from '@/stores';
+import { cn } from '@/utils';
 import { DatePicker } from '.';
 
 type ReportHeaderProps = {
@@ -22,6 +25,8 @@ export const ReportHeader = ({
   onOpenImport,
   onImportLocal,
 }: Readonly<ReportHeaderProps>) => {
+  // AI 도우미가 보고서 날짜를 바꿨으면 날짜 선택을 잠깐 강조한다
+  const isDateChanged = useAgentHighlightStore((s) => s.ids.has(AGENT_HIGHLIGHT_DATE_ID));
   return (
     <header className="mb-10">
       <h1 className="mb-1 text-2xl font-extrabold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
@@ -31,7 +36,9 @@ export const ReportHeader = ({
         프로젝트별 진행률을 적으면 보고서 양식이 자동으로 만들어집니다.
       </p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <DatePicker value={reportDate} onChange={onChangeDate} />
+        <div className={cn('rounded-lg', isDateChanged && 'animate-agent-flash')}>
+          <DatePicker value={reportDate} onChange={onChangeDate} />
+        </div>
         <button onClick={onOpenImport} className={actionButtonClass} title="기존 보고서 텍스트를 붙여넣어 복원">
           <ClipboardPaste size={14} />
           텍스트로 복원

@@ -5,7 +5,8 @@ import { GripVertical, ListPlus, Trash2 } from 'lucide-react';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task } from '@/types';
-import { createId } from '@/utils';
+import { cn, createId } from '@/utils';
+import { useAgentHighlightStore } from '@/stores';
 import { useSignalEffect } from '@/hooks';
 import { ProgressInput, TaskDetailItem, type RemoveOptions } from '.';
 
@@ -134,10 +135,14 @@ export const TaskItem = ({
   // SortableContext items는 참조가 안정적이어야 한다 — 매 렌더 새 배열이면 dnd-kit이 매 프레임
   // "항목 변경"으로 오인해(itemsHaveChanged) 변위되는 세부 항목의 transition을 꺼 애니메이션 없이 점프한다.
   const detailIds = useMemo(() => task.details.map((d) => d.id), [task.details]);
+  const isAgentChanged = useAgentHighlightStore((s) => s.ids.has(task.id));
 
   return (
     <div ref={setNodeRef} style={style}>
-      <div className="flex items-center gap-1 sm:gap-1.5">
+      <div
+        // AI 도우미가 바꾼 작업이면 잠깐 강조한다. key 로 다시 그리지 않는다 — 입력칸이 다시 마운트돼 포커스를 잃는다.
+        className={cn('flex items-center gap-1 rounded-md sm:gap-1.5', isAgentChanged && 'animate-agent-flash')}
+      >
         <button
           type="button"
           {...attributes}
