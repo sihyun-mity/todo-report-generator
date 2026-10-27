@@ -16,10 +16,10 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import type { CommitImportPlan, PlannedProject, PlannedTask, Project } from '@/types';
+import type { CommitImportPlan, PlannedProject, PlannedTask, Project, Task } from '@/types';
 import { useDismissOnBack } from '@/components';
 import { useDismissLayer, useResetOnHide } from '@/hooks';
-import { cn, createId } from '@/utils';
+import { addsToExistingTask, cn, createId } from '@/utils';
 import { ProgressInput } from '.';
 
 type GithubImportPreviewProps = {
@@ -114,20 +114,17 @@ function StatusBadge({ isNew, newLabel, existingLabel }: Readonly<BadgeProps>) {
   );
 }
 
-// 전에 가져와 보고서에 넣은 작업과 비슷해 가져오기를 해제해 둔 작업 — 어느 작업과 비슷한지 함께 알린다
-// 기존 작업(isExisting)이면 이미 보고한 커밋만 붙은 경우다
-function SimilarBadge({ name, isExisting }: Readonly<{ name: string; isExisting: boolean }>) {
-  const description = isExisting
-    ? `“${name}” 작업에 이미 보고한 커밋뿐이에요`
-    : `전에 등록한 “${name}” 작업과 비슷해요`;
+// 이미 넣은 작업과 같아 가져오기를 해제해 두었거나(similarTo), 폼의 같은 작업에 더할 게 없는 작업 — 어느 작업과 같은지 함께 알린다.
+// 폼의 그 작업 자체면(기존 작업) "이미 등록된 작업", 이름이 비슷해 같은 작업으로 본 새 작업이면 "기존 작업과 유사"다.
+function SimilarBadge({ label, description }: Readonly<{ label: string; description: string }>) {
   return (
     <span
       title={description}
-      aria-label={`기존 작업과 유사 — ${description}`}
+      aria-label={`${label} — ${description}`}
       className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
     >
       <History size={11} aria-hidden />
-      기존 작업과 유사
+      {label}
     </span>
   );
 }
@@ -222,7 +219,7 @@ function ProjectBlock({
           <TaskBlock
             key={task.key}
             task={task}
-            previousProgress={source?.tasks.find((t) => t.id === task.existingTaskId)?.progress ?? null}
+            formTask={source?.tasks.find((t) => t.id === task.existingTaskId)}
             onUpdate={(updater) => onUpdateTask(task.key, updater)}
           />
         ))}
@@ -233,14 +230,17 @@ function ProjectBlock({
 
 type TaskBlockProps = {
   task: PlannedTask;
-  // 기존 작업이면 폼에 적혀 있던 진행률 — 바뀌는지 보여준다
-  previousProgress: number | null;
+  // 기존 작업이면 폼에 적혀 있는 그 작업 — 진행률이 바뀌는지, 더할 게 있는지 보여준다
+  formTask: Task | undefined;
   onUpdate: (updater: (task: PlannedTask) => PlannedTask) => void;
 };
 
-function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps>) {
+function TaskBlock({ task, formTask, onUpdate }: Readonly<TaskBlockProps>) {
   const isNew = task.existingTaskId === null;
+  const previousProgress = formTask?.progress ?? null;
   const progressChanged = previousProgress !== null && previousProgress !== task.progress;
+  // 기존 작업과 이름이 같고 진행률도 그대로이며 폼에 없는 세부 항목도 없으면 가져와도 바뀌는 게 없다
+  const addsNothing = !addsToExistingTask(task, formTask);
   const [isCommitsOpen, setIsCommitsOpen] = useState(false);
   // 방금 추가한 세부 항목으로 포커스를 보낸다(폼의 세부 항목 추가와 같은 흐름)
   const [focusDetailKey, setFocusDetailKey] = useState<string | null>(null);
@@ -255,7 +255,7 @@ function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps
   const removeDetail = (key: string) => onUpdate((t) => ({ ...t, details: t.details.filter((d) => d.key !== key) }));
 
   return (
-    <div className={cn('transition-opacity', !task.included && 'opacity-50')}>
+    <div className={cn('transition-opacity', (!task.included || addsNothing) && 'opacity-50')}>
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         {/* 이 작업을 폼에 반영할지 — 세부 항목과 헷갈리지 않게 작업 머리줄 맨 앞에 둔다 */}
         {/* 실제 input 은 숨기고(sr-only) 그린 박스로 보여준다 — 커스텀 포인터가 input 과 label 을 따로 하이라이트하지 않고 머리줄 하나로 감싼다 */}
@@ -280,7 +280,20 @@ function TaskBlock({ task, previousProgress, onUpdate }: Readonly<TaskBlockProps
           가져오기
         </label>
         {task.similarTo !== null ? (
-          <SimilarBadge name={task.similarTo} isExisting={!isNew} />
+          <SimilarBadge
+            label={isNew ? '기존 작업과 유사' : '이미 등록된 작업'}
+            description={
+              isNew
+                ? `전에 등록한 “${task.similarTo}” 작업과 비슷해요`
+                : `“${task.similarTo}” 작업에 이미 보고한 커밋뿐이에요`
+            }
+          />
+        ) : addsNothing ? (
+          // 기존 작업과 이름이 같고 세부 항목도 진행률도 더하지 않으면 이미 넣은 작업과 다를 게 없다
+          <SimilarBadge
+            label={isNew ? '기존 작업과 유사' : '이미 등록된 작업'}
+            description={`폼에 같은 “${task.content}” 작업이 있어요. 세부 항목을 넣거나 진행률을 바꾸면 그 내용만 반영돼요`}
+          />
         ) : (
           <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
         )}

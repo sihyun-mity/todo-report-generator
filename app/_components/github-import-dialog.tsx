@@ -75,7 +75,7 @@ import {
 } from '@/lib/commit-classifier/prompt-api';
 import { createClient } from '@/lib/supabase/client';
 import { queries } from '@/providers';
-import { cn } from '@/utils';
+import { addsToExistingTask, cn } from '@/utils';
 import { CommitAuthorsMenu, ExcludedReposMenu, GithubImportPreview, GithubRepoGaps } from '.';
 
 type GithubImportDialogProps = {
@@ -160,23 +160,32 @@ const removeRepoFromPlan = (plan: CommitImportPlan, repo: string): CommitImportP
     .filter((p) => p.tasks.length > 0),
 });
 
-const isApplicable = (task: PlannedTask) => task.included && task.content.trim() !== '';
+// 폼의 작업 — 기존 작업에 붙은 계획 작업이 더하는 게 있는지 견줄 때 쓴다
+const findFormTask = (projects: ReadonlyArray<Project>, taskId: string | null) =>
+  taskId === null ? undefined : projects.flatMap((p) => p.tasks).find((t) => t.id === taskId);
+
+// 체크했고, 폼에 실제로 더하는 게 있는 작업만 센다 — 작업명이 같은 기존 작업에서 세부 항목을 모두 지우면(진행률도 그대로면)
+// 넣을 게 없어 "기존 작업에 추가"로 세지 않는다
+const isApplicable = (task: PlannedTask, projects: ReadonlyArray<Project>) =>
+  task.included && task.content.trim() !== '' && addsToExistingTask(task, findFormTask(projects, task.existingTaskId));
 
 // 미리보기 상단 요약 — 체크한 작업 기준으로 센다
-const summarize = (plan: CommitImportPlan) => {
-  const tasks = plan.projects.flatMap((p) => p.tasks.filter(isApplicable));
+const summarize = (plan: CommitImportPlan, projects: ReadonlyArray<Project>) => {
+  const tasks = plan.projects.flatMap((p) => p.tasks.filter((t) => isApplicable(t, projects)));
   return {
     linkedTasks: tasks.filter((t) => t.existingTaskId !== null).length,
     newTasks: tasks.filter((t) => t.existingTaskId === null).length,
-    newProjects: plan.projects.filter((p) => p.existingProjectId === null && p.tasks.some(isApplicable)).length,
+    newProjects: plan.projects.filter(
+      (p) => p.existingProjectId === null && p.tasks.some((t) => isApplicable(t, projects))
+    ).length,
     repos: new Set(plan.projects.flatMap((p) => p.repos)).size,
     // 미리보기에서 저장소를 제외하면 줄어든다
     commits: plan.projects.reduce((sum, p) => sum + p.tasks.reduce((s, t) => s + t.commits.length, 0), 0),
   };
 };
 
-const countIncluded = (plan: CommitImportPlan) =>
-  plan.projects.reduce((sum, p) => sum + p.tasks.filter(isApplicable).length, 0);
+const countIncluded = (plan: CommitImportPlan, projects: ReadonlyArray<Project>) =>
+  plan.projects.reduce((sum, p) => sum + p.tasks.filter((t) => isApplicable(t, projects)).length, 0);
 
 // 열려 있는 동안만 마운트된다(부모가 조건부 렌더). 닫으면 state 가 통째로 사라져 다음에 새로 조회한다.
 // 흐름: 연결 확인 → (미연결이면 OAuth 안내) → 커밋 조회(Server Action) → 온디바이스 분류 → 미리보기 편집 → 적용
@@ -449,10 +458,12 @@ export function GithubImportDialog({
     }
   };
 
-  const included = draft ? countIncluded(draft) : 0;
+  const included = draft ? countIncluded(draft, todayProjects) : 0;
+  // 체크는 했지만 모두 폼에 이미 있는 그대로인 작업이면 고를 게 아니라 넣을 게 없다고 알린다
+  const hasChecked = draft?.projects.some((p) => p.tasks.some((t) => t.included && t.content.trim())) ?? false;
   const canDownloadModel = draft?.aiAvailability === 'downloadable' || draft?.aiAvailability === 'downloading';
 
-  const summary = draft ? summarize(draft) : null;
+  const summary = draft ? summarize(draft, todayProjects) : null;
   const isClassifyDone = progress?.current === null;
   // 본문이 미리보기를 보여 주는 동안에만 하단에 적용 버튼을 둔다(연결 안내·오류·내려받기 화면에서는 닫기만)
   const preview = isMember && isConnected && hasCommits && !plan.isError && modelDownload === null ? draft : null;
@@ -689,7 +700,11 @@ export function GithubImportDialog({
                   onClick={() => onApply(preview, draftSource)}
                   className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 font-bold text-white transition-all hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
                 >
-                  {included > 0 ? '작업 추가' : '추가할 작업을 선택해 주세요'}
+                  {included > 0
+                    ? '작업 추가'
+                    : hasChecked
+                      ? '이미 등록된 작업이라 추가할 내용이 없어요'
+                      : '추가할 작업을 선택해 주세요'}
                 </button>
               )}
             </div>

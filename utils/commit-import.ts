@@ -60,6 +60,22 @@ export const commitScopeKey = (commit: Pick<GithubCommit, 'repo' | 'message'>): 
   return scope ? `${commit.repo}#${scope}` : null;
 };
 
+/**
+ * 기존 작업에 붙은 계획 작업이 폼에 실제로 더하는 게 있는지 — 진행률이 바뀌거나 폼에 없는 세부 항목이 있을 때만이다.
+ * 작업명이 같고 세부 항목만 제안된 작업은 사용자가 세부 항목을 지우면 넣을 게 없다. 이때도 "기존 작업에 추가"로
+ * 세고 가져올 수 있게 두면 아무것도 바뀌지 않는 가져오기가 된다. 새 작업이거나 폼에서 그 작업을 찾지 못하면(새 작업으로
+ * 들어간다) 늘 true.
+ */
+export const addsToExistingTask = (
+  task: Pick<PlannedTask, 'existingTaskId' | 'progress' | 'details'>,
+  formTask: Pick<Task, 'progress' | 'details'> | undefined
+): boolean => {
+  if (task.existingTaskId === null || !formTask) return true;
+  if (task.progress !== formTask.progress) return true;
+  const known = new Set(formTask.details.map((d) => d.content.trim()));
+  return task.details.some((d) => d.content.trim() !== '' && !known.has(d.content.trim()));
+};
+
 // 미리보기에서 확정한 계획을 금일 프로젝트 목록에 병합한다. 기존 내용은 지우지 않고 더하기만 한다.
 // - 체크한 작업만 반영한다. 새 작업 / 새 프로젝트는 뒤에 추가하고, 폼이 초기 빈 상태면 그 빈 프로젝트를 대체한다.
 // - 기존 작업: 진행률을 계획 값으로 맞추고 세부 항목을 덧붙인다(같은 문구는 건너뜀).
