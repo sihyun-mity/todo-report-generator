@@ -37,7 +37,7 @@ export function AgentMessage({
         <div className="flex flex-col items-end gap-1">
           <p
             className={cn(
-              'w-fit max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2 text-sm whitespace-pre-wrap text-white',
+              'w-fit max-w-[85%] rounded-2xl rounded-br-md px-3.5 py-2 text-sm wrap-anywhere whitespace-pre-wrap text-white',
               message.cancelled ? 'bg-blue-500/40 dark:bg-blue-500/30' : 'bg-blue-500'
             )}
           >
@@ -50,7 +50,7 @@ export function AgentMessage({
       return (
         // w-fit: 블록 요소라 짧은 답도 최대 폭까지 늘어나던 것을 글 길이에 맞춘다. 모델이 끝에 붙이는 빈 줄은 떼어 낸다.
         <div className="space-y-2">
-          <p className="w-fit max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
+          <p className="w-fit max-w-[90%] rounded-2xl rounded-bl-md bg-zinc-100 px-3.5 py-2 text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
             {message.text.trim()}
             {message.streaming && (
               <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
@@ -77,7 +77,7 @@ export function AgentMessage({
             ) : (
               <AlertCircle size={14} className="shrink-0 text-amber-500" aria-hidden />
             )}
-            <span>
+            <span className="min-w-0 wrap-anywhere">
               {message.title}
               {message.status === 'running' ? ' 실행 중' : message.status === 'done' ? ' 완료' : ' 실패'}
             </span>
@@ -97,9 +97,9 @@ export function AgentMessage({
       const isDanger = options.variant === 'danger';
       return (
         <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
-          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{options.title}</p>
+          <p className="text-sm font-semibold wrap-anywhere text-zinc-900 dark:text-zinc-100">{options.title}</p>
           {options.description && (
-            <div className="mt-1 text-xs leading-relaxed whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
+            <div className="mt-1 text-xs leading-relaxed wrap-anywhere whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
               {options.description}
             </div>
           )}
@@ -143,7 +143,7 @@ export function AgentMessage({
       );
     case 'error':
       return (
-        <p className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+        <p className="flex items-start gap-2 text-xs wrap-anywhere text-red-600 dark:text-red-400">
           <AlertCircle size={14} className="mt-px shrink-0" aria-hidden />
           {message.text}
         </p>
@@ -186,7 +186,7 @@ function ThinkingTrace({ steps, done }: Readonly<{ steps: ReadonlyArray<AgentThi
               ) : (
                 <Check size={11} className="mt-0.5 shrink-0 text-emerald-500" aria-hidden />
               )}
-              <span className="min-w-0">
+              <span className="min-w-0 wrap-anywhere">
                 <span className="text-zinc-600 dark:text-zinc-300">{step.label}</span>
                 {step.detail && (
                   <span className="block truncate font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
@@ -219,7 +219,7 @@ function ChangeCard({ lines, undo, isRunning, onUndo }: Readonly<ChangeCardProps
           <li
             key={`${index}-${line}`}
             className={cn(
-              'break-all',
+              'wrap-anywhere',
               line.startsWith('＋') && 'text-green-700 dark:text-green-400',
               line.startsWith('－') && 'text-red-600 line-through decoration-red-300 dark:text-red-400'
             )}
@@ -294,11 +294,11 @@ function DraftCard({ draft, status, isRunning, onApply, onDiscard }: Readonly<Dr
             <ul className="mt-1 space-y-1">
               {section.projects.map((project) => (
                 <li key={project.name} className="text-xs text-zinc-700 dark:text-zinc-200">
-                  <p className="font-semibold">{project.name}</p>
+                  <p className="font-semibold wrap-anywhere">{project.name}</p>
                   <ul className="ml-3">
                     {project.tasks.map((task) => (
                       <li key={task.content} className="flex justify-between gap-2">
-                        <span className="min-w-0 break-all">· {task.content}</span>
+                        <span className="min-w-0 wrap-anywhere">· {task.content}</span>
                         <span className="shrink-0 text-zinc-400 tabular-nums">{task.progress}%</span>
                       </li>
                     ))}

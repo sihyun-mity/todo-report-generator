@@ -224,7 +224,7 @@ export function ReportHistory({
               className="-my-1 -mr-1.5 hover:bg-white dark:hover:bg-zinc-800"
             />
           </div>
-          <pre className="mb-3 max-h-60 overflow-auto rounded-md border border-blue-100 bg-white p-3 text-[11px] whitespace-pre-wrap text-zinc-700 dark:border-blue-900/40 dark:bg-background/50 dark:text-zinc-200">
+          <pre className="mb-3 max-h-60 overflow-auto rounded-md border border-blue-100 bg-white p-3 text-[11px] wrap-anywhere whitespace-pre-wrap text-zinc-700 dark:border-blue-900/40 dark:bg-background/50 dark:text-zinc-200">
             {selectedItem.content}
           </pre>
           <span className="mb-3 block text-[10px] text-zinc-400">

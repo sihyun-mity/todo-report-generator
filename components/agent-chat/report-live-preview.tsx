@@ -35,7 +35,7 @@ export function ReportLivePreview() {
         />
       </button>
       {isExpanded && (
-        <pre className="max-h-48 overflow-y-auto px-4 pb-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-zinc-700 select-text dark:text-zinc-200">
+        <pre className="max-h-48 overflow-y-auto px-4 pb-3 font-mono text-[11px] leading-relaxed wrap-anywhere whitespace-pre-wrap text-zinc-700 select-text dark:text-zinc-200">
           {text}
         </pre>
       )}

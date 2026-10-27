@@ -77,7 +77,7 @@ export function ReportPreviewDialog({
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
-            <pre className="rounded-lg border border-zinc-100 bg-zinc-50 p-5 text-base leading-relaxed whitespace-pre-wrap text-zinc-700 dark:border-zinc-700/30 dark:bg-background/50 dark:text-zinc-200">
+            <pre className="rounded-lg border border-zinc-100 bg-zinc-50 p-5 text-base leading-relaxed wrap-anywhere whitespace-pre-wrap text-zinc-700 dark:border-zinc-700/30 dark:bg-background/50 dark:text-zinc-200">
               {text}
             </pre>
           </div>
