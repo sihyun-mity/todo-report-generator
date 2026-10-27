@@ -256,14 +256,22 @@ const DELETE_REQUEST = /삭제|지워|지우|빼|없애|제거|날려|치워/;
 // 의도 분류를 믿지 않기로 했을 때 요청의 말로 종류를 가늠한다 — 전체 도구에서 다시 고르게 하면 엉뚱한 일을 골랐다
 // ("내일 할 일에도 넣어줘"를 화면 이동으로 분류한 뒤 전체 도구에서 GitHub 가져오기를 열었다)
 const EDIT_REQUEST = /이름|바꿔|고쳐|수정|변경|진행률|날짜|순서/;
+// 화면을 열거나 옮겨 가라는 말 — "이동"은 작업 옮기기에도 쓰여 화면을 가리킬 때만 센다
+const OPEN_SCREEN_REQUEST = /열어|띄워|들어가|가\s*줘|가자|갈래|돌아가|(화면|페이지|설정|홈|새소식)[^.?!]*이동/;
+// 화면 모드는 "바꿔"보다 먼저 본다 — "다크 모드로 바꿔줘"가 고치기로 가지 않게.
+// 화면 모드·이동을 보지 않던 때는 "어둡게 해줘"가 전체 도구로 넘어가 앞에서 처리하지 못한 "계정 설정 열어줘"를 대신 실행했다
 const kindFromWords = (request: string): AgentToolKind | 'any' =>
-  ADD_REQUEST.test(request)
-    ? 'add'
-    : DELETE_REQUEST.test(request) || EDIT_REQUEST.test(request)
-      ? 'edit'
-      : QUESTION_REQUEST.test(request)
-        ? 'read'
-        : 'any';
+  THEME_REQUEST.test(request)
+    ? 'setting'
+    : ADD_REQUEST.test(request)
+      ? 'add'
+      : DELETE_REQUEST.test(request) || EDIT_REQUEST.test(request)
+        ? 'edit'
+        : OPEN_SCREEN_REQUEST.test(request)
+          ? 'navigate'
+          : QUESTION_REQUEST.test(request)
+            ? 'read'
+            : 'any';
 // 통째로 바꾸기(교체·불러오기·텍스트 적용)라는 말
 const REWRITE_REQUEST =
   /통째|전부|전체|새로|하나로|로만|만\s*남기|불러|가져|텍스트|붙여|복원|적용|다시\s*써|비우고|교체/;
@@ -1045,6 +1053,13 @@ export async function runAgentChatTurn({
       intentNote = 'the first guess was wrong; decide only from what the request asks';
       think('intent', '요청 이해: 화면 모드 요청이 아니라 다시 찾아볼게요', 'done');
     }
+    // 폼 비우기 의도인데 비우라는 말이 없으면 믿지 않는다 — 도구를 고른 뒤에야 막으면 고치기 도구로만 다시 골라
+    // "계정 설정 열어줘"(앞 요청이 초기화였다)를 처리하지 못하고 엉뚱하게 답했다
+    if (kind === 'reset' && !KIND_GUARDS.reset!.pattern.test(request)) {
+      kind = kindFromWords(request);
+      intentNote = 'the user did not ask to clear the form; decide only from what the request asks';
+      think('intent', '요청 이해: 폼 비우기가 아니라 다시 찾아볼게요', 'done');
+    }
     // 추가 의도인데 넣으라는 말이 없으면 믿지 않는다 — "먹깨비 React 개발 프로젝트는 삭제해줘"를 추가로 골라 작업 추가를 실행했다
     if (kind === 'add' && !ADD_REQUEST.test(request)) {
       kind = kindFromWords(request);
@@ -1496,7 +1511,9 @@ export async function runAgentChatTurn({
       // 요청 문장에 그 뜻이 없으면 큰 동작(초기화)을 실행하지 않고 다른 종류의 도구로 다시 고른다
       const guard = KIND_GUARDS[tool.kind];
       if (guard && !guard.pattern.test(request)) {
-        kind = guard.fallback;
+        // 요청의 말로 종류를 가늠한다 — 고정 대체 종류(고치기)로만 돌리면 "열어줘" 같은 요청이 갈 곳이 없었다
+        const words = kindFromWords(request);
+        kind = words !== 'any' && words !== tool.kind ? words : guard.fallback;
         lockIfForm(kind);
         continue;
       }

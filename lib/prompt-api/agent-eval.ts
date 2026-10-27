@@ -229,6 +229,16 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
     turns: [{ say: '작성 중인 거 전부 비워줘', expect: ['reset_report_form'] }],
     check: (form) => (tasksOf(form.today).length === 0 ? null : '비워지지 않았다'),
   },
+  // 초기화 뒤의 다른 요청을 초기화로 분류해 처리하지 못했고, 그 요청이 다음 "어둡게 해줘"에서 대신 실행됐다
+  {
+    name: '초기화 뒤 다른 요청',
+    form: BASE_FORM,
+    turns: [
+      { say: '작성 내용 초기화해줘', expect: ['reset_report_form'] },
+      { say: '계정 설정 열어줘', expect: ['navigate'], forbid: ['reset_report_form'] },
+      { say: '어둡게 해줘', expect: ['set_theme'], forbid: ['navigate'] },
+    ],
+  },
   {
     name: '할 수 없는 일',
     form: BASE_FORM,
