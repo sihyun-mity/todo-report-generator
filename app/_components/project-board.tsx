@@ -22,7 +22,9 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { Project, ProjectsBucket, Task, TaskDetail } from '@/types';
 import { useReportFormStore } from '@/stores';
-import { ProjectItemPreview, TaskDetailItemPreview, TaskItemPreview } from '.';
+import { useAgentHighlightStore } from '@/stores';
+import { findTodayGoal, settleTodayGoalDrop } from '@/utils';
+import { ProjectItemPreview, TaskDetailItemPreview, TaskItemPreview, placeGoalsWithFlash } from '.';
 
 const BUCKETS: ReadonlyArray<ProjectsBucket> = ['today', 'tomorrow'];
 
@@ -174,18 +176,21 @@ const findDetailDropTarget = (
 // - 세부 항목 드래그: 모든 세부 항목(자기 자신 포함) + 작업(세부 항목이 없는 작업 포함) droppable만.
 // 추가로, 포인터가 어떤 droppable 위에도 없으면(리스트 바깥) 대상 없음(over=null)으로 둔다 →
 // 그대로 놓으면 handleDragEnd가 원래 상태로 초기화한다(Esc 취소와 동일 결과).
+// - 오늘의 목표 드래그: 버킷 + 프로젝트 + 작업 droppable만 — 놓은 작업 자리(또는 프로젝트 끝·버킷)에 목표를 넣는다.
 const collisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
-  const { today, tomorrow } = useReportFormStore.getState();
+  const { today, tomorrow, goals } = useReportFormStore.getState();
   const allProjects = [...today, ...tomorrow];
   const allTasks = allProjects.flatMap((p) => p.tasks);
   const projectIds = new Set(allProjects.map((p) => p.id));
   const taskIds = new Set(allTasks.map((t) => t.id));
   const isProjectDrag = projectIds.has(activeId);
   const isTaskDrag = taskIds.has(activeId);
+  const isGoalDrag = findTodayGoal(goals, activeId) !== null;
 
   const containers = args.droppableContainers.filter((c) => {
     const id = String(c.id);
+    if (isGoalDrag) return id === 'today' || id === 'tomorrow' || projectIds.has(id) || taskIds.has(id);
     if (isProjectDrag) return id === 'today' || id === 'tomorrow' || projectIds.has(id);
     if (isTaskDrag) return projectIds.has(id) || taskIds.has(id);
     // 세부 항목 드래그 — 세부 항목 자신은 위 두 집합 어디에도 없으므로 여집합으로 걸러낸다.
@@ -208,9 +213,11 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
   // DndContext가 자동 생성하는 id는 SSR/CSR에서 달라져 hydration 경고가 난다 — useId로 고정.
   const dndContextId = useId();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeType, setActiveType] = useState<'project' | 'task' | 'detail' | null>(null);
+  const [activeType, setActiveType] = useState<'project' | 'task' | 'detail' | 'goal' | null>(null);
   // 드래그 취소 시 onDragOver로 옮겨둔 상태를 되돌리기 위한 스냅샷.
-  const snapshotRef = useRef<{ today: Array<Project>; tomorrow: Array<Project> } | null>(null);
+  const snapshotRef = useRef<{ today: Array<Project>; tomorrow: Array<Project>; goals: Array<Project> } | null>(null);
+  // 끌고 있는 오늘의 목표 — 보드에 들어가면 목표 목록에서 빠지므로 미리보기·놓은 뒤 정리에 쓸 원래 모습을 들고 있는다
+  const [activeGoal, setActiveGoal] = useState<{ task: Task; projectName: string } | null>(null);
 
   const today = useReportFormStore((s) => s.today);
   const tomorrow = useReportFormStore((s) => s.tomorrow);
@@ -224,12 +231,15 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
 
   const handleDragStart = (event: DragStartEvent) => {
     const state = useReportFormStore.getState();
-    snapshotRef.current = { today: state.today, tomorrow: state.tomorrow };
+    snapshotRef.current = { today: state.today, tomorrow: state.tomorrow, goals: state.goals };
     const id = String(event.active.id);
     const allProjects = [...state.today, ...state.tomorrow];
     const isProject = allProjects.some((p) => p.id === id);
     const isTask = allProjects.some((p) => p.tasks.some((t) => t.id === id));
-    setActiveType(isProject ? 'project' : isTask ? 'task' : 'detail');
+    const goal = findTodayGoal(state.goals, id);
+    const isGoal = goal !== null;
+    setActiveGoal(goal ? { task: goal.task, projectName: goal.project.name } : null);
+    setActiveType(isGoal ? 'goal' : isProject ? 'project' : isTask ? 'task' : 'detail');
     setActiveId(id);
   };
 
@@ -243,6 +253,24 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
     const activeId = String(active.id);
     const overId = String(over.id);
     const state = useReportFormStore.getState();
+    // 오늘의 목표가 보드에 처음 들어오면 그 자리에 작업으로 끼워 넣는다 — 작업 끌기와 같이 들어갈 자리가 벌어져 보이게.
+    // 그다음부터는 같은 id 의 작업이라 아래 작업 끌기 흐름이 이어서 옮긴다. 빈 프로젝트를 채우는 정리는 놓을 때 한다
+    // (지나가기만 한 프로젝트의 이름이 바뀌지 않게). 밖에 놓거나 Esc 면 스냅샷이 목표 목록까지 되돌린다.
+    if (findTodayGoal(state.goals, activeId)) {
+      if (overId === 'today' || overId === 'tomorrow') {
+        state.placeGoals([activeId], overId);
+        return;
+      }
+      const target = findTaskDropTarget(active, over, state.today, state.tomorrow);
+      if (target)
+        state.placeGoals(
+          [activeId],
+          target.bucket,
+          { projectId: target.projectId, index: target.index },
+          { fillBlank: false }
+        );
+      return;
+    }
 
     // 드래그 종류는 React state(activeType) 대신 실제 id로 판별 — dragStart 직후의 리렌더 타이밍에 의존하지 않는다.
     // 세부 항목 → 작업 → 프로젝트 순으로 좁은 범위부터 확인한다.
@@ -301,18 +329,46 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     const snapshot = snapshotRef.current;
+    const goal = activeGoal;
     setActiveId(null);
     setActiveType(null);
+    setActiveGoal(null);
     snapshotRef.current = null;
     // 유효한 드롭 대상 없이(리스트 바깥에) 놓으면 onDragOver로 옮겨둔 상태를 버리고 원래 자리로 되돌린다.
     if (!over) {
-      if (snapshot) useReportFormStore.setState({ today: snapshot.today, tomorrow: snapshot.tomorrow });
+      if (snapshot) useReportFormStore.setState(snapshot);
       return;
     }
+    dropTask(active, over);
+    // 보드에 들어간 목표 — 빈 프로젝트에 놓았으면 이름을 채우고 빈 줄을 지운 뒤, 들어간 자리를 잠깐 빛나게 한다
+    if (goal) {
+      const id = String(active.id);
+      const state = useReportFormStore.getState();
+      for (const bucket of BUCKETS) {
+        const settled = settleTodayGoalDrop(state[bucket], id, goal.projectName);
+        if (settled) state.setBucket(bucket, settled);
+      }
+      useAgentHighlightStore.getState().flash([id]);
+    }
+  };
+
+  // 놓은 자리 확정 — 컨테이너를 넘는 이동은 onDragOver 가 이미 끝냈고, 여기서는 같은 컨테이너 안의 최종 위치만 정한다
+  const dropTask = (active: Active, over: Over) => {
     const activeId = String(active.id);
     const overId = String(over.id);
     if (activeId === overId) return;
     const state = useReportFormStore.getState();
+
+    // 오늘의 목표: 작업 위면 그 자리, 프로젝트 위면 그 프로젝트 끝, 버킷 빈 곳이면 같은 이름 프로젝트(없으면 새 프로젝트)에 넣는다
+    if (findTodayGoal(state.goals, activeId)) {
+      if (overId === 'today' || overId === 'tomorrow') {
+        placeGoalsWithFlash([activeId], overId);
+        return;
+      }
+      const target = findTaskDropTarget(active, over, state.today, state.tomorrow);
+      if (target) placeGoalsWithFlash([activeId], target.bucket, { projectId: target.projectId, index: target.index });
+      return;
+    }
 
     const activeDetailLoc = findDetailLocation(activeId, state.today, state.tomorrow);
     if (activeDetailLoc) {
@@ -374,19 +430,18 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
 
   const handleDragCancel = () => {
     const snapshot = snapshotRef.current;
-    if (snapshot) {
-      useReportFormStore.setState({ today: snapshot.today, tomorrow: snapshot.tomorrow });
-    }
+    if (snapshot) useReportFormStore.setState(snapshot);
     snapshotRef.current = null;
     setActiveId(null);
     setActiveType(null);
+    setActiveGoal(null);
   };
 
   const allProjects = [...today, ...tomorrow];
   const activeProject =
     activeType === 'project' && activeId ? (allProjects.find((p) => p.id === activeId) ?? null) : null;
   let activeTask: Task | null = null;
-  if (activeType === 'task' && activeId) {
+  if ((activeType === 'task' || activeType === 'goal') && activeId) {
     for (const p of allProjects) {
       const found = p.tasks.find((t) => t.id === activeId);
       if (found) {
@@ -424,6 +479,10 @@ export const ProjectBoard = ({ children }: Readonly<{ children: ReactNode }>) =>
       <DragOverlay>
         {activeProject ? (
           <ProjectItemPreview project={activeProject} />
+        ) : activeGoal ? (
+          // 목표도 작업 하나라 처음부터 작업 미리보기로 보인다 — 목표 전용 모양으로 시작해 보드에 들어가며 바뀌면 다른 항목 끌기와
+          // 달라 보이고 끄는 도중 모양이 튀었다
+          <TaskItemPreview task={activeTask ?? activeGoal.task} />
         ) : activeTask ? (
           <TaskItemPreview task={activeTask} />
         ) : activeDetail ? (

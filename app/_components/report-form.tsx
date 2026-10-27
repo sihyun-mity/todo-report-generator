@@ -1,6 +1,16 @@
 'use client';
 
-import { Dispatch, MouseEvent, SetStateAction, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Dispatch,
+  MouseEvent,
+  SetStateAction,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import toast from 'react-hot-toast';
 import { useIsClient } from 'usehooks-ts';
 import type { CommitImportPlan, Project, ReportDate, ReportHistoryItem } from '@/types';
@@ -18,6 +28,7 @@ import {
   ReportPreview,
   ReportPreviewSkeleton,
   ReportToolbar,
+  TodayGoals,
   getItemDateKey,
   type ProjectListFocusRequest,
   type RemoveOptions,
@@ -30,12 +41,19 @@ import { learnFromSavedReport, rememberCommitImport } from '@/lib/commit-classif
 import {
   applyCommitImportPlan,
   areAllAttemptedProjectsValid,
+  buildTodayGoals,
   cloneProjects,
   commitImportRange,
+  countTodayGoals,
   generateReportText,
   hasProjectContent,
   mergeIncompleteTasks,
+  nextDismissedGoalKeys,
+  readTodayGoalsStorage,
+  resolveTodayGoalsInPlan,
   toDateKey,
+  withTodayGoalCandidates,
+  writeTodayGoalsStorage,
 } from '@/utils';
 
 // 오늘 자정 기준 dateKey ('YYYY-MM-DD'). getItemDateKey와 동일한 형식이라 lexical 비교 가능.
@@ -46,9 +64,6 @@ const todayDateKey = () => {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
-
-// 두 dateKey를 desc 비교 (Array.prototype.sort 콜백용)
-const compareDateKeyDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
 
 // 사용자별로 "로컬 기록 이전 안내 dialog 봤음" 플래그 키
 const importPromptSeenKey = (userId: string) => `report-history-import-prompt-seen:${userId}`;
@@ -83,8 +98,13 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   const hasHydratedFromHistory = useReportFormStore((s) => s.hasHydratedFromHistory);
   const markHydratedFromHistory = useReportFormStore((s) => s.markHydratedFromHistory);
   const resetForm = useReportFormStore((s) => s.resetForm);
+  const goals = useReportFormStore((s) => s.goals);
+  const goalsSourceDateKey = useReportFormStore((s) => s.goalsSourceDateKey);
+  const initGoals = useReportFormStore((s) => s.initGoals);
 
   const today = useProjects('today');
+  // GitHub 가져오기 분류 후보에 섞여 들어가는 오늘의 목표 작업 — 미리보기에서 "오늘의 목표" 로 표시한다
+  const goalTaskIds = useMemo(() => new Set(goals.flatMap((g) => g.tasks.map((t) => t.id))), [goals]);
   const tomorrow = useProjects('tomorrow');
   const {
     history,
@@ -182,10 +202,12 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
 
   // 초기 로드 완료 후 직전 보고서를 폼에 반영한다 (세션당 1회만).
   // - 오늘 작성한 기록이 있으면 그대로 복원해 사용자가 이어서 편집할 수 있게 한다 (연도까지 일치하는 경우만).
-  // - 그 외에는 가장 최근 과거 기록의 '익일 예정' 내용을 금일 프로젝트로 가져온다.
+  // - 오늘 이전 가장 최근 기록의 '익일 예정'은 금일 업무에 바로 넣지 않고 "오늘의 목표"로 둔다 — 사용자가 금일·익일로 옮긴
+  //   작업만 보고서에 들어가고, 옮기지 않은 목표(취소된 일)는 다음 날 오늘 저장한 보고서가 새 출처가 되며 사라진다.
+  //   오늘 기록을 복원했으면 거기 이미 들어간 목표는 빼고, 이 기기에서 넘긴 목표도 뺀다(새로 고침 뒤 되살아나지 않게).
   // - 미래 날짜 기록(예: 4/28인데 5/1 기록)은 hydration 대상에서 제외 — 폼은 항상 오늘 이전 기록 기준으로 복원한다.
-  // - store는 latest 월만 적재하므로 latest가 미래면 과거 월이 history에 없을 수 있다.
-  //   이때 allReportDates에서 가장 최근 과거 날짜의 월을 lazy 로드한 뒤 다음 렌더에서 다시 시도한다.
+  // - store는 latest 월만 적재하므로 필요한 기록(오늘·직전)의 월이 history에 없을 수 있다.
+  //   이때 그 월을 lazy 로드한 뒤 다음 렌더에서 다시 시도한다.
   // 페이지를 이동했다 돌아와도 store에 hydrate 플래그가 남아 있어 작성 중인 내용을 덮어쓰지 않는다.
   useEffect(() => {
     if (!isClient || !isHistoryLoaded || hasHydratedFromHistory) return;
@@ -196,17 +218,21 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
 
     const todayKey = todayDateKey();
     const latestPastDateKey = allReportDates.find((d) => d <= todayKey);
+    // 오늘의 목표 출처 — 오늘 이전 가장 최근 기록
+    const previousDateKey = allReportDates.find((d) => d < todayKey);
     if (!latestPastDateKey) {
-      // 미래 기록만 존재 — carry-over 없음
+      // 미래 기록만 존재 — 목표 없음
       markHydratedFromHistory();
       return;
     }
 
-    // 가장 최근 과거 기록이 속한 월이 history에 적재되어 있어야 carry-over/오늘 복원 후보를 찾을 수 있다.
-    const targetMonth = latestPastDateKey.slice(0, 7);
-    const isTargetMonthLoaded = history.some((item) => getItemDateKey(item).slice(0, 7) === targetMonth);
-    if (!isTargetMonthLoaded) {
-      const [y, m] = targetMonth.split('-').map((s) => parseInt(s, 10));
+    // 오늘·직전 기록이 속한 월이 history에 적재되어 있어야 복원·목표 후보를 찾을 수 있다.
+    const missingMonth = [latestPastDateKey, previousDateKey]
+      .filter((key): key is string => key !== undefined)
+      .map((key) => key.slice(0, 7))
+      .find((month) => !history.some((item) => getItemDateKey(item).slice(0, 7) === month));
+    if (missingMonth) {
+      const [y, m] = missingMonth.split('-').map((s) => parseInt(s, 10));
       void loadMonth(y, m);
       return; // 월 로드 후 다음 effect 사이클에서 hydration 재시도
     }
@@ -214,30 +240,47 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     markHydratedFromHistory();
 
     // 오늘 기록이 존재하면 그대로 복원 (연도까지 일치하는 경우만)
-    if (latestPastDateKey === todayKey) {
-      const todayItem = history.find((item) => getItemDateKey(item) === todayKey);
-      if (todayItem) {
-        setReportDate({ month: todayItem.month, day: todayItem.day });
-        today.setProjects(cloneProjects(todayItem.todayProjects));
-        tomorrow.setProjects(cloneProjects(todayItem.tomorrowProjects));
-        return;
-      }
+    const todayItem = latestPastDateKey === todayKey ? history.find((item) => getItemDateKey(item) === todayKey) : null;
+    if (todayItem) {
+      setReportDate({ month: todayItem.month, day: todayItem.day });
+      today.setProjects(cloneProjects(todayItem.todayProjects));
+      tomorrow.setProjects(cloneProjects(todayItem.tomorrowProjects));
     }
 
-    // 오늘 기록이 없으면 가장 최근 과거 기록의 '익일 예정' 내용을 carry-over.
-    // store의 loadMonth merge는 `[기존, ...새 데이터]`로 단순 append하므로 cross-month
-    // 전역 desc 정렬이 보장되지 않는다. 명시적으로 desc 정렬한 뒤 first-with-content를 찾는다.
-    const eligibleDesc = history
-      .filter((item) => getItemDateKey(item) <= todayKey)
-      .slice()
-      .sort((a, b) => compareDateKeyDesc(getItemDateKey(a), getItemDateKey(b)));
-    const lastValid = eligibleDesc.find((item) => item.tomorrowProjects.some(hasProjectContent));
-    if (lastValid) {
-      today.setProjects(cloneProjects(lastValid.tomorrowProjects));
-      toast.success('이전 업무의 진행 예정 내용을 가져왔습니다.');
+    const previousItem = previousDateKey ? history.find((item) => getItemDateKey(item) === previousDateKey) : null;
+    if (!previousItem || !previousDateKey) return;
+    const stored = readTodayGoalsStorage(userId, todayKey, previousDateKey);
+    const initialGoals = buildTodayGoals(
+      previousItem.tomorrowProjects,
+      todayItem ? [todayItem.todayProjects, todayItem.tomorrowProjects] : [],
+      stored
+    );
+    initGoals(previousDateKey, initialGoals);
+    // 처음 가져올 때만 알린다(오늘 기록을 복원했거나 이 기기에서 이미 목표를 다룬 경우는 이미 본 목표다)
+    if (initialGoals.length > 0 && !todayItem && stored === null) {
+      toast.success(`지난 보고서의 익일 업무 ${countTodayGoals(initialGoals)}건을 오늘의 목표로 가져왔습니다.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, isHistoryLoaded, hasHydratedFromHistory, history, allReportDates, loadMonth]);
+
+  // 넘긴 목표를 이 기기에 둔다 — 새로 고침 뒤 되살아나지 않게. 목표 목록이 바뀔 때마다 직전 목록과 견줘 고친다
+  // (버튼·끌기·Nano·GitHub·실행 취소 어느 경로로 바뀌어도). 옮긴 목표는 기억하지 않는다(`buildTodayGoals`)
+  const previousGoalsRef = useRef<ReadonlyArray<Project> | null>(null);
+  useEffect(() => {
+    if (!hasHydratedFromHistory || !goalsSourceDateKey) return;
+    const previous = previousGoalsRef.current;
+    previousGoalsRef.current = goals;
+    if (!previous || previous === goals) return;
+    const todayKey = todayDateKey();
+    const { today: todayProjects, tomorrow: tomorrowProjects } = useReportFormStore.getState();
+    const dismissed = nextDismissedGoalKeys(
+      readTodayGoalsStorage(userId, todayKey, goalsSourceDateKey) ?? new Set(),
+      previous,
+      goals,
+      [todayProjects, tomorrowProjects]
+    );
+    writeTodayGoalsStorage(userId, todayKey, goalsSourceDateKey, [...dismissed]);
+  }, [hasHydratedFromHistory, goalsSourceDateKey, goals, userId]);
 
   // 위 hydration이 끝나 store가 안정된 시점의 직렬화 값을 baseline으로 캡처. 한 번만 잡는다.
   const currentReportKey = useMemo(
@@ -286,7 +329,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
   // 서버/로컬 스토리지에서 폼 채울 정보를 불러오는 동안에는 빈 폼 대신 skeleton을 보여준다.
   // - SSR/초기 마운트: isClient=false → skeleton
   // - 히스토리 store 초기화 중: isHistoryLoaded=false → skeleton
-  // - hydration 로직(오늘 기록 복원 / 익일 carry-over) 진행 중: hasHydratedFromHistory=false → skeleton
+  // - hydration 로직(오늘 기록 복원 / 오늘의 목표 가져오기) 진행 중: hasHydratedFromHistory=false → skeleton
   const isFormReady = isClient && isHistoryLoaded && hasHydratedFromHistory;
 
   // 브라우저 에이전트(WebMCP)와 앱 안 채팅에 폼 채우기·기록 조회 도구를 노출한다.
@@ -479,12 +522,26 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     setGithubRange({ ...commitImportRange(loaded, reportDateKey, todayKey, Date.now()), reportDateKey });
   };
 
+  // 오늘의 목표도 분류 후보로 넘긴다(`withTodayGoalCandidates`) — 커밋이 목표에 붙으면 그 목표를 금일 업무로 옮긴 뒤 커밋을 반영한다.
+  // 보정 메모리는 옮긴 자리의 id 로 바꾼 계획으로 배운다(목표 id 는 폼에 없다).
   const handleGithubApply = (plan: CommitImportPlan, original: CommitImportPlan) => {
-    const { projects, links } = applyCommitImportPlan(today.projects, plan);
+    const resolved = resolveTodayGoalsInPlan(today.projects, goals, plan);
+    const { projects, links } = applyCommitImportPlan(resolved.today, resolved.plan);
     today.setProjects(projects);
-    void rememberCommitImport(userId, plan, original, links, githubRange?.reportDateKey ?? currentReportDateKey());
+    if (resolved.placed.length > 0) useReportFormStore.getState().setGoals(resolved.goals);
+    void rememberCommitImport(
+      userId,
+      resolved.plan,
+      original,
+      links,
+      githubRange?.reportDateKey ?? currentReportDateKey()
+    );
     setGithubRange(null);
-    toast.success('GitHub 커밋을 금일 업무에 추가했습니다.');
+    toast.success(
+      resolved.placed.length > 0
+        ? `GitHub 커밋을 금일 업무에 추가하고 오늘의 목표 ${resolved.placed.length}건을 달성으로 옮겼습니다.`
+        : 'GitHub 커밋을 금일 업무에 추가했습니다.'
+    );
   };
 
   // 보고서를 클립보드에 복사 후 히스토리에 추가. 복사했으면 true (에이전트 copy_report 도 이 경로를 쓴다)
@@ -639,6 +696,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
 
           {isFormReady ? (
             <ProjectBoard>
+              {/* 직전 보고서의 익일 예정 — 끌어서(같은 DndContext) 또는 버튼으로 금일·익일 업무에 옮긴다 */}
+              <TodayGoals />
               <ProjectList
                 title="금일 업무 진행 현황"
                 accent="today"
@@ -717,7 +776,8 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
         <GithubImportDialog
           viewerMode={historyMode}
           userId={userId}
-          todayProjects={today.projects}
+          todayProjects={withTodayGoalCandidates(today.projects, goals)}
+          goalTaskIds={goalTaskIds}
           reportDateKey={githubRange.reportDateKey}
           history={history}
           sinceMs={githubRange.sinceMs}

@@ -53,10 +53,18 @@ export type ParsedReport = {
 
 export type ProjectsBucket = 'today' | 'tomorrow';
 
+// 오늘의 목표를 끌어 놓은 자리 — 그 프로젝트의 tasks 안 위치
+export type TodayGoalDropTarget = { projectId: string; index: number };
+
 export type ReportFormStore = {
   reportDate: ReportDate;
   today: Array<Project>;
   tomorrow: Array<Project>;
+  // 오늘의 목표 — 직전 보고서의 익일 예정 중 아직 금일·익일로 옮기지 않은 작업(`utils/today-goals.ts`).
+  // 보고서에는 들어가지 않고, 옮기지 않은 목표는 다음 날 출처가 바뀌며 사라진다.
+  goals: Array<Project>;
+  // 목표를 가져온 보고서의 날짜('YYYY-MM-DD'). 목표가 없으면 null.
+  goalsSourceDateKey: string | null;
   hasHydratedFromHistory: boolean;
   setReportDate: (date: ReportDate) => void;
   setBucket: (bucket: ProjectsBucket, updater: SetStateAction<Array<Project>>) => void;
@@ -99,6 +107,19 @@ export type ReportFormStore = {
     taskId: string,
     toIndex: number
   ) => void;
+  // 기록 복원 때 오늘의 목표를 정한다
+  initGoals: (sourceDateKey: string | null, goals: Array<Project>) => void;
+  setGoals: (updater: SetStateAction<Array<Project>>) => void;
+  // 목표 작업을 금일·익일로 옮긴다. target 이 있으면(끌어 놓기) 그 프로젝트의 그 자리에, 없으면 같은 이름 프로젝트에 덧붙인다.
+  // fillBlank 이 false 면 빈 프로젝트·빈 작업 줄을 채우지 않고 그 자리에 끼워 넣기만 한다(끌기 중 미리보기 — 놓을 때 정리한다).
+  placeGoals: (
+    taskIds: ReadonlyArray<string>,
+    bucket: ProjectsBucket,
+    target?: TodayGoalDropTarget,
+    options?: { fillBlank?: boolean }
+  ) => void;
+  // 목표를 넘긴다(취소된 일) — 보고서에 넣지 않고 목록에서만 뺀다
+  dismissGoals: (taskIds: ReadonlyArray<string>) => void;
   markHydratedFromHistory: () => void;
   resetForm: () => void;
   resetSession: () => void;
@@ -145,4 +166,12 @@ export type ReportFormSnapshot = {
   reportDate: ReportDate;
   today: ReadonlyArray<Project>;
   tomorrow: ReadonlyArray<Project>;
+};
+
+// 오늘의 목표 중 넘긴 것(새로 고침 뒤 되살아나지 않게 이 기기에 둔다). owner = 회원 id 또는 'guest'
+export type TodayGoalsStorage = {
+  owner: string;
+  dateKey: string;
+  sourceDateKey: string;
+  dismissed: Array<string>;
 };

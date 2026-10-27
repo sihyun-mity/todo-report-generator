@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import type { Project, ReportFormStore, Task, TaskDetail } from '@/types';
-import { createEmptyDetail, createEmptyProject, createEmptyTask } from '@/utils';
+import {
+  createEmptyDetail,
+  createEmptyProject,
+  createEmptyTask,
+  placeTodayGoalTasks,
+  withoutTodayGoals,
+} from '@/utils';
 
 const getTodayDate = () => {
   const now = new Date();
@@ -13,6 +19,8 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
   reportDate: getTodayDate(),
   today: [createEmptyProject()],
   tomorrow: [createEmptyProject()],
+  goals: [],
+  goalsSourceDateKey: null,
   hasHydratedFromHistory: false,
 
   setReportDate: (date) => set({ reportDate: date }),
@@ -229,6 +237,26 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
       return { [fromBucket]: removeFrom(state[fromBucket]), [toBucket]: insertInto(state[toBucket]) };
     }),
 
+  initGoals: (sourceDateKey, goals) => set({ goals, goalsSourceDateKey: goals.length > 0 ? sourceDateKey : null }),
+
+  setGoals: (updater) =>
+    set((state) => ({
+      goals:
+        typeof updater === 'function' ? (updater as (prev: Array<Project>) => Array<Project>)(state.goals) : updater,
+    })),
+
+  placeGoals: (taskIds, bucket, target, options) =>
+    set((state) => {
+      const ids = taskIds.filter((id) => state.goals.some((g) => g.tasks.some((t) => t.id === id)));
+      if (ids.length === 0) return state;
+      return {
+        [bucket]: placeTodayGoalTasks(state[bucket], state.goals, ids, target, options?.fillBlank),
+        goals: withoutTodayGoals(state.goals, new Set(ids)),
+      };
+    }),
+
+  dismissGoals: (taskIds) => set((state) => ({ goals: withoutTodayGoals(state.goals, new Set(taskIds)) })),
+
   markHydratedFromHistory: () => set({ hasHydratedFromHistory: true }),
 
   resetForm: () =>
@@ -239,12 +267,15 @@ export const useReportFormStore = create<ReportFormStore>()((set) => ({
     }),
 
   // 사용자 전환(로그인/로그아웃/게스트 종료) 시 호출. resetForm과 달리 hydrate 플래그도 초기화하여
-  // 새 사용자의 보고서 기록에서 다시 'tomorrow → today' 가져오기가 일어나도록 한다.
+  // 새 사용자의 보고서 기록에서 오늘의 목표를 다시 가져오도록 한다. (resetForm 은 목표를 두는데, 목표는 작성 중인 내용이 아니라
+  // 오늘 할 일 목록이라서다)
   resetSession: () =>
     set({
       reportDate: getTodayDate(),
       today: [createEmptyProject()],
       tomorrow: [createEmptyProject()],
+      goals: [],
+      goalsSourceDateKey: null,
       hasHydratedFromHistory: false,
     }),
 }));

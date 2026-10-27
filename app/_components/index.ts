@@ -27,3 +27,4 @@ export * from './report-preview-skeleton';
 export * from './report-toolbar';
 export * from './task-detail-item';
 export * from './task-item';
+export * from './today-goals';

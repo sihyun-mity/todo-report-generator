@@ -24,3 +24,4 @@ export * from './report-edit';
 export * from './report-export';
 export * from './scroll';
 export * from './user-agent';
+export * from './today-goals';

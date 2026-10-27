@@ -41,6 +41,7 @@ export function useAgentSuggestions(): {
   const reportDate = useReportFormStore((s) => s.reportDate);
   const today = useReportFormStore((s) => s.today);
   const tomorrow = useReportFormStore((s) => s.tomorrow);
+  const goals = useReportFormStore((s) => s.goals);
   const mode = useReportHistoryStore((s) => s.mode);
   const allReportDates = useReportHistoryStore((s) => s.allReportDates);
 
@@ -74,6 +75,15 @@ export function useAgentSuggestions(): {
         action: { type: 'tool', tool: 'open_github_import', title: 'GitHub 커밋 가져오기 열기' },
         needsAi: false,
         emphasis: true,
+      });
+    // 오늘의 목표가 남아 있으면 정리를 권한다 — 옮기지 않으면 다음 날 사라진다
+    if (has('list_today_goals') && goals.length > 0)
+      all.push({
+        id: 'today-goals',
+        title: `오늘의 목표 ${goals.reduce((sum, p) => sum + p.tasks.length, 0)}건 정리하기`,
+        reason: '지난 보고서의 익일 업무예요 — 금일·익일로 옮기거나 넘겨 주세요',
+        action: { type: 'prompt', text: '오늘의 목표 요약해줘', fresh: true },
+        needsAi: true,
       });
     if (has('carry_over_incomplete_tasks') && incomplete > 0 && !tomorrowFilled)
       all.push({

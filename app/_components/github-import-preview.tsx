@@ -14,6 +14,7 @@ import {
   Link2,
   ListPlus,
   Sparkles,
+  Target,
   Trash2,
 } from 'lucide-react';
 import type { CommitImportPlan, PlannedProject, PlannedTask, Project, Task } from '@/types';
@@ -25,6 +26,8 @@ import { ProgressInput } from '.';
 type GithubImportPreviewProps = {
   plan: CommitImportPlan;
   todayProjects: ReadonlyArray<Project>;
+  // todayProjects 중 오늘의 목표 작업 — 커밋이 붙으면 적용할 때 금일 업무로 옮겨진다
+  goalTaskIds: ReadonlySet<string>;
   onChange: (plan: CommitImportPlan) => void;
   // 저장소를 분류 대상에서 뺀다(개인 프로젝트 등) — 다음 가져오기부터는 조회하지 않는다
   onExcludeRepo: (repo: string) => void;
@@ -51,6 +54,7 @@ const readonlyBoxClass =
 export function GithubImportPreview({
   plan,
   todayProjects,
+  goalTaskIds,
   onChange,
   onExcludeRepo,
   suggestedExcludes,
@@ -84,6 +88,7 @@ export function GithubImportPreview({
           key={project.key}
           project={project}
           namedProjects={namedProjects}
+          goalTaskIds={goalTaskIds}
           onChangeTarget={(value) => changeTarget(project, value)}
           onRename={(name) => updateProject(project.key, (p) => ({ ...p, name }))}
           onUpdateTask={(taskKey, updater) => updateTask(project.key, taskKey, updater)}
@@ -114,6 +119,19 @@ function StatusBadge({ isNew, newLabel, existingLabel }: Readonly<BadgeProps>) {
   );
 }
 
+// 오늘의 목표와 맞는 커밋 — 적용하면 그 목표를 금일 업무로 옮긴다
+function GoalBadge() {
+  return (
+    <span
+      title="오늘의 목표와 맞는 커밋이에요. 적용하면 이 목표를 금일 업무로 옮겨요."
+      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-violet-50 px-1.5 py-0.5 text-[11px] font-semibold text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
+    >
+      <Target size={11} aria-hidden />
+      오늘의 목표 달성
+    </span>
+  );
+}
+
 // 이미 넣은 작업과 같아 가져오기를 해제해 두었거나(similarTo), 폼의 같은 작업에 더할 게 없는 작업 — 어느 작업과 같은지 함께 알린다.
 // 폼의 그 작업 자체면(기존 작업) "이미 등록된 작업", 이름이 비슷해 같은 작업으로 본 새 작업이면 "기존 작업과 유사"다.
 function SimilarBadge({ label, description }: Readonly<{ label: string; description: string }>) {
@@ -132,6 +150,7 @@ function SimilarBadge({ label, description }: Readonly<{ label: string; descript
 type ProjectBlockProps = {
   project: PlannedProject;
   namedProjects: ReadonlyArray<Project>;
+  goalTaskIds: ReadonlySet<string>;
   onChangeTarget: (value: string) => void;
   onRename: (name: string) => void;
   onUpdateTask: (taskKey: string, updater: (task: PlannedTask) => PlannedTask) => void;
@@ -142,6 +161,7 @@ type ProjectBlockProps = {
 function ProjectBlock({
   project,
   namedProjects,
+  goalTaskIds,
   onChangeTarget,
   onRename,
   onUpdateTask,
@@ -150,11 +170,17 @@ function ProjectBlock({
 }: Readonly<ProjectBlockProps>) {
   const isNew = project.existingProjectId === null;
   const source = namedProjects.find((p) => p.id === project.existingProjectId);
+  // 오늘의 목표만 담긴 프로젝트 — 아직 폼에 없고, 목표를 옮기면서 금일 업무에 생긴다
+  const isGoalProject = !!source && source.tasks.every((t) => goalTaskIds.has(t.id));
 
   return (
     <section className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-700/50">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <StatusBadge isNew={isNew} newLabel="새 프로젝트" existingLabel="기존 프로젝트에 추가" />
+        <StatusBadge
+          isNew={isNew}
+          newLabel="새 프로젝트"
+          existingLabel={isGoalProject ? '오늘의 목표 프로젝트' : '기존 프로젝트에 추가'}
+        />
         <ProjectTargetDropdown
           value={project.existingProjectId}
           projects={namedProjects}
@@ -219,7 +245,13 @@ function ProjectBlock({
           <TaskBlock
             key={task.key}
             task={task}
-            formTask={source?.tasks.find((t) => t.id === task.existingTaskId)}
+            isGoal={task.existingTaskId !== null && goalTaskIds.has(task.existingTaskId)}
+            // 목표는 아직 폼에 없는 작업이라 견줄 폼 작업이 없다 — 옮기면서 그대로 들어가므로 진행률 변화·"이미 등록된 작업"으로 보지 않는다
+            formTask={
+              task.existingTaskId !== null && goalTaskIds.has(task.existingTaskId)
+                ? undefined
+                : source?.tasks.find((t) => t.id === task.existingTaskId)
+            }
             onUpdate={(updater) => onUpdateTask(task.key, updater)}
           />
         ))}
@@ -232,10 +264,12 @@ type TaskBlockProps = {
   task: PlannedTask;
   // 기존 작업이면 폼에 적혀 있는 그 작업 — 진행률이 바뀌는지, 더할 게 있는지 보여준다
   formTask: Task | undefined;
+  // 오늘의 목표에 붙은 작업 — 적용하면 그 목표가 금일 업무로 옮겨진다
+  isGoal: boolean;
   onUpdate: (updater: (task: PlannedTask) => PlannedTask) => void;
 };
 
-function TaskBlock({ task, formTask, onUpdate }: Readonly<TaskBlockProps>) {
+function TaskBlock({ task, formTask, isGoal, onUpdate }: Readonly<TaskBlockProps>) {
   const isNew = task.existingTaskId === null;
   const previousProgress = formTask?.progress ?? null;
   const progressChanged = previousProgress !== null && previousProgress !== task.progress;
@@ -288,6 +322,8 @@ function TaskBlock({ task, formTask, onUpdate }: Readonly<TaskBlockProps>) {
                 : `“${task.similarTo}” 작업에 이미 보고한 커밋뿐이에요`
             }
           />
+        ) : isGoal ? (
+          <GoalBadge />
         ) : addsNothing ? (
           // 기존 작업과 이름이 같고 세부 항목도 진행률도 더하지 않으면 이미 넣은 작업과 다를 게 없다
           <SimilarBadge

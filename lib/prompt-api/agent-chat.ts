@@ -169,12 +169,12 @@ const INTENTS: ReadonlyArray<Intent> = [
   {
     label: 'read_reports',
     kind: 'read',
-    hint: 'show, summarize, search or count the current report, past reports or news, or any question about them (보여줘, 요약, 정리, 찾아줘, 새소식, 몇 개야?, 몇 가지?, 뭐 했어?, 작업 단위로 세줘)',
+    hint: "show, summarize, search or count the current report, today's goals (오늘의 목표), past reports or news, or any question about them (보여줘, 요약, 정리, 찾아줘, 새소식, 몇 개야?, 몇 가지?, 뭐 했어?, 작업 단위로 세줘, 오늘의 목표 설명해줘)",
   },
   {
     label: 'add_to_report',
     kind: 'add',
-    hint: "add new projects, tasks or detail lines, or bring ALL of today's (or all unfinished) tasks over to tomorrow (추가, 넣어줘, 미완료 업무 전부 내일로, 오늘 한 일 내일도 그대로)",
+    hint: "add new projects, tasks or detail lines, move today's goals (오늘의 목표) into 금일/익일, or bring ALL of today's (or all unfinished) tasks over to tomorrow (추가, 넣어줘, 목표 금일로 옮겨줘, 미완료 업무 전부 내일로, 오늘 한 일 내일도 그대로)",
   },
   // 작은 수정과 통째로 바꾸기를 나눈다 — 한 의도로 두면 작업 하나를 지우는 요청에 구역을 통째로 다시 쓰는 도구를 골랐다
   {
@@ -365,6 +365,7 @@ const HOW_TO_QUESTION = /어떻게|방법|사용법|하려면|할\s*수\s*있|�
 // 대화 의도에서 사용법을 물으면 쓰는 앱 안내 — 도구 제목만으로는 화면 위치·회원 여부·저장 방식을 답하지 못하고 지어냈다
 const APP_GUIDE = `- Home (보고서 작성): pick the report date, then write projects → tasks (progress %) → detail lines under 금일 (today) and 익일 (tomorrow). The preview shows the finished text.
 - 복사하기 copies the report text to the clipboard and saves it to history. Saved reports appear in the calendar/history below the form and can be loaded back into the form. Deleting a saved report is done with the delete button on its history card (Nano cannot delete records).
+- 오늘의 목표 (above 금일 on Home): the tasks planned in the previous report's 익일 section. They are not in the report until the user places them into 금일 or 익일 (drag, the 금일/익일 buttons, or Nano). Goals not placed simply disappear the next day (the work may have been cancelled). GitHub import moves a goal into 금일 when a commit matches it.
 - 미완료 업무 가져오기 brings unfinished tasks of today over to tomorrow. A report text can be pasted to restore the form (텍스트로 복원). History can be exported as a file (내보내기).
 - GitHub에서 가져오기 (button in the 금일 header): reads the user's commits since the previous report and sorts them into projects/tasks with on-device AI. Members only; it asks to connect GitHub the first time.
 - Members (logged in) keep history in their account across devices. Guests keep it only in this browser (up to 100 reports). Logging in is optional (top bar 로그인 button).

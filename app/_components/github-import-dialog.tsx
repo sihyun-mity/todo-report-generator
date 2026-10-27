@@ -83,7 +83,10 @@ type GithubImportDialogProps = {
   viewerMode: ReportHistoryMode;
   // 보정 메모리 주인(회원 id)
   userId: string | null;
+  // 분류 후보 — 금일 폼 + 오늘의 목표(`withTodayGoalCandidates`)
   todayProjects: ReadonlyArray<Project>;
+  // todayProjects 중 오늘의 목표 작업 id — 커밋이 붙으면 적용할 때 금일 업무로 옮긴다
+  goalTaskIds: ReadonlySet<string>;
   // 가져오는 보고서 날짜('YYYY-MM-DD') — 이 날짜에 이미 넣은 작업과 비슷한 작업은 해제해 둔다
   reportDateKey: string;
   history: ReadonlyArray<ReportHistoryItem>;
@@ -193,6 +196,7 @@ export function GithubImportDialog({
   viewerMode,
   userId,
   todayProjects,
+  goalTaskIds,
   reportDateKey,
   history,
   sinceMs,
@@ -313,6 +317,7 @@ export function GithubImportDialog({
         // 이번에 미리보기에서 뺀 저장소는 이미 받아 둔 커밋에도 들어 있어 여기서 거른다
         commits: commitsResult?.ok ? commitsResult.commits.filter((c) => !excludedRef.current.includes(c.repo)) : [],
         todayProjects,
+        goalTaskIds,
         reportDateKey,
         history,
         signal,
@@ -458,12 +463,14 @@ export function GithubImportDialog({
     }
   };
 
-  const included = draft ? countIncluded(draft, todayProjects) : 0;
+  // 더할 게 있는지는 폼에 실제로 있는 작업과만 견준다 — 오늘의 목표는 아직 폼에 없어 옮기는 것만으로 더하는 게 된다
+  const formProjects = todayProjects.map((p) => ({ ...p, tasks: p.tasks.filter((t) => !goalTaskIds.has(t.id)) }));
+  const included = draft ? countIncluded(draft, formProjects) : 0;
   // 체크는 했지만 모두 폼에 이미 있는 그대로인 작업이면 고를 게 아니라 넣을 게 없다고 알린다
   const hasChecked = draft?.projects.some((p) => p.tasks.some((t) => t.included && t.content.trim())) ?? false;
   const canDownloadModel = draft?.aiAvailability === 'downloadable' || draft?.aiAvailability === 'downloading';
 
-  const summary = draft ? summarize(draft, todayProjects) : null;
+  const summary = draft ? summarize(draft, formProjects) : null;
   const isClassifyDone = progress?.current === null;
   // 본문이 미리보기를 보여 주는 동안에만 하단에 적용 버튼을 둔다(연결 안내·오류·내려받기 화면에서는 닫기만)
   const preview = isMember && isConnected && hasCommits && !plan.isError && modelDownload === null ? draft : null;
@@ -653,6 +660,7 @@ export function GithubImportDialog({
                 <GithubImportPreview
                   plan={draft}
                   todayProjects={todayProjects}
+                  goalTaskIds={goalTaskIds}
                   onChange={setDraft}
                   onExcludeRepo={handleExcludeRepo}
                   suggestedExcludes={suggestedExcludes}

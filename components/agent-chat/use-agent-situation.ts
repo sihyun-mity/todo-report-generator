@@ -46,7 +46,7 @@ export function useAgentSituation() {
       .initialize()
       .catch(() => undefined);
     const { mode, allReportDates } = useReportHistoryStore.getState();
-    const { reportDate, today, tomorrow } = useReportFormStore.getState();
+    const { reportDate, today, tomorrow, goals, goalsSourceDateKey } = useReportFormStore.getState();
     const news = await queryClient
       .fetchQuery({ ...queries.news.list(), staleTime: AGENT_SITUATION_NEWS_STALE_MS })
       .then((data: NewsList) => data.items)
@@ -91,6 +91,15 @@ export function useAgentSituation() {
         today: sectionSummary(today),
         tomorrow: sectionSummary(tomorrow),
       },
+      // 직전 보고서의 익일 예정 중 아직 금일·익일로 옮기지 않은 것 — 보고서에는 없다
+      todayGoals:
+        goals.length === 0
+          ? 'none'
+          : {
+              note: "오늘의 목표: planned tasks from the previous report's 익일, not in the report until placed",
+              from: goalsSourceDateKey,
+              summary: sectionSummary(goals),
+            },
       savedReports:
         mode === 'loading'
           ? 'unknown'

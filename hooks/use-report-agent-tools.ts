@@ -35,6 +35,7 @@ import {
   findDetail,
   findProject,
   findTasks,
+  countTodayGoals,
   generateReportText,
   hasProjectContent,
   isSameReportForm,
@@ -43,12 +44,14 @@ import {
   moveTask,
   orInitialProjects,
   parseReportText,
+  placeTodayGoalTasks,
   removeProject,
   removeTasks,
   renameProject,
   reportItemDateKey,
   syncProgressFrom,
   updateTasks,
+  withoutTodayGoals,
 } from '@/utils';
 
 // 검색 결과로 돌려줄 최대 보고서 수 — 에이전트 컨텍스트를 한 번에 넘치게 하지 않을 정도.
@@ -85,6 +88,10 @@ const MOVE_REQUEST = /옮겨|옮기|이동|순서|보내|위로|아래로|맨\s*
 const PROJECT_REQUEST = /프로젝트/;
 // 지우는 도구는 지우라는 말이 있을 때만 — "진행률도 똑같이 해줘"에 작업 삭제를 골랐다
 const DELETE_REQUEST = /삭제|지워|지우|빼|없애|제거|날려|치워/;
+// 오늘의 목표 — 목표를 말할 때만 목표 도구를 후보로 둔다. 옮기기·넘기기는 동사로 가른다
+const GOAL_REQUEST = /목표/;
+const GOAL_PLACE_REQUEST = /옮기|옮겨|넣어|넣고|넣자|추가|배치|보내|올려|가져/;
+const GOAL_DISMISS_REQUEST = /넘겨|넘기|취소|빼|지워|지우|삭제|없애|버려|안\s*해|필요\s*없/;
 const isProjectOnly = (request: string) => PROJECT_REQUEST.test(request) && !/작업|업무/.test(request);
 const ALL_TODAY_REQUEST = /오늘\s*(한|했던|의)?\s*(업무|작업|일)|금일\s*(업무|작업)|전부|모두|그대로|반복|매일|똑같이/;
 
@@ -262,6 +269,34 @@ const currentFormState = () => {
     )
   );
   return { report: { month, day, today, tomorrow }, ...(duplicates.length > 0 ? { duplicates } : {}) };
+};
+
+// 오늘의 목표 — 채팅·WebMCP 가 읽는 형태(아직 보고서에 들어가지 않은 직전 보고서의 익일 예정)
+const currentGoalsState = () => {
+  const { goals, goalsSourceDateKey } = useReportFormStore.getState();
+  return {
+    todayGoals: {
+      note: "planned tasks carried from the previous report's 익일 (tomorrow) section — not in the report until placed into 금일/익일; unplaced goals disappear the next day",
+      from: goalsSourceDateKey,
+      count: countTodayGoals(goals),
+      goals: toAgentProjects(goals),
+    },
+  };
+};
+
+// 이름으로 목표 작업 id 를 고른다(정확히 같은 것 → 포함 관계). all 이면 모두. 못 찾으면 이유 문자열
+const resolveGoalIds = (input: Record<string, unknown>): Array<string> | string => {
+  const { goals } = useReportFormStore.getState();
+  if (input.all === true) return goals.flatMap((p) => p.tasks.map((t) => t.id));
+  if (!Array.isArray(input.goals) || input.goals.length === 0 || input.goals.some((g) => typeof g !== 'string'))
+    return 'goals 는 목표 작업 문구 배열이어야 합니다(모두면 all: true).';
+  const ids: Array<string> = [];
+  for (const name of input.goals as Array<string>) {
+    const refs = findTasks(goals, input.project, name);
+    if (typeof refs === 'string') return refs.replace(/작업/g, '목표');
+    ids.push(...refs.map((r) => goals[r.projectIndex].tasks[r.taskIndex].id));
+  }
+  return [...new Set(ids)];
 };
 
 // ───────────── 입력 검증 ─────────────
@@ -449,7 +484,20 @@ const formSnapshot = (): ReportFormSnapshot => {
   return { reportDate, today, tomorrow };
 };
 
-type FormPatch = Partial<ReportFormSnapshot>;
+// goals — 오늘의 목표를 옮기거나 넘기는 도구가 함께 바꾼다(보고서 내용이 아니라 diffReportForm 이 보지 않으므로 줄을 따로 만든다)
+type FormPatch = Partial<ReportFormSnapshot> & { goals?: Array<Project> };
+
+// 목표에서 빠졌는데 보고서 어디에도 들어가지 않은 목표 작업 — 넘긴 목표
+const dismissedGoalLines = (before: ReadonlyArray<Project>, after: FormPatch, snapshot: ReportFormSnapshot) => {
+  if (!after.goals) return [];
+  const kept = new Set(after.goals.flatMap((p) => p.tasks.map((t) => t.id)));
+  const placed = new Set([...snapshot.today, ...snapshot.tomorrow].flatMap((p) => p.tasks.map((t) => t.id)));
+  return before.flatMap((p) =>
+    p.tasks
+      .filter((t) => !kept.has(t.id) && !placed.has(t.id))
+      .map((t) => `－ 오늘의 목표 · ${p.name || '이름 없는 프로젝트'} · ${t.content}`)
+  );
+};
 
 type ChangeConfirm = {
   // removal — 지금 적힌 항목이 사라질 때만 묻는다 · always — 늘 묻는다
@@ -491,9 +539,12 @@ const applyFormChange = async (
   }>
 ): Promise<ApplyResult> => {
   const before = formSnapshot();
-  const after: ReportFormSnapshot = { ...before, ...patch };
+  const beforeGoals = useReportFormStore.getState().goals;
+  const { goals: nextGoals, ...reportPatch } = patch;
+  const after: ReportFormSnapshot = { ...before, ...reportPatch };
   const diff = diffReportForm(before, after);
-  const { lines, dateChanged } = diff;
+  const { dateChanged } = diff;
+  const lines = [...diff.lines, ...dismissedGoalLines(beforeGoals, patch, after)];
   const orderOnly = lines.length > 0 && lines.every((line) => line.startsWith('↕'));
   const changedIds = orderOnly && moved ? [moved] : diff.changedIds;
   if (lines.length === 0) return { status: 'unchanged' };
@@ -514,6 +565,7 @@ const applyFormChange = async (
   if (patch.reportDate) store.setReportDate(patch.reportDate);
   if (patch.today) store.setBucket('today', [...patch.today]);
   if (patch.tomorrow) store.setBucket('tomorrow', [...patch.tomorrow]);
+  if (nextGoals) store.setGoals(nextGoals);
 
   const { flash } = useAgentHighlightStore.getState();
   flash([...changedIds, ...(dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
@@ -522,10 +574,13 @@ const applyFormChange = async (
     lines,
     undo: () => {
       if (!isSameReportForm(formSnapshot(), applied)) return false;
+      // 그사이 다른 목표를 옮기거나 넘겼으면 목표 목록을 덮어쓰지 않는다(옮긴 목표가 되살아난다)
+      if (nextGoals && useReportFormStore.getState().goals !== nextGoals) return false;
       const current = useReportFormStore.getState();
       current.setReportDate(before.reportDate);
       current.setBucket('today', [...before.today]);
       current.setBucket('tomorrow', [...before.tomorrow]);
+      if (nextGoals) current.setGoals(beforeGoals);
       const restored = diffReportForm(applied, before);
       const restoredIds = orderOnly && moved ? [moved] : restored.changedIds;
       flash([...restoredIds, ...(restored.dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
@@ -597,6 +652,16 @@ const PROJECTS_SCHEMA: WebMcpJsonSchema = {
     },
     required: ['name', 'tasks'],
   },
+};
+
+const GOALS_INPUT_PROPERTIES: Record<string, WebMcpJsonSchema> = {
+  goals: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Goal task texts exactly as in todayGoals (leave empty when all is true)',
+  },
+  all: { type: 'boolean', description: 'true only if the user means every goal (전부, 모두, 다)' },
+  project: PROJECT_REF_SCHEMA,
 };
 
 const DATE_KEY_SCHEMA: WebMcpJsonSchema = {
@@ -747,7 +812,7 @@ const checkToolCoverage = (tools: ReadonlyArray<AgentTool>) => {
 
 type Options = {
   // 폼이 기록 hydration 까지 끝나 편집 가능한 상태일 때만 도구를 노출한다.
-  // 그 전에 채우면 hydration(오늘 기록 복원 / 익일 carry-over)이 에이전트 입력을 덮어쓴다.
+  // 그 전에 채우면 hydration(오늘 기록 복원 / 오늘의 목표 가져오기)이 에이전트 입력을 덮어쓴다.
   enabled: boolean;
   // save_report 로 기록에 저장된 직후 — 이탈 경고 baseline 갱신, 캘린더 이동, 커밋 보정 메모리 학습 등 폼 쪽 후처리.
   onSaved: (date: ReportDate) => void;
@@ -1729,6 +1794,110 @@ export const useReportAgentTools = ({
           downloadReportHistory(items, format);
           toast.success(`기록 ${items.length}건을 내보냈습니다.`);
           return toolText({ exported: items.length, format });
+        },
+      },
+
+      // ───────────── 오늘의 목표 ─────────────
+      // 직전 보고서의 익일 예정 — 보고서에는 아직 없다. 목표를 말할 때만 후보로 두고(requires), 옮기기·넘기기·보기를 동사로 가른다
+      // (preferredWhen — "목표 금일로 옮겨줘"가 작업 옮기기(move_report_task)로, "목표 요약해줘"가 작성 중인 보고서 조회로 가지 않게)
+      {
+        name: 'list_today_goals',
+        title: '오늘의 목표 보기',
+        kind: 'read',
+        requires: (request) => GOAL_REQUEST.test(request),
+        preferredWhen: (request) =>
+          GOAL_REQUEST.test(request) && !GOAL_PLACE_REQUEST.test(request) && !GOAL_DISMISS_REQUEST.test(request),
+        description:
+          "Return today's goals (오늘의 목표): the tasks the user planned for today in the previous report's 익일 section, not yet placed into today's report. Use it to list, count, summarize or explain the goals.",
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: async () => toolText(currentGoalsState()),
+        followUp: () => {
+          const { goals } = useReportFormStore.getState();
+          if (goals.length === 0) return null;
+          return {
+            actions: [
+              {
+                id: 'goals-all-today',
+                label: '모두 금일 업무로 옮기기',
+                action: {
+                  type: 'tool',
+                  tool: 'place_today_goals',
+                  title: '오늘의 목표 옮기기',
+                  input: { section: 'today', all: true },
+                },
+                needsAi: false,
+              },
+            ],
+          };
+        },
+      },
+      {
+        name: 'place_today_goals',
+        title: '오늘의 목표 옮기기',
+        kind: 'add',
+        extraKinds: ['edit'],
+        requires: (request) => GOAL_REQUEST.test(request),
+        preferredWhen: (request) => GOAL_REQUEST.test(request) && GOAL_PLACE_REQUEST.test(request),
+        description:
+          "Move goals from today's goals (오늘의 목표) into the report: section today (금일 — doing it today) or tomorrow (익일 — doing it later). Tasks go under the project with the same name (created if missing). Use the goal texts from todayGoals; all=true moves every goal.",
+        inputContext: () => ({ ...currentFormState(), ...currentGoalsState() }),
+        inputSchema: {
+          type: 'object',
+          properties: { section: SECTION_SCHEMA, ...GOALS_INPUT_PROPERTIES },
+          required: ['section'],
+        },
+        summarize: (input, changes) => {
+          const section = parseSectionInput(input.section) ?? 'today';
+          const count = changes.filter((line) => line.startsWith('＋') && !line.includes(' › ')).length;
+          return `오늘의 목표 ${count > 0 ? `${count}건을 ` : '를 '}${BUCKET_LABEL[section]}로 옮겼어요`;
+        },
+        execute: async (input, context) => {
+          const section = parseSectionInput(input.section);
+          if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
+          const { goals } = useReportFormStore.getState();
+          if (goals.length === 0) return toolText({ changed: false, message: '옮길 오늘의 목표가 없습니다.' });
+          const ids = resolveGoalIds(input);
+          if (typeof ids === 'string') return toolError(ids);
+          const store = useReportFormStore.getState();
+          return changeResult(
+            await applyFormChange(
+              context,
+              {
+                [section]: placeTodayGoalTasks(store[section], goals, ids),
+                goals: withoutTodayGoals(goals, new Set(ids)),
+              },
+              { success: `에이전트가 오늘의 목표를 ${BUCKET_LABEL[section]}로 옮겼습니다.` }
+            ),
+            '이미 같은 작업이 들어 있습니다.'
+          );
+        },
+      },
+      {
+        name: 'dismiss_today_goals',
+        title: '오늘의 목표 넘기기',
+        kind: 'edit',
+        requires: (request) => GOAL_REQUEST.test(request) && GOAL_DISMISS_REQUEST.test(request),
+        preferredWhen: (request) =>
+          GOAL_REQUEST.test(request) && GOAL_DISMISS_REQUEST.test(request) && !GOAL_PLACE_REQUEST.test(request),
+        description:
+          "Drop goals from today's goals (오늘의 목표) that the user will not do (취소됐어, 넘겨줘, 빼줘). They are not added to the report. Use the goal texts from todayGoals; all=true drops every goal.",
+        inputContext: currentGoalsState,
+        inputSchema: { type: 'object', properties: GOALS_INPUT_PROPERTIES },
+        summarize: (_input, changes) => `오늘의 목표 ${changes.length}건을 넘겼어요`,
+        execute: async (input, context) => {
+          const { goals } = useReportFormStore.getState();
+          if (goals.length === 0) return toolText({ changed: false, message: '넘길 오늘의 목표가 없습니다.' });
+          const ids = resolveGoalIds(input);
+          if (typeof ids === 'string') return toolError(ids);
+          return changeResult(
+            await applyFormChange(
+              context,
+              { goals: withoutTodayGoals(goals, new Set(ids)) },
+              { success: '에이전트가 오늘의 목표를 넘겼습니다.' }
+            ),
+            '넘길 목표가 없습니다.'
+          );
         },
       },
 

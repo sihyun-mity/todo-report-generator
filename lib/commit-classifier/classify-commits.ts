@@ -67,6 +67,9 @@ type ClassifyArgs = {
   userId: string | null;
   commits: ReadonlyArray<GithubCommit>;
   todayProjects: ReadonlyArray<Project>;
+  // todayProjects 에 섞인 오늘의 목표 작업 id — 커밋을 붙일 후보로는 쓰되, 아직 보고서에 넣은 작업이 아니므로
+  // "이미 등록한 작업"(비슷하면 해제)으로 견주지 않는다
+  goalTaskIds?: ReadonlySet<string>;
   // 가져오는 보고서 날짜('YYYY-MM-DD') — 이미 등록한 작업은 이 날짜에 넣은 것만 견준다
   reportDateKey: string;
   history: ReadonlyArray<ReportHistoryItem>;
@@ -108,6 +111,7 @@ export async function classifyCommits({
   userId,
   commits,
   todayProjects,
+  goalTaskIds,
   reportDateKey,
   history,
   onProgress: reportProgress,
@@ -493,9 +497,10 @@ export async function classifyCommits({
       plan.existingProjectId !== null
         ? formProjects.find((p) => p.id === plan.existingProjectId)
         : formByName.get(plan.name.trim());
-    const hasFormTasks = [...projectPlans.values()].some((plan) =>
-      formProjectOf(plan)?.tasks.some((t) => t.content.trim())
-    );
+    // 오늘의 목표는 아직 넣은 작업이 아니라 견주지 않는다 — 목표와 비슷한 새 작업이 "이미 넣은 작업"으로 해제됐다
+    const reportedTasksOf = (plan: PlannedProject) =>
+      (formProjectOf(plan)?.tasks ?? []).filter((t) => t.content.trim() && !goalTaskIds?.has(t.id));
+    const hasFormTasks = [...projectPlans.values()].some((plan) => reportedTasksOf(plan).length > 0);
     if (registered.length || hasFormTasks) {
       let similarCount = 0;
       const markSimilar = (task: PlannedTask, name: string) => {
@@ -504,7 +509,7 @@ export async function classifyCommits({
         similarCount += 1;
       };
       for (const plan of projectPlans.values()) {
-        const formTasks = (formProjectOf(plan)?.tasks ?? []).filter((t) => t.content.trim());
+        const formTasks = reportedTasksOf(plan);
         for (const task of plan.tasks) {
           if (task.existingTaskId !== null) {
             if (task.commits.length && task.commits.every((c) => isReportedCommit(c, registered, savedAtMs))) {
