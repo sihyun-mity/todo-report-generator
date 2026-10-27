@@ -21,6 +21,8 @@ export type AgentToolContext = {
 export type AgentChange = {
   lines: ReadonlyArray<string>;
   undo?: () => boolean;
+  // 지금 되돌릴 수 있는지(undo 를 부르지 않고) — 뒤에 다른 변경이 있으면 false 다. 없으면 늘 되돌릴 수 있는 것으로 본다
+  canUndo?: () => boolean;
 };
 
 // WebMCP 등록과 앱 안 채팅이 함께 쓰는 도구 정의. 한 곳에서 정의해 두 경로에 그대로 넘긴다.

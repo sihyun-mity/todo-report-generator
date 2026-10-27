@@ -13,5 +13,6 @@ export * from './agent-suggestion-pill';
 export * from './report-live-preview';
 export * from './use-agent-situation';
 export * from './use-agent-suggestions';
+export * from './use-chat-agent-tools';
 export * from './use-global-agent-tools';
 export * from './use-speech-input';

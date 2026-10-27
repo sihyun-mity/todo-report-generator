@@ -19,6 +19,12 @@ type NewsDetail = News | null;
 type NewsList = { isMember: boolean; items: Array<News> };
 type PageEntry = { path: string; label: string; memberOnly?: boolean; guestOnly?: boolean };
 
+// 화면 이름 + 옮겨 달라는 말("새소식 화면으로 가줘", "설정 열어줘")
+const SCREEN_MOVE_REQUEST =
+  /(새\s*소식|설정|홈|보고서\s*작성|로그인|계정|패스키|로그인\s*기기|데이터\s*관리)\s*(화면|페이지|메뉴|창)?\s*(으로|로)?\s*(가\s*줘|가자|이동|옮겨|들어가|열어)/;
+// 화면 모드를 가리키는 말
+const THEME_WORDS = /다크|라이트|어둡게|밝게|어두운\s*(모드|화면|테마)|밝은\s*(모드|화면|테마)|화면\s*모드|테마|눈부/;
+
 const PAGE_KEYS = Object.keys(AGENT_PAGES) as Array<PageKey>;
 
 // 상세 화면에서 보고 있는(또는 방금 본) 소식을 가리키는 요청 — 목록을 후보로 두면 "지금 보고 있는 새소식 요약해줘"에 목록을 골라 최근 소식 여럿을 요약했다.
@@ -184,6 +190,8 @@ export function useGlobalAgentTools() {
         kind: 'navigate',
         // 소식 하나를 열어 달라는 요청은 open_news 가 연다 — 함께 두면 "그거 보여줘"에 새소식 목록 화면으로 옮겼다
         requires: (request) => !opensNews(request),
+        // "새소식 화면으로 가줘"처럼 화면을 말하고 옮겨 달라면 이 도구만 — 새소식 읽기를 골라 소식을 읽고 "이동했어요"라고 지어냈다
+        preferredWhen: (request) => SCREEN_MOVE_REQUEST.test(request),
         // 지금 화면을 알아야 "이미 이 화면"·"뒤로" 같은 요청을 판단한다
         inputContext: () => ({ currentPath: window.location.pathname }),
         description: `Go to another screen in the app. page is one of ${PAGE_KEYS.join(', ')}, news_detail. news_detail needs newsId (an id from list_news); to open the newest or the n-th news use open_news instead. settings* screens are for members only; login is for guests only. After moving, that screen's tools appear and the previous screen's tools disappear.`,
@@ -231,6 +239,8 @@ export function useGlobalAgentTools() {
         title: '화면 모드 바꾸기',
         kind: 'setting',
         description: 'Change the color theme: light, dark, or system (follow the device). Saved on this device.',
+        // 화면 모드를 말하면 이 도구만 — 설정 화면에서 "어둡게 해줘"를 화면 이동으로 분류한 뒤 "할 수 없음"을 골랐다
+        preferredWhen: (request) => THEME_WORDS.test(request),
         // "반대로 바꿔줘"·"원래대로" 같은 요청은 지금 모드를 알아야 채울 수 있다
         inputContext: () => ({ currentTheme: latest.current.theme }),
         inputSchema: {
@@ -255,6 +265,7 @@ export function useGlobalAgentTools() {
           context.reportChange?.({
             lines: [`화면 모드 ${THEME_LABELS[prev]} → ${THEME_LABELS[next]}`],
             // 그사이 사용자가 직접 바꿨으면 되돌리지 않는다
+            canUndo: () => latest.current.theme === next,
             undo: () => {
               if (latest.current.theme !== next) return false;
               latest.current.setTheme(prev);

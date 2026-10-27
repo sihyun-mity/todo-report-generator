@@ -21,9 +21,9 @@ import {
   structureNotes,
 } from '@/lib/prompt-api';
 import { agentToolsFor, parseToolUnavailable } from '@/lib/webmcp';
-import { useAgentChatStore, useAgentToolsStore, useReportFormStore } from '@/stores';
+import { useAgentChatStore, useAgentToolsStore, useAgentUndoStore, useReportFormStore } from '@/stores';
 import { createId } from '@/utils';
-import { AgentPanel, useAgentSituation, useAgentSuggestions, useGlobalAgentTools } from '.';
+import { AgentPanel, useAgentSituation, useAgentSuggestions, useChatAgentTools, useGlobalAgentTools } from '.';
 
 // Nano가 물은 다음 할 일을 받아들이는 짧은 말("응", "보여줘", "네 열어주세요")
 const ACCEPT_OFFER =
@@ -71,8 +71,8 @@ export function AgentAssistant() {
   const offeredRef = useRef<AgentAction | null>(null);
   // 대화 안 확인 카드의 응답 대기 — 카드 id → resolve
   const pendingConfirms = useRef(new Map<string, (ok: boolean) => void>());
-  // 변경 카드의 되돌리기 — 도구 메시지 id → undo
-  const undoFns = useRef(new Map<string, NonNullable<AgentChange['undo']>>());
+  // 변경 카드의 되돌리기 상태 — 채팅의 되돌리기 도구(undo_change)도 같은 목록을 쓴다
+  const undoEntries = useAgentUndoStore((s) => s.entries);
 
   // 처리하지 않은 후속 동작 수를 store 에 알린다 — 패널을 접어 두었을 때 상단바가 "확인 필요"를 띄운다
   const followUps = messages.filter((m) => (m.role === 'confirm' || m.role === 'draft') && m.status === 'pending');
@@ -136,6 +136,19 @@ export function AgentAssistant() {
   const patchMessage = (id: string, patch: Partial<AgentChatMessage>) =>
     setMessages((prev) => prev.map((m) => (m.id === id ? ({ ...m, ...patch } as AgentChatMessage) : m)));
 
+  // 패널 버튼으로만 하던 일(되돌리기·초안·새 대화·닫기)을 말로도 하게 하는 채팅 도구.
+  // "새 대화"는 이 패널이 처리 중인 요청이면 끝난 뒤에 비운다(end) — 처리 중에 비우면 답할 곳이 없다.
+  // 패널 밖에서 불렀으면(회귀 평가 등) 바로 비운다 — 미뤄 두면 다음 실제 요청이 끝날 때 대화가 지워진다
+  const newChatAfterTurn = useRef(false);
+  useChatAgentTools({
+    messages,
+    patchMessage,
+    onNewChat: () => {
+      if (abortRef.current) newChatAfterTurn.current = true;
+      else reset();
+    },
+  });
+
   const settleConfirms = (ok: boolean) => {
     for (const [id, resolve] of pendingConfirms.current) {
       resolve(ok);
@@ -191,6 +204,11 @@ export function AgentAssistant() {
     if (abortRef.current === controller) abortRef.current = null;
     // 생각 단계 없이 끝난 일(메모 정리·버튼 실행·오류)도 결과를 보여 주러 Nano로 넘긴다
     useAgentChatStore.getState().passHandoff();
+    if (newChatAfterTurn.current) {
+      newChatAfterTurn.current = false;
+      reset();
+      toast.success('새 대화를 시작했어요.');
+    }
   };
 
   // 입력창 하나로 부탁과 업무 메모를 함께 받는다. 분명한 메모는 규칙(looksLikeWorkNotes)으로 바로 메모 정리로 보내고,
@@ -216,6 +234,8 @@ export function AgentAssistant() {
       return;
     }
     const controller = begin();
+    // "뒤의 변경까지 함께 되돌릴까요?"는 바로 다음 요청에서만 받는다 — 남겨 두면 나중의 다른 질문에 "응"이라고 해도 되돌렸다
+    const undoOffered = useAgentUndoStore.getState().offered;
 
     // 이번 요청 전의 대화 기록 — 멈추거나 메모로 넘어가면 여기로 되돌린다
     let before: Array<AgentChatTurn> = fresh ? [] : turns;
@@ -266,7 +286,7 @@ export function AgentAssistant() {
           if (followUpCount > 0) return;
           setMessages((prev) => {
             const start = prev.findIndex((m) => m.id === userMessageId);
-            for (const m of prev.slice(0, start)) undoFns.current.delete(m.id);
+            useAgentUndoStore.getState().forget(prev.slice(0, start).map((m) => m.id));
             return prev.slice(start);
           });
         },
@@ -296,13 +316,20 @@ export function AgentAssistant() {
           pendingChange = null;
           setMessages((prev) => [...prev, { id, role: 'tool', title: tool.title, status: 'running' }]);
         },
-        onToolEnd: (_tool, result) => {
+        onToolEnd: (tool, result) => {
           if (!toolMessageId) return;
           const change: AgentChange | null = pendingChange;
-          if (change?.undo) undoFns.current.set(toolMessageId, change.undo);
+          if (change?.undo)
+            useAgentUndoStore.getState().push({
+              id: toolMessageId,
+              title: tool.title,
+              lines: change.lines,
+              undo: change.undo,
+              canUndo: change.canUndo,
+            });
           patchMessage(toolMessageId, {
             status: result.isError ? 'error' : 'done',
-            ...(change ? { changes: change.lines, undo: change.undo ? 'available' : undefined } : {}),
+            ...(change ? { changes: change.lines } : {}),
           });
         },
         onAnswer: (answer) => {
@@ -352,6 +379,7 @@ export function AgentAssistant() {
             : m
         )
       );
+      if (undoOffered && useAgentUndoStore.getState().offered === undoOffered) useAgentUndoStore.getState().offer(null);
       end(controller);
     }
   };
@@ -433,10 +461,17 @@ export function AgentAssistant() {
       const applied = captured.change;
       // 초안으로 넣은 작업을 이어서 "그거 진행률 바꿔줘"라고 할 수 있게 다룬 대상으로 기억한다
       useAgentChatStore.getState().updateFocus(focusAfterTool(tool, {}, result, applied?.lines ?? []));
-      if (applied?.undo) undoFns.current.set(toolMessageId, applied.undo);
+      if (applied?.undo)
+        useAgentUndoStore.getState().push({
+          id: toolMessageId,
+          title: '보고서 초안 추가',
+          lines: applied.lines,
+          undo: applied.undo,
+          canUndo: applied.canUndo,
+        });
       patchMessage(toolMessageId, {
         status: result.isError ? 'error' : 'done',
-        ...(applied ? { changes: applied.lines, undo: applied.undo ? 'available' : undefined } : {}),
+        ...(applied ? { changes: applied.lines } : {}),
       });
       if (!result.isError) {
         patchMessage(id, { status: 'applied' });
@@ -454,31 +489,24 @@ export function AgentAssistant() {
     setMessages([]);
     setTurns([]);
     setIsContextTrimmed(false);
-    undoFns.current.clear();
+    useAgentUndoStore.getState().clear();
     offeredRef.current = null;
     useAgentChatStore.getState().clearFocus();
   };
 
   // 변경 카드의 되돌리기. 그사이 사용자가 직접 고쳤으면 덮어쓰지 않고 알린다. 모델도 알 수 있게 대화 기록에 남긴다.
   const undoChange = (id: string) => {
-    const undo = undoFns.current.get(id);
-    if (!undo) return;
     if (isRunning) {
       notifyBusy();
       return;
     }
-    undoFns.current.delete(id);
-    const ok = undo();
-    patchMessage(id, { undo: ok ? 'done' : 'stale' });
-    if (!ok) {
+    const undone = useAgentUndoStore.getState().undo(id);
+    if (!undone) return;
+    if (undone.status === 'stale') {
       toast.error('그사이 내용이 바뀌어 되돌리지 않았어요.');
       return;
     }
-    const title = messages.find((m) => m.id === id && m.role === 'tool');
-    setTurns((prev) => [
-      ...prev,
-      { role: 'user', text: `[The user undid this change: ${title?.role === 'tool' ? title.title : 'last change'}]` },
-    ]);
+    setTurns((prev) => [...prev, { role: 'user', text: `[The user undid this change: ${undone.title}]` }]);
     toast.success('변경을 되돌렸어요.');
   };
 
@@ -508,10 +536,13 @@ export function AgentAssistant() {
       const applied = captured.change;
       // 버튼으로 실행해도 다룬 대상을 기억한다 — 버튼으로 연 소식을 이어서 "그거 요약해줘"라고 할 수 있게
       useAgentChatStore.getState().updateFocus(focusAfterTool(tool, input, result, applied?.lines ?? []));
-      if (applied?.undo) undoFns.current.set(toolMessageId, applied.undo);
+      if (applied?.undo)
+        useAgentUndoStore
+          .getState()
+          .push({ id: toolMessageId, title, lines: applied.lines, undo: applied.undo, canUndo: applied.canUndo });
       patchMessage(toolMessageId, {
         status: result.isError ? 'error' : 'done',
-        ...(applied ? { changes: applied.lines, undo: applied.undo ? 'available' : undefined } : {}),
+        ...(applied ? { changes: applied.lines } : {}),
       });
       const text = result.content.map((c) => c.text).join('\n');
       // 바꾸는 것 없이 끝난 결과(예: 가져올 미완료 업무 없음)·화면 이동 결과·할 수 없는 이유는 사용자에게도 알린다
@@ -612,7 +643,11 @@ export function AgentAssistant() {
     <AgentPanel
       availability={availability}
       downloadProgress={downloadProgress}
-      messages={messages}
+      messages={messages.map((m) => {
+        if (m.role !== 'tool') return m;
+        const entry = undoEntries.find((e) => e.id === m.id);
+        return entry ? { ...m, undo: entry.status } : m;
+      })}
       toolNames={tools.map((t) => t.name)}
       isRunning={isRunning}
       isContextTrimmed={isContextTrimmed}

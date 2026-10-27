@@ -62,3 +62,22 @@ export const REPORT_SCREEN_FEATURE_TOOLS = {
   캘린더_월_이동: { excluded: '보기만 바꾸는 화면 조작 — 기록 내용은 조회 도구로 읽는다' },
   미리보기_크게_보기: { excluded: '보기만 바꾸는 화면 조작' },
 } as const satisfies Record<string, CoverageEntry>;
+
+// Nano 패널의 버튼·카드로 하는 일. 말로 부탁해도 같은 일을 하도록 채팅 도구를 둔다(use-chat-agent-tools.ts) —
+// 되돌리기 도구가 없던 때 "되돌려줘"에 중복 작업 정리를 골라 "바뀐 것은 없어요"로 끝났다. 패널에 버튼을 더하면 손으로 넣는다.
+export const AGENT_CHAT_FEATURE_TOOLS = {
+  변경_되돌리기: { tools: ['undo_change'] },
+  초안_추가: { tools: ['add_notes_draft'] },
+  초안_취소: { tools: ['discard_notes_draft'] },
+  새_대화: { tools: ['start_new_chat'] },
+  패널_닫기: { tools: ['close_nano'] },
+  답변_뒤_버튼: { excluded: '버튼마다 이미 도구를 가리킨다 — 받아들이는 말("응")은 첫 버튼을 실행한다' },
+  빠른_작업_칩: { excluded: '칩마다 이미 도구나 요청을 가리킨다' },
+  확인_카드_승인_거절: {
+    excluded: '처리 중인 요청이 승인을 기다리는 동안이라 새 요청을 받지 않는다 — 카드에서 누른다',
+  },
+  멈추기: { excluded: '처리 중에는 새 요청을 받지 않는다 — 멈추기 버튼·Esc 로 한다' },
+  추천_넘기기: { excluded: '이번 세션에서 다시 권하지 않게 하는 화면 조작일 뿐 — 데이터가 바뀌지 않는다' },
+  음성_입력: { excluded: '마이크 권한 프롬프트(사용자 제스처)가 필요하다' },
+  AI_모델_받기: { excluded: '다운로드는 사용자 클릭으로만 시작한다(Prompt API 규칙)' },
+} as const satisfies Record<string, CoverageEntry>;

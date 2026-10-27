@@ -1,6 +1,6 @@
 import type { AgentChange, AgentChatTurn, AgentRequestScope, AgentTool, Project } from '@/types';
 import { AGENT_CHAT_TOOL_WAIT_MS } from '@/constants';
-import { useAgentChatStore, useReportFormStore, useReportHistoryStore } from '@/stores';
+import { useAgentChatStore, useAgentUndoStore, useReportFormStore, useReportHistoryStore } from '@/stores';
 import { createEmptyProject, createId } from '@/utils';
 import { runAgentChatTurn, setPlanCatalogMode } from '.';
 
@@ -11,7 +11,12 @@ import { runAgentChatTurn, setPlanCatalogMode } from '.';
 
 type EvalTask = { content: string; progress: number; details?: ReadonlyArray<string> };
 type EvalProject = { name: string; tasks: ReadonlyArray<EvalTask> };
-type EvalForm = { today: ReadonlyArray<EvalProject>; tomorrow: ReadonlyArray<EvalProject> };
+type EvalForm = {
+  today: ReadonlyArray<EvalProject>;
+  tomorrow: ReadonlyArray<EvalProject>;
+  // 오늘의 목표 — 없으면 비운다
+  goals?: ReadonlyArray<EvalProject>;
+};
 
 type EvalTurn = {
   say: string;
@@ -36,6 +41,8 @@ export type AgentEvalScenario = {
 
 const MONITOR = '서비스 트래픽, 방화벽 모니터링(24시간)';
 const TOKEN = '토큰 로그인 안정성 검증';
+const GOAL_A = '주문서 상세 주소 저장 누락 오류 수정';
+const GOAL_B = '포장 주문 배달비 포함 오류 수정';
 
 const BASE_FORM: EvalForm = {
   today: [
@@ -58,6 +65,71 @@ const has = (projects: ReadonlyArray<EvalProject>, content: string) => tasksOf(p
 
 export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
   { name: '인사', turns: [{ say: '안녕! 뭐 할 수 있어?', expect: [] }] },
+  {
+    // 실제로 실패했던 대화 — 되돌리는 도구가 없어 "되돌려줘"에 중복 작업 정리를 골라 "바뀐 것은 없어요"로 끝났다
+    name: '오늘의 목표 옮기기 → 되돌리기',
+    form: {
+      ...BASE_FORM,
+      goals: [
+        {
+          name: '먹깨비 React 개발',
+          tasks: [
+            { content: GOAL_A, progress: 0 },
+            { content: GOAL_B, progress: 0 },
+          ],
+        },
+      ],
+    },
+    turns: [
+      { say: '오늘의 목표 모두 금일 업무로 옮겨줘', expect: ['place_today_goals'] },
+      { say: '되돌려줘', expect: ['undo_change'], forbid: ['remove_duplicate_tasks'], answer: /되돌렸/ },
+    ],
+    check: (form) =>
+      has(form.today, GOAL_A) || has(form.today, GOAL_B)
+        ? '목표가 금일 업무에 남아 있다'
+        : !has(form.goals ?? [], GOAL_A)
+          ? '목표 목록으로 돌아오지 않았다'
+          : null,
+  },
+  {
+    name: '진행률 바꾸기 → 원래대로',
+    form: BASE_FORM,
+    turns: [
+      { say: '토큰 로그인 작업 진행률 80%로 바꿔줘', expect: ['set_task_progress'] },
+      { say: '아까 바꾼 거 원래대로 돌려놔', expect: ['undo_change'] },
+    ],
+    check: (form) =>
+      form.today.flatMap((p) => p.tasks).find((t) => t.content === TOKEN)?.progress === 30
+        ? null
+        : '진행률이 30% 로 돌아오지 않았다',
+  },
+  {
+    // 바꾼 게 없으면 다른 도구로 대신하지 않고 그렇다고 알린다
+    name: '되돌릴 것 없음',
+    form: BASE_FORM,
+    turns: [{ say: '되돌려줘', expect: [], answer: /되돌릴/ }],
+  },
+  {
+    // 앞의 변경은 뒤의 변경이 있으면 따로 되돌릴 수 없다 — 그렇다고 알리고 함께 되돌릴지 묻는다. 받아들이면 둘 다 되돌린다
+    // (따로 되돌릴 수 있는 것처럼 보여 주던 때는 고르고 실패했다)
+    name: '여러 변경 중 앞의 것 되돌리기',
+    form: BASE_FORM,
+    turns: [
+      { say: '토큰 로그인 작업은 내일로 옮겨줘', expect: ['move_report_task'] },
+      { say: '서비스 트래픽 모니터링 작업 진행률 50%로 바꿔줘', expect: ['set_task_progress'] },
+      { say: '아까 내일로 옮긴 거 원래대로 돌려놔', expect: ['undo_change'], answer: /함께 되돌릴까요/ },
+      { say: '응, 같이 되돌려줘', expect: ['undo_change'], answer: /되돌렸/ },
+    ],
+    check: (form) =>
+      !has(form.today, TOKEN)
+        ? '토큰 작업이 금일로 돌아오지 않았다'
+        : form.today.flatMap((p) => p.tasks).find((t) => t.content === MONITOR)?.progress !== 100
+          ? '진행률 변경이 함께 되돌아가지 않았다'
+          : null,
+  },
+  // 패널 버튼으로만 하던 일 — 말로 해도 같은 도구가 맡는다(AGENT_CHAT_FEATURE_TOOLS)
+  { name: '새 대화', turns: [{ say: '새 대화 시작해줘', expect: ['start_new_chat'] }] },
+  { name: 'Nano 닫기', turns: [{ say: '나노 패널 닫아줘', expect: ['close_nano'] }] },
   {
     // 실제로 실패했던 질문 — 쓰기 의도로 분류돼 "처리할 기능이 없어요"로 끝났다
     name: '작성 중 보고서 개수 묻기',
@@ -442,7 +514,7 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
         expect: [],
         answer: () =>
           useReportHistoryStore.getState().mode === 'user'
-            ? /로그인(되어|돼)\s*있|회원/
+            ? /^(?![\s\S]*(않|아니|안\s*돼))[\s\S]*(로그인\s*(되어|돼)\s*(있|계)|로그인\s*(되셨|됐|된\s*상태)|회원)/
             : /^\s*아니|게스트|비회원|로그인(되어|돼)\s*있지\s*않|로그인하지\s*않|로그인\s*안/,
       },
     ],
@@ -532,7 +604,12 @@ export async function runAgentEval({
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   const original = useReportFormStore.getState();
-  const saved = { reportDate: original.reportDate, today: original.today, tomorrow: original.tomorrow };
+  const saved = {
+    reportDate: original.reportDate,
+    today: original.today,
+    tomorrow: original.tomorrow,
+    goals: original.goals,
+  };
   const startPath = window.location.pathname;
   const startTools = getTools().map((t) => t.name);
   const results: Array<AgentEvalResult> = [];
@@ -545,9 +622,12 @@ export async function runAgentEval({
         if (scenario.form) {
           store.setBucket('today', toProjects(scenario.form.today));
           store.setBucket('tomorrow', toProjects(scenario.form.tomorrow));
+          store.setGoals(toProjects(scenario.form.goals ?? []));
         }
         // 시나리오마다 새 대화 — 앞 시나리오에서 다룬 대상("그거")이 넘어오지 않게
         useAgentChatStore.getState().clearFocus();
+        // 되돌리기 도구(undo_change)가 이 시나리오에서 바꾼 것만 되돌리게 목록을 비운다
+        useAgentUndoStore.getState().clear();
         const undos: Array<NonNullable<AgentChange['undo']>> = [];
         const history: Array<AgentChatTurn> = [];
         const logs: Array<TurnLog> = [];
@@ -555,6 +635,7 @@ export async function runAgentEval({
           for (const turn of scenario.turns) {
             history.push({ role: 'user', text: turn.say });
             const tools: Array<string> = [];
+            let currentTitle = '';
             const failed: Array<string> = [];
             let answer = '';
             const thinking = new Map<string, string>();
@@ -568,10 +649,21 @@ export async function runAgentEval({
               context: {
                 confirm: async () => true,
                 reportChange: (change) => {
-                  if (change.undo) undos.push(change.undo);
+                  if (!change.undo) return;
+                  undos.push(change.undo);
+                  useAgentUndoStore.getState().push({
+                    id: createId(),
+                    title: currentTitle,
+                    lines: change.lines,
+                    undo: change.undo,
+                    canUndo: change.canUndo,
+                  });
                 },
               },
-              onToolStart: (tool) => tools.push(tool.name),
+              onToolStart: (tool) => {
+                tools.push(tool.name);
+                currentTitle = tool.title;
+              },
               // 실패한 시도(빈 구역에서 이름 바꾸기 등)는 쓰기로 세지 않는다 — 다른 도구로 다시 골라 해내면 통과다
               onToolEnd: (tool, result) => {
                 if (result.isError) failed.push(tool.name);
@@ -610,7 +702,11 @@ export async function runAgentEval({
           }
           const state = useReportFormStore.getState();
           const formProblem =
-            scenario.check?.({ today: fromProjects(state.today), tomorrow: fromProjects(state.tomorrow) }) ?? null;
+            scenario.check?.({
+              today: fromProjects(state.today),
+              tomorrow: fromProjects(state.tomorrow),
+              goals: fromProjects(state.goals),
+            }) ?? null;
           const problems = [
             ...logs.flatMap((l) => (l.problem ? [l.problem] : [])),
             ...(formProblem ? [formProblem] : []),
@@ -647,6 +743,7 @@ export async function runAgentEval({
     store.setReportDate(saved.reportDate);
     store.setBucket('today', saved.today);
     store.setBucket('tomorrow', saved.tomorrow);
+    store.setGoals(saved.goals);
     setPlanCatalogMode('short');
   }
 

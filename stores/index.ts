@@ -1,6 +1,7 @@
 export * from './use-agent-chat-store';
 export * from './use-agent-highlight-store';
 export * from './use-agent-tools-store';
+export * from './use-agent-undo-store';
 export * from './use-confirm-store';
 export * from './use-dialog-queue-store';
 export * from './use-media-store';

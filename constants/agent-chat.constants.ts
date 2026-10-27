@@ -35,6 +35,12 @@ export const AGENT_CHAT_MAX_PLAN_STEPS = 4;
 /** 채팅 한 번의 요청에서 모델이 고를 수 있는 도구 호출 수. 넘기면 지금까지의 결과로 답하게 한다. */
 export const AGENT_CHAT_MAX_TOOL_STEPS = 5;
 
+/** 모델이 고른 쓰기 도구를 실행 전에 다시 확인하는 횟수(요청 하나에). 확인마다 모델 호출이 한 번 늘어 2~3초 걸린다. 이만큼 아니라고 하면 무엇을 원하는지 되묻는다. */
+export const AGENT_CHAT_MAX_TOOL_VERIFICATIONS = 2;
+
+/** 재확인 점수(0-10)가 이 값 이하면 고른 도구가 요청과 다른 동작이라고 보고 뺀다. 애매한 점수(4-7)는 그대로 실행한다 — 참·거짓으로 물었더니 맞는 도구까지 거절했다. */
+export const AGENT_CHAT_TOOL_MISMATCH_SCORE = 3;
+
 /** 대화 기록은 컨텍스트 창에 맞춰 자른다. measureContextUsage 가 없는 브라우저에서만 이 개수로 자른다 */
 export const AGENT_CHAT_FALLBACK_HISTORY_TURNS = 12;
 

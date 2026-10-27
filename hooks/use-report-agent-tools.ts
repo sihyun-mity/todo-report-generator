@@ -81,6 +81,14 @@ const LOAD_PAST_REPORT_REQUEST =
 const TEXT_IMPORT_REQUEST = /텍스트[^.?!]*(복원|붙여|가져|불러)|붙여\s*넣|복원\s*창/;
 // 창을 열어 달라는 말
 const OPEN_DIALOG_REQUEST = /열어|열기|띄워|켜\s*줘|보여|창|붙여\s*넣(을|고\s*싶|을래)/;
+// 오늘 한 일 전체를 가리키는 말(반복 업무) — "오늘 한 작업은 매일 반복하는 작업이야. 내일 할 일에도 넣어줘"
+const REPEAT_TODAY_REQUEST =
+  /오늘\s*(한|했던)\s*(업무|작업|일)|금일\s*(업무|작업)\s*(전부|모두|그대로)|매일\s*(하는|반복)|반복(하는|되는)?\s*(업무|작업)/;
+// 진행률을 다른 구역의 같은 작업처럼 맞추라는 말("진행률도 똑같이 해줘")
+const SAME_PROGRESS_REQUEST = /똑같이|같게|동일하게|그대로|맞춰/;
+// 같은 작업이 겹친다는 말 — 중복 작업 정리는 이 말이 있을 때만 후보다
+const DUPLICATE_REQUEST =
+  /중복|겹치|겹친|겹쳐|같은\s*(작업|업무|내용|거)|두\s*(번|개)\s*(있|들어)|합쳐|하나로\s*(합|정리)/;
 // 옮기기는 추가 의도에도 후보로 두므로(extraKinds) 옮기라는 말이 있을 때만 — "내일 할 일에도 넣어줘"에 복사 대신 옮겼다
 const MOVE_REQUEST = /옮겨|옮기|이동|순서|보내|위로|아래로|맨\s*(앞|위|뒤|아래)|\d+\s*번째/;
 // "프로젝트"만 말하고 "작업"은 말하지 않았으면 프로젝트 단위 요청이다 — "사내 위키 프로젝트는 통째로 내일로 옮겨줘"에
@@ -285,13 +293,24 @@ const currentGoalsState = () => {
 };
 
 // 이름으로 목표 작업 id 를 고른다(정확히 같은 것 → 포함 관계). all 이면 모두. 못 찾으면 이유 문자열
-const resolveGoalIds = (input: Record<string, unknown>): Array<string> | string => {
+// 오늘의 목표 전부를 가리키는 말 — "오늘의 목표 모두 금일 업무로 옮겨줘"에 모델이 all: false 로 보냈다
+const ALL_GOALS_REQUEST = /모두|전부|전체|다\s*(옮겨|넣어|넘겨|빼|금일|익일|오늘|내일)|싹/;
+
+const resolveGoalIds = (input: Record<string, unknown>, request = ''): Array<string> | string => {
   const { goals } = useReportFormStore.getState();
-  if (input.all === true) return goals.flatMap((p) => p.tasks.map((t) => t.id));
+  // "X 빼고 다 옮겨줘"처럼 일부를 빼는 말이 함께 있으면 전부로 보지 않는다
+  const allByWords = ALL_GOALS_REQUEST.test(request) && !/빼고|말고|제외/.test(request);
+  if (input.all === true || allByWords) return goals.flatMap((p) => p.tasks.map((t) => t.id));
   if (!Array.isArray(input.goals) || input.goals.length === 0 || input.goals.some((g) => typeof g !== 'string'))
     return 'goals 는 목표 작업 문구 배열이어야 합니다(모두면 all: true).';
   const ids: Array<string> = [];
   for (const name of input.goals as Array<string>) {
+    // 목표 문구 대신 프로젝트 이름을 넣었으면 그 프로젝트의 목표 전부로 본다 — "먹깨비 React 개발"을 목표로 넣어 실패했다
+    const project = goals.find((p) => p.name.trim() === name.trim());
+    if (project) {
+      ids.push(...project.tasks.map((t) => t.id));
+      continue;
+    }
     const refs = findTasks(goals, input.project, name);
     if (typeof refs === 'string') return refs.replace(/작업/g, '목표');
     ids.push(...refs.map((r) => goals[r.projectIndex].tasks[r.taskIndex].id));
@@ -570,12 +589,14 @@ const applyFormChange = async (
   const { flash } = useAgentHighlightStore.getState();
   flash([...changedIds, ...(dateChanged ? [AGENT_HIGHLIGHT_DATE_ID] : [])]);
   const applied = formSnapshot();
+  // 그사이 폼이 바뀌었거나(사용자가 고침·다음 변경) 다른 목표를 옮기거나 넘겼으면 되돌리지 않는다 — 덮어쓰면 그 뒤의 변경이 사라진다
+  const canUndo = () =>
+    isSameReportForm(formSnapshot(), applied) && !(nextGoals && useReportFormStore.getState().goals !== nextGoals);
   context.reportChange?.({
     lines,
+    canUndo,
     undo: () => {
-      if (!isSameReportForm(formSnapshot(), applied)) return false;
-      // 그사이 다른 목표를 옮기거나 넘겼으면 목표 목록을 덮어쓰지 않는다(옮긴 목표가 되살아난다)
-      if (nextGoals && useReportFormStore.getState().goals !== nextGoals) return false;
+      if (!canUndo()) return false;
       const current = useReportFormStore.getState();
       current.setReportDate(before.reportDate);
       current.setBucket('today', [...before.today]);
@@ -1027,6 +1048,8 @@ export const useReportAgentTools = ({
         title: '금일 업무 익일로 복사',
         kind: 'add',
         requires: (request) => ALL_TODAY_REQUEST.test(request),
+        // 오늘 한 일 전체를 내일에도 넣어 달라는 말이면 이 도구만 — 작업 추가를 함께 두면 앞에서 지운 작업을 다시 넣었다
+        preferredWhen: (request) => REPEAT_TODAY_REQUEST.test(request) && /내일|익일/.test(request),
         // "진행률도 똑같이 해줘"(복사 뒤 후속)는 수정으로 분류된다 — 금일 진행률을 그대로 맞추는 이 도구가 정답이다
         extraKinds: ['edit'],
         description:
@@ -1100,6 +1123,9 @@ export const useReportAgentTools = ({
         name: 'set_task_progress',
         title: '작업 진행률 바꾸기',
         kind: 'edit',
+        // "진행률도 똑같이 해줘"는 이 도구만 — 맞는 도구가 후보에 있어도 "할 수 없음"을 골랐다
+        preferredWhen: (request) =>
+          /진행률/.test(request) && SAME_PROGRESS_REQUEST.test(request) && !/넣어|추가|복사|옮겨/.test(request),
         description:
           "Change the progress (%) of an existing task (진행률 바꿔줘, 100%로 해줘, 다 했어). Only that task's progress changes; nothing is added.",
         inputContext: currentFormState,
@@ -1122,12 +1148,19 @@ export const useReportAgentTools = ({
         execute: async (input, context) => {
           const target = resolveTaskInput(input);
           if (typeof target === 'string') return toolError(target);
-          const { progress } = input;
+          const other = target.section === 'today' ? 'tomorrow' : 'today';
+          const elsewhere = findTasks(useReportFormStore.getState()[other], input.project, input.task as string);
+          // 숫자 없이 "진행률도 똑같이"라고 했으면 다른 구역의 같은 작업 진행률을 따른다 — 모델이 0% 를 넣어 바뀐 게 없었다
+          const sameAsOther =
+            context.request && SAME_PROGRESS_REQUEST.test(context.request) && !/\d+\s*%/.test(context.request);
+          const otherProgress =
+            sameAsOther && typeof elsewhere !== 'string' && elsewhere.length === 1
+              ? useReportFormStore.getState()[other][elsewhere[0].projectIndex].tasks[elsewhere[0].taskIndex].progress
+              : undefined;
+          const progress = otherProgress ?? input.progress;
           if (!isProgress(progress)) return toolError('progress 는 0~100 정수여야 합니다.');
           const projects = updateTasks(target.projects, target.refs, (t) => ({ ...t, progress }));
           // 같은 작업이 다른 구역에 다른 진행률로 있으면 알려 준다 — "진행률도 똑같이"에 익일 대신 금일 작업을 골랐다
-          const other = target.section === 'today' ? 'tomorrow' : 'today';
-          const elsewhere = findTasks(useReportFormStore.getState()[other], input.project, input.task as string);
           const hint =
             typeof elsewhere !== 'string' &&
             elsewhere.some(
@@ -1207,6 +1240,11 @@ export const useReportAgentTools = ({
         name: 'remove_duplicate_tasks',
         title: '중복 작업 정리',
         kind: 'edit',
+        // 중복을 말하지 않은 요청에는 후보로 두지 않는다 — 되돌리는 도구가 없던 때 "되돌려줘"에 이 도구를 골랐다
+        requires: (request) => DUPLICATE_REQUEST.test(request),
+        // 중복을 지우거나 정리해 달라는 말이면 이 도구만 — 중복이 없는데 "중복 작업 삭제해줘"에 작업 삭제를 골라 하나뿐인 작업을 지웠다
+        preferredWhen: (request) =>
+          DUPLICATE_REQUEST.test(request) && /삭제|지워|지우|정리|합쳐|없애|빼|하나로/.test(request),
         summarize: (_input, changes) =>
           `같은 작업 ${changes.filter((line) => line.startsWith('－')).length}개를 하나로 합쳤어요`,
         description:
@@ -1857,7 +1895,7 @@ export const useReportAgentTools = ({
           if (!section) return toolError('section 은 "today" 또는 "tomorrow" 여야 합니다.');
           const { goals } = useReportFormStore.getState();
           if (goals.length === 0) return toolText({ changed: false, message: '옮길 오늘의 목표가 없습니다.' });
-          const ids = resolveGoalIds(input);
+          const ids = resolveGoalIds(input, context.request);
           if (typeof ids === 'string') return toolError(ids);
           const store = useReportFormStore.getState();
           return changeResult(
@@ -1888,7 +1926,7 @@ export const useReportAgentTools = ({
         execute: async (input, context) => {
           const { goals } = useReportFormStore.getState();
           if (goals.length === 0) return toolText({ changed: false, message: '넘길 오늘의 목표가 없습니다.' });
-          const ids = resolveGoalIds(input);
+          const ids = resolveGoalIds(input, context.request);
           if (typeof ids === 'string') return toolError(ids);
           return changeResult(
             await applyFormChange(

@@ -185,3 +185,34 @@ export type AgentThinkingStep = {
   detail?: string;
   status: 'running' | 'done';
 };
+
+// Nano가 바꾼 것 하나 — 변경 카드의 되돌리기와 채팅의 되돌리기 도구(undo_change)가 함께 쓴다.
+// id 는 그 변경을 보여 주는 도구 메시지 id, title 은 그 도구의 한국어 이름이다.
+export type AgentUndoEntry = {
+  id: string;
+  title: string;
+  lines: ReadonlyArray<string>;
+  undo: () => boolean;
+  canUndo?: () => boolean;
+  status: 'available' | 'done' | 'stale';
+};
+
+export type AgentUndoStore = {
+  entries: ReadonlyArray<AgentUndoEntry>;
+  push: (entry: Omit<AgentUndoEntry, 'status'>) => void;
+  // 아직 되돌리지 않은 변경, 오래된 것부터 — 뒤에 다른 변경이 있어 지금은 따로 되돌릴 수 없는 것도 든다
+  pending: () => ReadonlyArray<AgentUndoEntry>;
+  // 그중 지금 바로 되돌릴 수 있는 변경
+  available: () => ReadonlyArray<AgentUndoEntry>;
+  // 되돌린다 — id 가 없으면 가장 최근 것. 되돌릴 변경이 없으면 null, 있으면 바뀐 상태(done·stale)로 돌려준다
+  undo: (id?: string) => AgentUndoEntry | null;
+  // id 의 변경과 그 뒤의 변경을 최근 것부터 차례로 되돌린다 — 앞의 변경은 뒤의 변경을 되돌려야 되돌릴 수 있다.
+  // 하나라도 되돌리지 못하면 거기서 멈추고, 되돌린 것까지 돌려준다
+  undoThrough: (id: string) => ReadonlyArray<AgentUndoEntry>;
+  // "뒤의 변경까지 함께 되돌릴까요?"라고 물은 변경 — 다음 요청이 "응"이면 그 변경부터 함께 되돌린다
+  offered: string | null;
+  offer: (id: string | null) => void;
+  // 화면에서 지운 대화의 변경은 잊는다
+  forget: (ids: ReadonlyArray<string>) => void;
+  clear: () => void;
+};
