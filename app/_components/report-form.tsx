@@ -301,6 +301,7 @@ export function ReportForm({ serverDateKey }: Readonly<Props>) {
     },
     onReplaced: refreshBaseline,
     onOpenGithubImport: () => void openGithubImport(),
+    onOpenTextImport: () => setIsImportModalOpen(true),
     onCopy: () => handleCopy(),
   });
 

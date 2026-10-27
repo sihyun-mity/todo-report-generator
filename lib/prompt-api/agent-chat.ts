@@ -24,7 +24,7 @@ import {
   AGENT_CHAT_TOOL_WAIT_MS,
 } from '@/constants';
 import { parseToolUnavailable } from '@/lib/webmcp';
-import { eul, euro } from '@/utils';
+import { asksGithubImport, eul, euro } from '@/utils';
 import { otherModelOwner, PROMPT_API_OPTIONS, readPromptStream, withModelLock, type ModelOwner } from '.';
 
 // 앱 안 채팅의 한 턴. 모든 단계가 구조화 출력(responseConstraint)이다:
@@ -56,6 +56,8 @@ const FORM_KINDS: ReadonlyArray<AgentToolKind> = ['add', 'edit', 'replace', 'res
 // — 익일에 작업을 넣어 달라고 한 뒤 설정 화면으로 옮겨 가면 "이 화면에서는 처리하지 못했어요"로 끝났다
 const HOME_KINDS: ReadonlyArray<AgentToolKind> = [...FORM_KINDS, 'save'];
 const HOME_NAVIGATION = { tool: 'navigate', input: { page: 'home' } } as const;
+// 보고서 작성 화면에만 등록되는 GitHub 가져오기 창 열기 도구
+const GITHUB_IMPORT_TOOL = 'open_github_import';
 // 폼을 바꾼 답변 뒤에 두는 저장 버튼(저장은 확인 카드를 거친다)
 const SAVE_FOLLOW_UP = {
   id: 'save-report',
@@ -368,7 +370,7 @@ const APP_GUIDE = `- Home (보고서 작성): pick the report date, then write p
 - Members (logged in) keep history in their account across devices. Guests keep it only in this browser (up to 100 reports). Logging in is optional (top bar 로그인 button).
 - Settings (members only): email, password, GitHub account link, passkeys, logged-in devices, writing reminder notifications (작성 알림), saved data management, account deletion.
 - 새소식 (top bar) shows service news and updates.
-- Nano (you) can fill, edit, save, copy and look up reports (this form and saved history: dates, counts, summaries of a day or a period), tell or open service news, change the color mode, open GitHub import and move between screens. Nano runs on-device AI in Chrome; conversations stay on this device.
+- Nano (you) can fill, edit, save, copy and look up reports (this form and saved history: dates, counts, summaries of a day or a period), tell or open service news, change the color mode, open GitHub import or the 텍스트로 복원 dialog and move between screens. Nano runs on-device AI in Chrome; conversations stay on this device.
 - How Nano reads requests: 알려줘/알고 싶어/뭐야 = tell the answer in the chat; 보여줘/열어줘/가줘 on a screen or one item = open it on screen; 그거/그날/그 작업 = the thing talked about just before ("talkingAbout" in the situation); 다시/다시 해줘 = do the previous request again.`;
 
 // 앞 대화를 잇는 말 — 모델이 새 요청이라고 판단해도 이런 말이 있으면 앞 대화를 지우지 않는다(잘못 지우면 되묻기·후속 요청이 끊긴다)
@@ -1083,6 +1085,21 @@ export async function runAgentChatTurn({
       intentNote = 'the user only asks a question; do not change anything';
       think('intent', `요청 이해: ${kind ? '보고서·새소식 조회' : '대화'}`, 'done');
     }
+    // 요청이 분명히 가리키는 도구(preferredWhen)가 있으면 그 도구의 종류로 처리한다 — 의도 분류나 위 가드가 다른 종류로 바꾸면
+    // 그 도구가 후보에서 빠졌다("github에서 커밋 가져와줘"가 "가져와"로 추가 의도가 돼 GitHub 가져오기 창을 열지 못했다).
+    // GitHub 가져오기 창은 보고서 작성 화면에만 있어 다른 화면이면 아래에서 홈으로 옮겨 간 뒤 연다
+    const githubImport = asksGithubImport(request) && !HOW_TO_QUESTION.test(request);
+    const preferredKind = githubImport
+      ? 'navigate'
+      : getTools().find((t) => (!t.requires || t.requires(request, scope)) && t.preferredWhen?.(request, scope))?.kind;
+    if (preferredKind && kind !== preferredKind && !HOW_TO_QUESTION.test(request)) {
+      kind = preferredKind;
+      intentNote = 'the request names one feature; use it';
+      const title = githubImport
+        ? 'GitHub 커밋 가져오기'
+        : INTENT_TITLES[INTENTS.find((i) => i.kind === preferredKind)?.label ?? ''];
+      think('intent', `요청 이해: ${title ?? '기능 실행'}`, 'done');
+    }
     const lockIfForm = (k: AgentToolKind | 'any' | null) => {
       if (k && k !== 'any' && FORM_KINDS.includes(k)) onFormLock?.();
     };
@@ -1093,9 +1110,12 @@ export async function runAgentChatTurn({
     // 남은 후보(화면 이동 등)로 대신하거나 "처리하지 못했어요"로 끝내지 않게.
     let movedHome = false;
     const hasKind = (k: AgentToolKind) => getTools().some((t) => t.kind === k || t.extraKinds?.includes(k));
-    const goHomeIfNeeded = async (kind: AgentToolKind | 'any' | null) => {
+    // tool 을 주면 그 도구가 등록될 때까지(GitHub 가져오기 창 열기처럼 보고서 작성 화면에만 있는 도구) 옮겨 간다
+    const goHomeIfNeeded = async (kind: AgentToolKind | 'any' | null, tool?: string) => {
       const home = getTools().find((t) => t.name === HOME_NAVIGATION.tool);
-      if (!kind || kind === 'any' || !HOME_KINDS.includes(kind) || hasKind(kind) || !home) return;
+      if (!tool && (!kind || kind === 'any' || !HOME_KINDS.includes(kind))) return;
+      const ready = () => (tool ? getTools().some((t) => t.name === tool) : !!kind && kind !== 'any' && hasKind(kind));
+      if (ready() || !home) return;
       think('home', '보고서 작성 화면으로 이동하는 중');
       onToolStart(home);
       const result = await home.execute({ ...HOME_NAVIGATION.input }, context);
@@ -1111,13 +1131,14 @@ export async function runAgentChatTurn({
       });
       // 폼이 기록을 불러와 편집할 수 있게 되면(isFormReady) 보고서 도구가 등록된다
       const startedAt = Date.now();
-      while (!hasKind(kind) && Date.now() - startedAt < AGENT_CHAT_TOOL_WAIT_MS) {
+      while (!ready() && Date.now() - startedAt < AGENT_CHAT_TOOL_WAIT_MS) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         signal.throwIfAborted();
       }
-      movedHome = hasKind(kind);
+      movedHome = ready();
       think('home', movedHome ? '보고서 작성 화면으로 이동했어요' : '보고서 작성 화면을 준비하지 못했어요', 'done');
     };
+    if (githubImport) await goHomeIfNeeded(kind, GITHUB_IMPORT_TOOL);
     await goHomeIfNeeded(kind);
 
     let askUser = false;
@@ -1296,6 +1317,13 @@ export async function runAgentChatTurn({
       const previousTools = history.slice(start + 1).flatMap((t) => (t.role === 'tool' ? [t] : []));
       if (!previousTools.some((t) => !t.isError && (t.changes?.length ?? 0) > 0))
         replay.push(...previousTools.map((t) => ({ name: t.name, input: t.input })));
+    }
+    // 요청이 가리키는 도구가 하나뿐이고 입력이 필요 없으면(GitHub 가져오기 창 열기) 모델에 고르게 하지 않고 바로 실행한다 —
+    // 고르는 단계에서 "할 수 없음"을 골라 "버튼을 눌러 보세요"라고 답했다
+    if (replay.length === 0 && kind) {
+      const only = candidateTools(getTools(), kind, request, scope);
+      if (only.length === 1 && only[0].preferredWhen?.(request, scope) && !hasInputs(only[0]))
+        replay.push({ name: only[0].name, input: {} });
     }
 
     // "할 수 없음"을 한 번 다시 보게 했는지와 그때 덧붙이는 지시

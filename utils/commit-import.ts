@@ -188,3 +188,16 @@ export const applyCommitImportPlan = (
 
   return { projects: isInitial && appended.length ? appended : [...result, ...appended], links };
 };
+
+// GitHub·커밋을 가리키는 말 + 가져오거나 열어 달라는 말. 연동·해제·계정 같은 설정 말은 설정 화면 이동이라 뺀다
+const GITHUB_IMPORT_TARGET = /github|깃\s*허브|깃헙|커밋|commit/i;
+const GITHUB_IMPORT_ACTION =
+  /가져|불러|써\s*줘|채워|작성|정리|열어|열기|띄워|켜\s*줘|import|보여|해\s*줘|해\s*주세요|하자|할래|하고\s*싶/i;
+const GITHUB_SETTING_WORDS = /연동|연결|해제|설정|계정|토큰|로그아웃/;
+
+/**
+ * 에이전트 요청이 GitHub 커밋 가져오기 창을 열어 달라는 말인지. 채팅은 의도 분류와 관계없이 이 요청이면 그 창을 연다 —
+ * "github에서 커밋 가져와줘"가 "가져와"로 추가 의도가 돼 창 열기(이동 도구)가 후보에서 빠지고 "직접 실행할 수 없어요"로 끝났다.
+ */
+export const asksGithubImport = (request: string): boolean =>
+  GITHUB_IMPORT_TARGET.test(request) && GITHUB_IMPORT_ACTION.test(request) && !GITHUB_SETTING_WORDS.test(request);

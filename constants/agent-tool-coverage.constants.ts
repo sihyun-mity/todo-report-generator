@@ -47,7 +47,7 @@ export const REPORT_SCREEN_FEATURE_TOOLS = {
   기록_불러오기: { tools: ['load_report'] },
   기록_조회_검색: { tools: ['get_report', 'search_reports', 'list_report_dates'] },
   미완료_업무_가져오기: { tools: ['carry_over_incomplete_tasks', 'copy_today_to_tomorrow'] },
-  텍스트로_복원: { tools: ['import_report_text'] },
+  텍스트로_복원: { tools: ['import_report_text', 'open_text_import'] },
   GitHub에서_가져오기: { tools: ['open_github_import'] },
   작성_내용_초기화: { tools: ['reset_report_form'] },
   기록_삭제: { excluded: '저장된 기록을 지우는 일은 되돌리기 어려워 에이전트에 맡기지 않는다(기록 카드의 삭제 버튼)' },

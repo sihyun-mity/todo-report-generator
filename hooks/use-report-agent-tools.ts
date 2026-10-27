@@ -24,6 +24,7 @@ import { useAgentTools } from '.';
 import {
   appendProjects,
   areAllAttemptedProjectsValid,
+  asksGithubImport,
   createEmptyProject,
   createId,
   dayLabel,
@@ -70,6 +71,13 @@ const quoted = (value: unknown) => (typeof value === 'string' ? `'${value.trim()
 // ("토큰 로그인 작업 삭제해줘"에 그 아래 세부 항목을 지웠고, "이 작업 내일로 옮겨줘"에 금일 전체를 복사했다)
 const DETAIL_REQUEST = /세부|하위|소분류|아래에|밑에/;
 const INCOMPLETE_REQUEST = /미완료|진행\s*중|안\s*끝|못\s*끝|남은|덜\s*한/;
+// 지난 날짜의 저장된 보고서를 폼으로 불러오라는 말 — "어제 보고서 가져와줘"
+const LOAD_PAST_REPORT_REQUEST =
+  /(어제|그제|그저께|전날|지난|저번|\d{1,2}\s*월\s*\d{1,2}\s*일|\d{1,2}\/\d{1,2}|\d{4}-\d{2}-\d{2})[^.?!]*(보고서|기록)[^.?!]*(불러|가져)/;
+// 보고서 텍스트를 붙여 넣어 복원하는 창을 가리키는 말
+const TEXT_IMPORT_REQUEST = /텍스트[^.?!]*(복원|붙여|가져|불러)|붙여\s*넣|복원\s*창/;
+// 창을 열어 달라는 말
+const OPEN_DIALOG_REQUEST = /열어|열기|띄워|켜\s*줘|보여|창|붙여\s*넣(을|고\s*싶|을래)/;
 // 옮기기는 추가 의도에도 후보로 두므로(extraKinds) 옮기라는 말이 있을 때만 — "내일 할 일에도 넣어줘"에 복사 대신 옮겼다
 const MOVE_REQUEST = /옮겨|옮기|이동|순서|보내|위로|아래로|맨\s*(앞|위|뒤|아래)|\d+\s*번째/;
 // "프로젝트"만 말하고 "작업"은 말하지 않았으면 프로젝트 단위 요청이다 — "사내 위키 프로젝트는 통째로 내일로 옮겨줘"에
@@ -747,6 +755,8 @@ type Options = {
   onReplaced: () => void;
   // GitHub 커밋 가져오기 다이얼로그 열기 (조회 범위 계산은 폼이 한다)
   onOpenGithubImport: () => void;
+  // "텍스트로 복원" 창 열기 — 사용자가 보고서 텍스트를 직접 붙여 넣는다
+  onOpenTextImport: () => void;
   // "복사하기" 버튼과 같은 동작(클립보드 복사 + 기록 저장). 성공하면 true
   onCopy: () => Promise<boolean>;
 };
@@ -759,12 +769,13 @@ export const useReportAgentTools = ({
   onSaved,
   onReplaced,
   onOpenGithubImport,
+  onOpenTextImport,
   onCopy,
 }: Readonly<Options>) => {
   // 도구는 등록 시점에 한 번 만들어지므로, 실행 시점의 최신 콜백을 ref 로 읽는다
-  const callbacks = useRef({ onSaved, onReplaced, onOpenGithubImport, onCopy });
+  const callbacks = useRef({ onSaved, onReplaced, onOpenGithubImport, onOpenTextImport, onCopy });
   useEffect(() => {
-    callbacks.current = { onSaved, onReplaced, onOpenGithubImport, onCopy };
+    callbacks.current = { onSaved, onReplaced, onOpenGithubImport, onOpenTextImport, onCopy };
   });
 
   useAgentTools((): Array<AgentTool> => {
@@ -1572,6 +1583,8 @@ export const useReportAgentTools = ({
         kind: 'replace',
         // 불러오라는 말이 있을 때만 — "보고서 날짜를 어제로 바꿔줘"에 어제 보고서를 불러오려 했다
         requires: (request) => /불러|가져|복원|기록|저장된|저장한|그대로\s*(써|쓰|채워)/.test(request),
+        // 지난 날짜의 보고서를 불러오거나 가져오라는 말이면 이 도구만 둔다 — "가져와"로 추가 의도가 되면 이 도구가 후보에서 빠졌다
+        preferredWhen: (request) => LOAD_PAST_REPORT_REQUEST.test(request) && !INCOMPLETE_REQUEST.test(request),
         description:
           'Load the saved report for a date into the form (replaces date, today and tomorrow). Asks the user to confirm if content would be lost. To only view it, use get_report.',
         inputSchema: { type: 'object', properties: { date: DATE_KEY_SCHEMA }, required: ['date'] },
@@ -1726,6 +1739,8 @@ export const useReportAgentTools = ({
         kind: 'navigate',
         // GitHub·커밋·가져오기를 말했을 때만 — "자세히 보여줘"에 이 창을 열었다
         requires: (request) => /github|깃허브|깃헙|커밋|가져오기|가져와/i.test(request),
+        // GitHub 커밋을 가져오거나 이 창을 열어 달라는 말이면 의도와 관계없이 이 창만 연다(입력이 없어 모델 없이 바로 실행된다)
+        preferredWhen: (request) => asksGithubImport(request),
         description:
           'Open the "GitHub에서 가져오기" dialog that imports GitHub commits into today\'s tasks. The user picks and applies commits in the dialog. Members only — guests see a login prompt.',
         inputSchema: { type: 'object', properties: {} },
@@ -1738,6 +1753,26 @@ export const useReportAgentTools = ({
               ? // 화면에 그대로 보이는 안내다(이동·열기 도구는 이 문장으로 답한다)
                 'GitHub 가져오기 창을 열었어요. 창에서 커밋을 확인하고 적용해 주세요.'
               : 'GitHub 가져오기는 로그인한 회원만 쓸 수 있어요. 창에서 로그인 안내를 확인해 주세요.',
+          });
+        },
+      },
+      {
+        name: 'open_text_import',
+        title: '텍스트로 복원 창 열기',
+        kind: 'navigate',
+        // 보고서 텍스트를 붙여 넣는 창을 열어 달라는 말일 때만 — 텍스트를 함께 보내면 import_report_text 가 바로 채운다
+        requires: (request) => TEXT_IMPORT_REQUEST.test(request),
+        // 보고서 텍스트를 함께 보낸 긴 요청은 바로 채운다(import_report_text) — 붙여 넣은 본문의 낱말로 창을 열지 않게
+        preferredWhen: (request) =>
+          request.length <= 60 && TEXT_IMPORT_REQUEST.test(request) && OPEN_DIALOG_REQUEST.test(request),
+        description:
+          'Open the "텍스트로 복원" dialog where the user pastes a report text to restore the form. Use when the user wants to paste a report text themselves. If the user already sent the report text in the chat, use import_report_text instead.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async () => {
+          callbacks.current.onOpenTextImport();
+          return toolText({
+            opened: true,
+            message: '텍스트로 복원 창을 열었어요. 보고서 텍스트를 붙여 넣고 적용해 주세요.',
           });
         },
       },

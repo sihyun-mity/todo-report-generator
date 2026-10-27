@@ -94,6 +94,7 @@ export const AGENT_CHAT_EXAMPLES: ReadonlyArray<{ text: string; tool: string }> 
   { text: '작성 중인 보고서를 저장해줘', tool: 'save_report' },
   { text: '보고서 기록을 텍스트 파일로 내보내줘', tool: 'export_reports' },
   { text: 'GitHub 커밋 가져오기 열어줘', tool: 'open_github_import' },
+  { text: '텍스트로 복원 창 열어줘', tool: 'open_text_import' },
   { text: '최근 새소식 알려줘', tool: 'list_news' },
   { text: '가장 최근 새소식 보여줘', tool: 'open_news' },
   { text: '새소식 화면으로 가줘', tool: 'navigate' },

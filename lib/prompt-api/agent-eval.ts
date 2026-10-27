@@ -380,6 +380,13 @@ export const AGENT_EVAL_SCENARIOS: ReadonlyArray<AgentEvalScenario> = [
       { say: '자세히 보여줘', expect: ['open_news'], forbid: ['open_github_import'] },
     ],
   },
+  // GitHub 커밋을 가져와 달라는 말은 가져오기 창을 연다 — "가져와"로 추가 의도가 돼 "직접 실행할 수 없어요"로 끝났다
+  { name: 'GitHub 가져오기', turns: [{ say: 'github에서 커밋 가져와줘', expect: ['open_github_import'] }] },
+  { name: 'GitHub 가져오기 열기', turns: [{ say: '깃허브 가져오기 열어줘', expect: ['open_github_import'] }] },
+  {
+    name: '텍스트로 복원 창',
+    turns: [{ say: '텍스트로 복원 창 열어줘', expect: ['open_text_import'], forbid: ['import_report_text'] }],
+  },
   // 묻는 말은 화면을 옮기지 않고 답한다 — "알고싶어"에 새소식 화면으로 옮겨 갔다
   {
     name: '새소식 묻기',
