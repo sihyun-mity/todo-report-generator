@@ -1,6 +1,6 @@
 'use client';
 
-import { type RefObject, useCallback, useLayoutEffect } from 'react';
+import { type RefObject, useCallback, useLayoutEffect, useRef } from 'react';
 
 const IS_SERVER = typeof window === 'undefined';
 
@@ -12,9 +12,14 @@ type Props = {
 };
 
 export function useFocusScroll({ focusedRef, parentRef, scrollOffset = 0, initialScroll }: Readonly<Props>) {
+  // 첫 정렬(뒤쪽 항목이 선택된 채 진입 등)은 애니메이션 없이 즉시 — smooth 는 항목 간 이동에서만.
+  const hasAlignedRef = useRef(false);
+
   const scroll = useCallback(
     (behavior?: ScrollBehavior) => {
       if (parentRef.current && focusedRef.current) {
+        const isFirstAlign = !hasAlignedRef.current;
+        hasAlignedRef.current = true;
         const startPadding = parseInt(getComputedStyle(parentRef.current).paddingLeft);
         const parentRect = parentRef.current.getBoundingClientRect();
         const targetRect = focusedRef.current.getBoundingClientRect();
@@ -29,7 +34,9 @@ export function useFocusScroll({ focusedRef, parentRef, scrollOffset = 0, initia
 
         parentRef.current.scrollTo({
           left: targetOffset,
-          behavior: (behavior ?? moveOffset > document.documentElement.clientWidth) ? 'instant' : 'smooth',
+          behavior: isFirstAlign
+            ? 'instant'
+            : (behavior ?? (moveOffset > document.documentElement.clientWidth ? 'instant' : 'smooth')),
         });
       }
     },
