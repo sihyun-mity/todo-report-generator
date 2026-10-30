@@ -231,7 +231,7 @@ function TaskStatusBadge({ task, isNew, isGoal, addsNothing }: Readonly<TaskStat
         icon={History}
         label="이미 등록된 작업"
         className={SIMILAR_BADGE_CLASS}
-        description={`폼에 같은 ${name} 작업이 있어 가져와도 바뀌는 게 없어요. 세부 항목을 넣거나 진행률을 바꾸면 그 내용만 반영돼요.`}
+        description={`폼에 같은 ${name} 작업이 있어 가져와도 바뀌는 게 없어 가져오기를 고를 수 없어요. 세부 항목을 넣거나 진행률을 바꾸면 그 내용만 반영돼요.`}
         criteria={['폼의 작업에 붙었고, 진행률이 그대로이며, 폼에 없는 세부 항목도 없을 때']}
       />
     );
@@ -387,6 +387,8 @@ function TaskBlock({ task, formTask, isGoal, onUpdate }: Readonly<TaskBlockProps
   const progressChanged = previousProgress !== null && previousProgress !== task.progress;
   // 기존 작업과 이름이 같고 진행률도 그대로이며 폼에 없는 세부 항목도 없으면 가져와도 바뀌는 게 없다
   const addsNothing = !addsToExistingTask(task, formTask);
+  // 실제로 폼에 반영되는지 — 체크박스는 이 값을 보여 준다
+  const isIncluded = task.included && !addsNothing;
   const [isCommitsOpen, setIsCommitsOpen] = useState(false);
   // 방금 추가한 세부 항목으로 포커스를 보낸다(폼의 세부 항목 추가와 같은 흐름)
   const [focusDetailKey, setFocusDetailKey] = useState<string | null>(null);
@@ -401,14 +403,22 @@ function TaskBlock({ task, formTask, isGoal, onUpdate }: Readonly<TaskBlockProps
   const removeDetail = (key: string) => onUpdate((t) => ({ ...t, details: t.details.filter((d) => d.key !== key) }));
 
   return (
-    <div className={cn('transition-opacity', (!task.included || addsNothing) && 'opacity-50')}>
+    <div className={cn('transition-opacity', !isIncluded && 'opacity-50')}>
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         {/* 이 작업을 폼에 반영할지 — 세부 항목과 헷갈리지 않게 작업 머리줄 맨 앞에 둔다 */}
         {/* 실제 input 은 숨기고(sr-only) 그린 박스로 보여준다 — 커스텀 포인터가 input 과 label 을 따로 하이라이트하지 않고 머리줄 하나로 감싼다 */}
-        <label className="flex cursor-pointer items-center gap-1.5 rounded-md py-0.5 pr-1.5 pl-1 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 has-focus-visible:ring-2 has-focus-visible:ring-blue-400 dark:text-zinc-300 dark:hover:bg-zinc-800">
+        {/* 더할 게 없는 동안(addsNothing)은 적용해도 빠지므로 해제·비활성으로 보인다. 사용자가 고른 값(included)은 두어,
+            세부 항목을 넣거나 진행률을 바꾸면 그 값으로 돌아온다 */}
+        <label
+          className={cn(
+            'flex items-center gap-1.5 rounded-md py-0.5 pr-1.5 pl-1 text-[11px] font-medium text-zinc-600 transition-colors has-focus-visible:ring-2 has-focus-visible:ring-blue-400 dark:text-zinc-300',
+            addsNothing ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          )}
+        >
           <input
             type="checkbox"
-            checked={task.included}
+            checked={isIncluded}
+            disabled={addsNothing}
             onChange={(e) => onUpdate((t) => ({ ...t, included: e.target.checked }))}
             className="sr-only"
           />
@@ -416,12 +426,12 @@ function TaskBlock({ task, formTask, isGoal, onUpdate }: Readonly<TaskBlockProps
             aria-hidden
             className={cn(
               'flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors',
-              task.included
+              isIncluded
                 ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-500'
                 : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800'
             )}
           >
-            {task.included && <Check size={10} strokeWidth={3.5} />}
+            {isIncluded && <Check size={10} strokeWidth={3.5} />}
           </span>
           가져오기
         </label>
