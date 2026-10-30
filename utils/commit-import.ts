@@ -40,18 +40,28 @@ export const commitImportRange = (
   const untilMs = isPast ? dayStartMs(reportDateKey, 1) : null;
   const endMs = untilMs ?? nowMs;
 
-  let anchor: { key: string; timestamp: number } | null = null;
+  const anchor = previousReport(history, reportDateKey);
+  if (!anchor) return { sinceMs: dayStartMs(isPast ? reportDateKey : todayKey), untilMs };
+  const anchorKey = reportItemDateKey(anchor);
+  const sinceMs = anchor.timestamp < endMs ? anchor.timestamp : Math.min(dayStartMs(anchorKey, 1), endMs);
+  return { sinceMs, untilMs };
+};
+
+// 보고서 날짜(`reportDateKey`) 직전 보고서 — 그보다 앞 날짜 중 가장 최근, 같은 날짜가 여럿이면 가장 늦게 저장한 것.
+// 커밋 조회 범위의 기준이고, 분류기는 여기서 100% 로 보고한 작업을 "이미 보고된 작업"으로 견준다.
+export const previousReport = <T extends ReportHistoryItem>(
+  history: ReadonlyArray<T>,
+  reportDateKey: string
+): T | null => {
+  let anchor: { item: T; key: string } | null = null;
   for (const item of history) {
     const key = reportItemDateKey(item);
     if (key >= reportDateKey) continue;
-    if (!anchor || key > anchor.key || (key === anchor.key && item.timestamp > anchor.timestamp)) {
-      anchor = { key, timestamp: item.timestamp };
+    if (!anchor || key > anchor.key || (key === anchor.key && item.timestamp > anchor.item.timestamp)) {
+      anchor = { item, key };
     }
   }
-
-  if (!anchor) return { sinceMs: dayStartMs(isPast ? reportDateKey : todayKey), untilMs };
-  const sinceMs = anchor.timestamp < endMs ? anchor.timestamp : Math.min(dayStartMs(anchor.key, 1), endMs);
-  return { sinceMs, untilMs };
+  return anchor?.item ?? null;
 };
 
 // 저장소 + Conventional Commit scope. 같은 묶음의 작업명 보정을 기억하는 키다(scope 가 없으면 기억하지 않는다).

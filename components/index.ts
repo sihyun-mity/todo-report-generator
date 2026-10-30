@@ -6,6 +6,7 @@ export * from './confirm-dialog';
 export * from './confirm-dialog-host';
 export * from './custom-pointer';
 export * from './guest-login-banner';
+export * from './hint-badge';
 export * from './mobile-detector';
 export * from './next-image';
 export * from './news';

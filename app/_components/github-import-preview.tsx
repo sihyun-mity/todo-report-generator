@@ -18,9 +18,17 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { CommitImportPlan, PlannedProject, PlannedTask, Project, Task } from '@/types';
-import { useDismissOnBack } from '@/components';
+import {
+  COMMIT_IMPORT_DEFAULT_PROGRESS,
+  COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE,
+  COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE,
+  COMMIT_IMPORT_SIMILAR_TASK_THRESHOLD,
+  COMMIT_REPO_MATCH_THRESHOLD,
+  COMMIT_TASK_MATCH_THRESHOLD,
+} from '@/constants';
+import { HintBadge, useDismissOnBack } from '@/components';
 import { useDismissLayer, useResetOnHide } from '@/hooks';
-import { addsToExistingTask, cn, createId } from '@/utils';
+import { addsToExistingTask, cn, createId, dayLabel } from '@/utils';
 import { ProgressInput } from '.';
 
 type GithubImportPreviewProps = {
@@ -100,50 +108,158 @@ export function GithubImportPreview({
   );
 }
 
-type BadgeProps = { isNew: boolean; newLabel: string; existingLabel: string };
+// 배지마다 기준·설명을 툴팁으로 단다(`HintBadge`). 분류 기준을 바꾸면 여기 문구도 함께 고친다.
+const NEW_BADGE_CLASS = 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400';
+const EXISTING_BADGE_CLASS = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+const GOAL_BADGE_CLASS = 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400';
+const SIMILAR_BADGE_CLASS = 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+const SIMILAR_NAME_PERCENT = Math.round(COMMIT_IMPORT_SIMILAR_TASK_THRESHOLD * 100);
+const similarNameCriterion = `이름이 애매하게 비슷하면 AI 가 두 번 채점해 둘 다 ${COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE}점 이상일 때`;
 
-function StatusBadge({ isNew, newLabel, existingLabel }: Readonly<BadgeProps>) {
-  const Icon = isNew ? FolderPlus : Link2;
+function ProjectStatusBadge({ isNew, isGoalProject }: Readonly<{ isNew: boolean; isGoalProject: boolean }>) {
+  if (isNew)
+    return (
+      <HintBadge
+        icon={FolderPlus}
+        label="새 프로젝트"
+        className={NEW_BADGE_CLASS}
+        description="폼의 금일 업무에 없는 프로젝트예요. 적용하면 맨 아래에 새 프로젝트로 추가해요. 오른쪽 메뉴에서 폼의 다른 프로젝트로 바꿀 수 있어요."
+        criteria={[
+          '전에 이 저장소를 넣은 프로젝트가 지금 폼에 없을 때',
+          `AI 가 폼의 어느 프로젝트에도 같은 제품이라고 두 번 모두 ${COMMIT_REPO_MATCH_THRESHOLD}점 이상을 주지 않았을 때`,
+          'AI 를 쓸 수 없으면 저장소 이름과 같은 이름의 프로젝트가 폼에 없을 때',
+        ]}
+      />
+    );
+  if (isGoalProject)
+    return (
+      <HintBadge
+        icon={Target}
+        label="오늘의 목표 프로젝트"
+        className={GOAL_BADGE_CLASS}
+        description="오늘의 목표에만 있는 프로젝트예요. 적용하면 커밋이 붙은 목표를 금일 업무로 옮기면서 이 프로젝트도 금일 업무에 생겨요."
+        criteria={['이 프로젝트의 작업이 모두 아직 옮기지 않은 오늘의 목표일 때']}
+      />
+    );
   return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold',
-        isNew
-          ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-          : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-      )}
-    >
-      <Icon size={11} aria-hidden />
-      {isNew ? newLabel : existingLabel}
-    </span>
+    <HintBadge
+      icon={Link2}
+      label="기존 프로젝트에 추가"
+      className={EXISTING_BADGE_CLASS}
+      description="폼에 있는 이 프로젝트에 작업을 더해요. 지금 적힌 작업은 지우거나 바꾸지 않아요."
+      criteria={[
+        '전에 이 저장소를 이 프로젝트에 넣은 적이 있을 때',
+        `AI 가 같은 제품이라고 두 번 모두 ${COMMIT_REPO_MATCH_THRESHOLD}점 이상을 줬을 때`,
+        'AI 를 쓸 수 없으면 저장소 이름과 프로젝트 이름이 같을 때',
+      ]}
+    />
   );
 }
 
-// 오늘의 목표와 맞는 커밋 — 적용하면 그 목표를 금일 업무로 옮긴다
-function GoalBadge() {
-  return (
-    <span
-      title="오늘의 목표와 맞는 커밋이에요. 적용하면 이 목표를 금일 업무로 옮겨요."
-      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-violet-50 px-1.5 py-0.5 text-[11px] font-semibold text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
-    >
-      <Target size={11} aria-hidden />
-      오늘의 목표 달성
-    </span>
-  );
-}
+type TaskStatusBadgeProps = {
+  task: PlannedTask;
+  isNew: boolean;
+  isGoal: boolean;
+  addsNothing: boolean;
+};
 
-// 이미 넣은 작업과 같아 가져오기를 해제해 두었거나(similarTo), 폼의 같은 작업에 더할 게 없는 작업 — 어느 작업과 같은지 함께 알린다.
-// 폼의 그 작업 자체면(기존 작업) "이미 등록된 작업", 이름이 비슷해 같은 작업으로 본 새 작업이면 "기존 작업과 유사"다.
-function SimilarBadge({ label, description }: Readonly<{ label: string; description: string }>) {
+function TaskStatusBadge({ task, isNew, isGoal, addsNothing }: Readonly<TaskStatusBadgeProps>) {
+  const name = `“${task.similarTo ?? task.content.trim()}”`;
+  // 직전 보고서에 100% 로 보고한 작업 — 보고서를 저장한 뒤 커밋한 일을 미리 완료로 적어 둔 경우(예측 보고)
+  if (task.similarTo !== null && task.reportedOn !== null)
+    return (
+      <HintBadge
+        icon={History}
+        label="이미 보고된 작업"
+        className={SIMILAR_BADGE_CLASS}
+        description={`${dayLabel(task.reportedOn)} 보고서에 ${name} 작업을 100%로 보고했어요. 그 보고서를 저장한 뒤에 한 커밋이라 미리 완료로 적어 둔 일로 보고 가져오기를 해제해 두었어요. 그 뒤에 이어서 한 일이면 "가져오기"를 체크해 주세요.`}
+        criteria={[
+          '직전 보고서 하나만 봐요 — 커밋을 그 보고서를 저장한 시각부터 가져와서예요',
+          '같은 이름의 프로젝트에서 100%로 보고한 작업만 견줘요(진행 중이던 작업은 이어서 한 일이에요)',
+          `작업 이름이 거의 같을 때(글자 ${SIMILAR_NAME_PERCENT}% 이상 일치)`,
+          similarNameCriterion,
+        ]}
+      />
+    );
+  // 이 날짜에 이미 넣은 작업과 같은 새 작업
+  if (task.similarTo !== null && isNew)
+    return (
+      <HintBadge
+        icon={History}
+        label="기존 작업과 유사"
+        className={SIMILAR_BADGE_CLASS}
+        description={`이 보고서 날짜에 이미 넣은 ${name} 작업과 같은 일로 보여 가져오기를 해제해 두었어요. 다른 작업이면 "가져오기"를 체크해 주세요.`}
+        criteria={[
+          '전에 가져와 넣은 작업과 같은 커밋이 있거나, 커밋 제목이 절반 이상 겹칠 때',
+          `같은 저장소에서 전에 넣은 작업, 또는 폼의 같은 프로젝트 작업과 이름이 거의 같을 때(글자 ${SIMILAR_NAME_PERCENT}% 이상 일치)`,
+          similarNameCriterion,
+        ]}
+      />
+    );
+  // 폼의 기존 작업에 붙었는데 이미 보고한 커밋뿐
+  if (task.similarTo !== null)
+    return (
+      <HintBadge
+        icon={History}
+        label="이미 등록된 작업"
+        className={SIMILAR_BADGE_CLASS}
+        description={`폼의 ${name} 작업에 이미 보고한 커밋뿐이라 다시 넣지 않아요.`}
+        criteria={[
+          '붙은 커밋이 모두 이 날짜 보고서를 마지막으로 저장하기 전에 만든 커밋이거나',
+          '이 날짜에 이미 가져와 넣은 커밋일 때',
+          '새 커밋이 하나라도 섞여 있으면 이어서 한 일로 보고 그대로 가져와요',
+        ]}
+      />
+    );
+  if (isGoal)
+    return (
+      <HintBadge
+        icon={Target}
+        label="오늘의 목표 달성"
+        className={GOAL_BADGE_CLASS}
+        description={`오늘의 목표 ${name}와(과) 맞는 커밋이에요. 적용하면 이 목표를 금일 업무로 옮기고 커밋 내용을 더해요.`}
+        criteria={[
+          `AI 가 커밋 묶음과 커밋 하나하나 모두에 이 목표 ${COMMIT_TASK_MATCH_THRESHOLD}점 이상을 줬을 때(기존 작업에 붙이는 기준과 같아요)`,
+          `목표의 진행률은 예정 값이라 새 작업처럼 ${COMMIT_IMPORT_DEFAULT_PROGRESS}%로 두어요`,
+        ]}
+      />
+    );
+  // 기존 작업과 이름이 같고 세부 항목도 진행률도 더하지 않으면 이미 넣은 작업과 다를 게 없다
+  if (addsNothing)
+    return (
+      <HintBadge
+        icon={History}
+        label="이미 등록된 작업"
+        className={SIMILAR_BADGE_CLASS}
+        description={`폼에 같은 ${name} 작업이 있어 가져와도 바뀌는 게 없어요. 세부 항목을 넣거나 진행률을 바꾸면 그 내용만 반영돼요.`}
+        criteria={['폼의 작업에 붙었고, 진행률이 그대로이며, 폼에 없는 세부 항목도 없을 때']}
+      />
+    );
+  if (isNew)
+    return (
+      <HintBadge
+        icon={FolderPlus}
+        label="새 작업"
+        className={NEW_BADGE_CLASS}
+        description="폼에 없는 작업이라 새로 넣어요. 이름·진행률은 바로 고칠 수 있어요."
+        criteria={[
+          `AI 가 폼의 어느 작업에도 ${COMMIT_TASK_MATCH_THRESHOLD}점 이상을 주지 않은 커밋을 같은 작업끼리 묶어 이름을 지어요`,
+          'AI 를 쓸 수 없으면 같은 scope 커밋끼리 묶고 첫 커밋 제목을 이름으로 써요',
+          `진행률은 커밋 제목에 WIP·진행 중·1차처럼 미완성 신호가 분명할 때만 낮추고, 아니면 ${COMMIT_IMPORT_DEFAULT_PROGRESS}%예요`,
+        ]}
+      />
+    );
   return (
-    <span
-      title={description}
-      aria-label={`${label} — ${description}`}
-      className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-    >
-      <History size={11} aria-hidden />
-      {label}
-    </span>
+    <HintBadge
+      icon={Link2}
+      label="기존 작업에 추가"
+      className={EXISTING_BADGE_CLASS}
+      description="폼에 있는 이 작업에 커밋을 붙여요. 진행률을 맞추고 폼에 없는 세부 항목만 더해요."
+      criteria={[
+        `AI 가 커밋 묶음과 커밋 하나하나 모두에 이 작업 ${COMMIT_TASK_MATCH_THRESHOLD}점 이상을 줬을 때`,
+        `전에 같은 저장소·scope 커밋을 이 작업 이름으로 넣은 적이 있고 AI 가 두 번 모두 ${COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE}점 이상을 줬을 때`,
+      ]}
+    />
   );
 }
 
@@ -176,11 +292,7 @@ function ProjectBlock({
   return (
     <section className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-700/50">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <StatusBadge
-          isNew={isNew}
-          newLabel="새 프로젝트"
-          existingLabel={isGoalProject ? '오늘의 목표 프로젝트' : '기존 프로젝트에 추가'}
-        />
+        <ProjectStatusBadge isNew={isNew} isGoalProject={isGoalProject} />
         <ProjectTargetDropdown
           value={project.existingProjectId}
           projects={namedProjects}
@@ -313,26 +425,7 @@ function TaskBlock({ task, formTask, isGoal, onUpdate }: Readonly<TaskBlockProps
           </span>
           가져오기
         </label>
-        {task.similarTo !== null ? (
-          <SimilarBadge
-            label={isNew ? '기존 작업과 유사' : '이미 등록된 작업'}
-            description={
-              isNew
-                ? `전에 등록한 “${task.similarTo}” 작업과 비슷해요`
-                : `“${task.similarTo}” 작업에 이미 보고한 커밋뿐이에요`
-            }
-          />
-        ) : isGoal ? (
-          <GoalBadge />
-        ) : addsNothing ? (
-          // 기존 작업과 이름이 같고 세부 항목도 진행률도 더하지 않으면 이미 넣은 작업과 다를 게 없다
-          <SimilarBadge
-            label={isNew ? '기존 작업과 유사' : '이미 등록된 작업'}
-            description={`폼에 같은 “${task.content}” 작업이 있어요. 세부 항목을 넣거나 진행률을 바꾸면 그 내용만 반영돼요`}
-          />
-        ) : (
-          <StatusBadge isNew={isNew} newLabel="새 작업" existingLabel="기존 작업에 추가" />
-        )}
+        <TaskStatusBadge task={task} isNew={isNew} isGoal={isGoal} addsNothing={addsNothing} />
         {progressChanged && (
           <span className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400">
             진행률 {previousProgress}% <ArrowRight size={10} aria-hidden /> {task.progress}%

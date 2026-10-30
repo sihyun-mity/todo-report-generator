@@ -46,6 +46,8 @@ import type {
 import { disconnectGithub } from '@/actions';
 import {
   COMMIT_CLASSIFY_COMPLETE_HOLD_MS,
+  COMMIT_REPO_MATCH_THRESHOLD,
+  COMMIT_TASK_MATCH_THRESHOLD,
   GITHUB_IMPORT_INTENT_COOKIE,
   GITHUB_IMPORT_INTENT_MAX_AGE_SECONDS,
   GITHUB_COMMITS_CLASSIFY_LIMIT,
@@ -54,7 +56,7 @@ import {
   GITHUB_MAX_REPOS,
   GITHUB_TOKEN_TTL_DAYS,
 } from '@/constants';
-import { CloseButton, Portal, useDismissOnBack } from '@/components';
+import { CloseButton, HintBadge, Portal, useDismissOnBack } from '@/components';
 import { COMMIT_CLASSIFY_STAGE, COMMIT_CLASSIFY_STAGE_VALUES } from '@/enums';
 import { useDismissLayer, useFollowScroll } from '@/hooks';
 import { classifyCommits } from '@/lib/commit-classifier/classify-commits';
@@ -599,9 +601,17 @@ export function GithubImportDialog({
                     </p>
                     {draft.classifier === 'ai' ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          <Sparkles size={11} /> 온디바이스 AI 분류
-                        </span>
+                        <HintBadge
+                          icon={Sparkles}
+                          label="온디바이스 AI 분류"
+                          className="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          description="이 기기의 Chrome 내장 AI(Gemini Nano)로 분류했어요. 분류는 기기 안에서만 해요."
+                          criteria={[
+                            `후보마다 0-10점을 매겨 임계값을 넘을 때만 연결해요 — 저장소 → 프로젝트는 두 번 모두 ${COMMIT_REPO_MATCH_THRESHOLD}점, 커밋 → 작업은 ${COMMIT_TASK_MATCH_THRESHOLD}점 이상`,
+                            '전에 고쳐 넣은 프로젝트·작업 이름을 기억해 다음 분류에 먼저 써요',
+                            '판정은 실행마다 조금씩 달라질 수 있어요. 아래에서 고친 뒤 적용해 주세요',
+                          ]}
+                        />
                         <button
                           onClick={handleRetry}
                           className={cn(
@@ -616,9 +626,17 @@ export function GithubImportDialog({
                         </button>
                       </div>
                     ) : (
-                      <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                        저장소 기준 분류
-                      </span>
+                      <HintBadge
+                        icon={FolderGit2}
+                        label="저장소 기준 분류"
+                        className="bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                        description="이 브라우저에서 AI를 쓸 수 없어 규칙으로 분류했어요. AI 모델을 받으면 다시 분류할 수 있어요."
+                        criteria={[
+                          '저장소 이름과 같은 이름의 프로젝트가 폼에 있으면 그 프로젝트에, 없으면 저장소 이름으로 새 프로젝트를 만들어요',
+                          '같은 scope 커밋끼리 한 작업으로 묶고 첫 커밋 제목을 작업 이름으로 써요',
+                          '전에 고쳐 넣은 프로젝트·작업 이름은 기억대로 써요',
+                        ]}
+                      />
                     )}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">

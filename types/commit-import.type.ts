@@ -27,6 +27,9 @@ export type PlannedTask = {
   suggestedDetails: Array<string>;
   // 전에 가져와 보고서에 넣은 작업과 비슷하면 그 작업명(사용자 최종 표기). 처음엔 가져오기를 해제해 둔다.
   similarTo: string | null;
+  // similarTo 가 직전 보고서에 100% 로 보고한 작업이면 그 보고서 날짜('YYYY-MM-DD') — 보고서를 저장한 뒤 커밋한 일을
+  // 미리 완료로 적어 둔 경우(예측 보고)다. 미리보기에 "이미 보고된 작업"으로 보인다.
+  reportedOn: string | null;
 };
 
 // 폼의 기존 프로젝트(existingProjectId)에 붙이거나 새 프로젝트로 추가할 프로젝트 단위

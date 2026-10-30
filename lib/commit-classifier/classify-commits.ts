@@ -5,6 +5,7 @@ import {
   COMMIT_IMPORT_PROGRESS_EXAMPLE_LIMIT,
   COMMIT_IMPORT_REMEMBERED_TASK_AI_SCORE,
   COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE,
+  COMMIT_REPO_MATCH_THRESHOLD,
   COMMIT_TASK_MATCH_THRESHOLD,
 } from '@/constants';
 import { COMMIT_CLASSIFY_STAGE } from '@/enums';
@@ -23,7 +24,15 @@ import type {
   ReportHistoryItem,
   StyleSample,
 } from '@/types';
-import { commitScope, commitScopeKey, createId, reportItemDateKey, stripCommitPrefix } from '@/utils';
+import {
+  commitScope,
+  commitScopeKey,
+  createId,
+  dayLabel,
+  previousReport,
+  reportItemDateKey,
+  stripCommitPrefix,
+} from '@/utils';
 import { collectStyleSamples, readCommitImportMemory } from '@/lib/commit-classifier/memory';
 import { readScores, readStringArray, readStringValues } from '@/lib/commit-classifier/partial-json';
 import {
@@ -58,9 +67,6 @@ const DETAIL_USAGE_RATIO = 0.1;
 const DETAIL_USAGE_MIN_TASKS = 10;
 // 비율을 셀 최근 보고서 수
 const DETAIL_USAGE_RECENT_REPORTS = 20;
-
-// 저장소 → 프로젝트 판정 임계 점수. PoC 에서 같은 제품 9-10, 다른 코드베이스 ≤7 로 갈렸다.
-const REPO_MATCH_THRESHOLD = 8;
 
 type ClassifyArgs = {
   // 보정 메모리 주인(회원 id)
@@ -228,7 +234,7 @@ export async function classifyCommits({
         // 작업 판정과 같이 두 번 독립 채점해 둘 다 임계값을 넘을 때만 연결한다(점수가 실행마다 흔들려
         // 무관한 저장소가 기존 프로젝트에 붙는 일이 있었다).
         const recheck =
-          best && best.score >= REPO_MATCH_THRESHOLD
+          best && best.score >= COMMIT_REPO_MATCH_THRESHOLD
             ? think(
                 `${quote(names.get(best.projectId) ?? '')} 프로젝트가 맞는지 한 번 더 채점하고 있어요`,
                 scoreLines('projectId', names)
@@ -238,7 +244,7 @@ export async function classifyCommits({
           best && recheck
             ? ((await safeAsk<RepoScoreResult>(prompt, schema, recheck.onText))?.scores.find(
                 (s) => s.projectId === best.projectId
-              )?.score ?? 0) >= REPO_MATCH_THRESHOLD
+              )?.score ?? 0) >= COMMIT_REPO_MATCH_THRESHOLD
             : false;
         recheck?.conclude(confirmed ? '두 번 모두 높은 점수예요' : '점수가 엇갈려 연결하지 않아요');
         if (best && confirmed) {
@@ -302,6 +308,7 @@ export async function classifyCommits({
           details: [],
           suggestedDetails: [],
           similarTo: null,
+          reportedOn: null,
         };
         plan.tasks.push(task);
       }
@@ -483,7 +490,9 @@ export async function classifyCommits({
 
     // ── 이미 등록한 작업 알아보기 ──
     // 이 보고서 날짜에 이미 넣은 작업이 다시 잡히면 가져오기를 해제해 프로젝트 작업 목록 맨 아래로 보낸다.
-    // 견줄 대상은 ① 이 날짜에 가져와 넣은 작업(등록 기록 — AI 원래 이름·사용자 최종 이름·커밋) ② 폼에 직접 적은 작업.
+    // 견줄 대상은 ① 이 날짜에 가져와 넣은 작업(등록 기록 — AI 원래 이름·사용자 최종 이름·커밋) ② 폼에 직접 적은 작업
+    // ③ 직전 보고서에 100% 로 보고한 작업(같은 이름의 프로젝트) — 보고서를 저장한 뒤 커밋한 일을 미리 완료로 적어 둔 경우(예측 보고)다.
+    // 조회 범위가 직전 보고서 저장 시각부터라 그 커밋이 다시 잡힌다. 진행 중이던 작업은 이어서 한 일이라 견주지 않는다.
     // 확실한 경우(같은 커밋·제목 겹침·이름이 거의 같음)는 문자열로 바로 정하고, 이름이 애매하게 비슷한 후보만 AI 에
     // 두 번 채점시켜 둘 다 임계값을 넘을 때 같은 작업으로 본다(표현만 다른 같은 작업). 사용자가 다시 체크하면 그대로 들어간다.
     // 폼의 기존 작업에 붙은 묶음은 커밋이 모두 이미 보고된 것일 때만 뺀다 — 새 커밋이 섞였으면 이어서 한 일이다.
@@ -500,16 +509,29 @@ export async function classifyCommits({
     // 오늘의 목표는 아직 넣은 작업이 아니라 견주지 않는다 — 목표와 비슷한 새 작업이 "이미 넣은 작업"으로 해제됐다
     const reportedTasksOf = (plan: PlannedProject) =>
       (formProjectOf(plan)?.tasks ?? []).filter((t) => t.content.trim() && !goalTaskIds?.has(t.id));
-    const hasFormTasks = [...projectPlans.values()].some((plan) => reportedTasksOf(plan).length > 0);
+    const previous = previousReport(history, reportDateKey);
+    const previousDate = previous ? reportItemDateKey(previous) : null;
+    // 직전 보고서에서 이 계획과 같은 이름의 프로젝트에 100% 로 보고한 작업
+    const previousDoneTasksOf = (plan: PlannedProject) => {
+      const name = (formProjectOf(plan)?.name ?? plan.name).trim();
+      return (previous?.todayProjects.find((p) => p.name.trim() === name)?.tasks ?? []).filter(
+        (t) => t.content.trim() && t.progress >= 100
+      );
+    };
+    const hasFormTasks = [...projectPlans.values()].some(
+      (plan) => reportedTasksOf(plan).length > 0 || previousDoneTasksOf(plan).length > 0
+    );
     if (registered.length || hasFormTasks) {
       let similarCount = 0;
-      const markSimilar = (task: PlannedTask, name: string) => {
+      const markSimilar = (task: PlannedTask, name: string, reportedOn: string | null = null) => {
         task.similarTo = name;
+        task.reportedOn = reportedOn;
         task.included = false;
         similarCount += 1;
       };
       for (const plan of projectPlans.values()) {
         const formTasks = reportedTasksOf(plan);
+        const previousTasks = previousDoneTasksOf(plan);
         for (const task of plan.tasks) {
           if (task.existingTaskId !== null) {
             if (task.commits.length && task.commits.every((c) => isReportedCommit(c, registered, savedAtMs))) {
@@ -526,8 +548,22 @@ export async function classifyCommits({
             markSimilar(task, similarTo);
             continue;
           }
+          const reported = previousDate !== null ? findSimilarFormTask(task, previousTasks) : null;
+          if (reported && previousDate !== null) {
+            const name = reported.content.trim();
+            think(`${quote(task.content)} 작업`).conclude(
+              `${dayLabel(previousDate)} 보고서에 100%로 보고한 ${quote(name)} 작업과 같아 빼 둘게요`
+            );
+            markSimilar(task, name, previousDate);
+            continue;
+          }
           if (!ask) continue;
-          const candidates = similarTaskCandidates(task, registered, formTasks).map((c, i) => ({ ...c, id: `r${i}` }));
+          const candidates = similarTaskCandidates(
+            task,
+            registered,
+            formTasks,
+            previousDate !== null ? { date: previousDate, tasks: previousTasks } : null
+          ).map((c, i) => ({ ...c, id: `r${i}` }));
           if (!candidates.length) continue;
           const { prompt, schema } = similarTaskScorePrompt(
             task.content,
@@ -535,6 +571,7 @@ export async function classifyCommits({
             candidates
           );
           const names = new Map(candidates.map((c) => [c.id, c.label]));
+          const reportedOnById = new Map(candidates.map((c) => [c.id, c.reportedOn]));
           const lines = (text: string) => [
             ...readStringValues(text, 'summary')
               .map((line) => line.trim())
@@ -555,7 +592,7 @@ export async function classifyCommits({
           const confirmed =
             (again?.scores.find((s) => s.taskId === best.taskId)?.score ?? 0) >= COMMIT_IMPORT_SIMILAR_TASK_AI_SCORE;
           recheck.conclude(confirmed ? '두 번 모두 같은 작업이라 빼 둘게요' : '점수가 엇갈려 새 작업으로 둬요');
-          if (confirmed) markSimilar(task, bestName);
+          if (confirmed) markSimilar(task, bestName, reportedOnById.get(best.taskId) ?? null);
         }
         plan.tasks = [
           ...plan.tasks.filter((t) => t.similarTo === null),
@@ -672,6 +709,7 @@ function newTask(content: string, commits: ReadonlyArray<GithubCommit>): Planned
     details: [],
     suggestedDetails: [],
     similarTo: null,
+    reportedOn: null,
   };
 }
 

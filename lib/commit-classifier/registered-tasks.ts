@@ -15,6 +15,8 @@ import { stripCommitPrefix } from '@/utils';
 //    바로 넣은 작업은 AI 가 비슷한 이름을 다시 내고, 고쳐 넣은 작업은 고치기 전 이름과 비슷하게 나오므로 둘 다 견준다.
 //    저장소가 겹칠 때만 이름을 견준다 — "버그 수정" 같은 흔한 이름이 무관한 프로젝트 작업과 이어지지 않게.
 // 폼에 직접 적은 작업(`findSimilarFormTask`): 커밋 연결이 없어 이름 유사도만 본다.
+// 예외로 직전 보고서에 100% 로 보고한 작업도 같은 방법으로 견준다 — 보고서를 저장한 뒤 커밋한 일을 미리 완료로 적어 둔
+// 경우(예측 보고)다. 진행 중이던 작업은 이어서 한 일이라 견주지 않는다(호출부가 100% 작업만 넘긴다).
 // 폼의 기존 작업에 붙은 커밋(`isReportedCommit`): 모두 이미 보고된 커밋이면 다시 넣을 게 없다 — 이어서 한 일이 아니다.
 // 위는 확실한 경우라 문자열로 바로 정한다(AI 점수는 실행마다 흔들린다). 이름 유사도가 애매한 구간의 후보만
 // `similarTaskCandidates` 로 골라 AI 에 묻는다(`similarTaskScorePrompt`) — 표현만 다른 같은 작업을 잡으려고.
@@ -88,12 +90,14 @@ export const findSimilarFormTask = (
 
 // AI 에 물을 후보 — 위에서 정하지 못한 작업과 이름 유사도가 애매한 구간(AI_MIN 이상 ~ 임계값 미만)인 등록 기록·폼 작업.
 // names 는 모델에 보여 줄 이름들(등록 기록은 AI 원래 이름과 사용자 최종 이름), label 은 배지에 보일 이름이다.
-export type SimilarTaskCandidate = { label: string; names: Array<string>; score: number };
+// reportedOn 은 직전 보고서의 100% 작업이면 그 보고서 날짜다.
+export type SimilarTaskCandidate = { label: string; names: Array<string>; score: number; reportedOn: string | null };
 
 export const similarTaskCandidates = (
   task: Pick<PlannedTask, 'content' | 'commits'>,
   records: ReadonlyArray<ImportedTask>,
-  formTasks: ReadonlyArray<Task>
+  formTasks: ReadonlyArray<Task>,
+  previous: { date: string; tasks: ReadonlyArray<Task> } | null = null
 ): Array<SimilarTaskCandidate> => {
   const repos = new Set(task.commits.map((c) => c.repo));
   const candidates: Array<SimilarTaskCandidate> = [
@@ -103,12 +107,22 @@ export const similarTaskCandidates = (
         label: r.final,
         names: [...new Set([r.final, r.suggested])],
         score: Math.max(textSimilarity(task.content, r.suggested), textSimilarity(task.content, r.final)),
+        reportedOn: null,
       })),
     ...formTasks.map((t) => ({
       label: t.content.trim(),
       names: [t.content.trim()],
       score: textSimilarity(task.content, t.content),
+      reportedOn: null,
     })),
+    ...(previous
+      ? previous.tasks.map((t) => ({
+          label: t.content.trim(),
+          names: [t.content.trim()],
+          score: textSimilarity(task.content, t.content),
+          reportedOn: previous.date,
+        }))
+      : []),
   ];
   const seen = new Set<string>();
   return candidates

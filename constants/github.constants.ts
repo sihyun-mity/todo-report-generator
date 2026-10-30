@@ -71,6 +71,8 @@ export const COMMIT_IMPORT_STYLE_SAMPLE_LIMIT = 12;
 export const COMMIT_CLASSIFY_PROMPT_TIMEOUT_MS = 30_000;
 // AI 분류가 끝난 뒤 모든 단계가 완료된 모습을 보여 주고 결과 화면으로 넘어가기까지의 시간
 export const COMMIT_CLASSIFY_COMPLETE_HOLD_MS = 700;
+// 저장소 → 프로젝트 판정 임계 점수(0-10). PoC 에서 같은 제품 9-10, 다른 코드베이스 ≤7 로 갈렸다.
+export const COMMIT_REPO_MATCH_THRESHOLD = 8;
 // 기존 작업 연결 임계 점수(0-10). PoC 3개 세트에서 일치 ≥7, 불일치 ≤5 로 갈렸다.
 export const COMMIT_TASK_MATCH_THRESHOLD = 7;
 // 보정 메모리에 기억한 작업명(`저장소#scope` → 작업명)을 쓸지 확인하는 임계 점수(0-10). 후보가 그 작업 하나뿐이라 비교할
