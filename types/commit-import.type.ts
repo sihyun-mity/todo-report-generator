@@ -63,6 +63,9 @@ export type ClassifyProgress = {
 // 폼에 들어간 항목과 원래 커밋의 연결. 보고서를 저장할 때 사용자가 고친 최종 표기를 찾는 데 쓴다.
 export type CommitImportLink =
   | { kind: 'project'; repo: string; projectId: string }
+  // 커밋을 넣은 작업 하나와 그 커밋의 저장소들, 넣을 때의 작업명. 저장 시 저장소 → 프로젝트를 "처음 넣은 프로젝트"가 아니라
+  // 이 작업이 최종적으로 놓인 프로젝트로 정한다 — 끌어 옮겼으면 id 로, 지우고 새로 적었으면 이름으로 찾는다(`repo-placement.ts`).
+  | { kind: 'placed'; repos: Array<string>; projectId: string; taskId: string; content: string }
   | { kind: 'task'; scopeKey: string; projectId: string; taskId: string }
   // original = AI 가 제안한 문구, inserted = 폼에 넣은 문구. 저장 시 inserted 와 다르면 사용자가 고친 것이다.
   // counted = 보고서 저장 때 "남김"으로 셌는지. 필드가 없는 예전 연결은 미리보기 확정 때 이미 셌다.

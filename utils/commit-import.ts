@@ -106,6 +106,10 @@ export const applyCommitImportPlan = (
     plannedTask: PlannedTask,
     details: ReadonlyArray<{ id: string; planned: PlannedDetail }>
   ) => {
+    const repos = [...new Set(plannedTask.commits.map((c) => c.repo))];
+    if (repos.length) {
+      links.push({ kind: 'placed', repos, projectId, taskId, content: plannedTask.content.trim() });
+    }
     const scopeKeys = new Set(plannedTask.commits.map(commitScopeKey).filter((key): key is string => key !== null));
     scopeKeys.forEach((scopeKey) => links.push({ kind: 'task', scopeKey, projectId, taskId }));
     // 미리보기에서 지운 AI 제안 — 확정만 하고 버리거나 다시 가져와도 거듭 세지 않게 보고서 저장 때 센다

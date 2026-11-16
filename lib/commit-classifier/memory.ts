@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { commitScopeKey, sameCommitAuthor } from '@/utils';
 import { createClient } from '@/lib/supabase/client';
+import { resolveRepoPlacement } from './repo-placement';
 
 // 커밋 가져오기의 사용자별 보정 메모리(Supabase `commit_import_memories` 에 회원당 한 행, JSONB).
 // 1) 저장소 → 프로젝트명: 다음 가져오기에서 AI 판정 없이 바로 그 프로젝트에 붙인다.
@@ -344,14 +345,38 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
       knownDetails.set(taskKey(link), known);
     }
     const countedTasks = new Set<string>();
+    // 저장소 → 프로젝트는 그 저장소 커밋으로 넣은 작업이 지금 놓인 프로젝트로 정한다(`repo-placement.ts`).
+    // `placed` 연결이 없는 저장소(이 연결 전에 만든 저장 대기 연결)만 아래 `project` 연결의 예전 방식을 따른다.
+    const placement = resolveRepoPlacement(
+      projects,
+      memory.pendingLinks.flatMap((l) => (l.kind === 'placed' ? [l] : [])),
+      memory.repoProjects
+    );
+    Object.assign(repoProjects, placement.learned);
+    placement.forget.forEach((repo) => delete repoProjects[repo]);
+    // 작업은 끌어서 다른 프로젝트로 옮겼을 수 있다 — 넣은 프로젝트에 없으면 폼 전체에서 같은 id 를 찾는다
+    const findTask = (projectId: string, taskId: string) =>
+      projects.find((p) => p.id === projectId)?.tasks.find((t) => t.id === taskId) ??
+      projects.flatMap((p) => p.tasks).find((t) => t.id === taskId);
     // 등록 기록: 저장된 작업은 최종 이름으로 확정하고, 확정 전에 폼에서 지운 작업은 기록에서 뺀다
     const importedTasks = new Map(memory.importedTasks.map((r) => [r.id, r]));
 
     for (const link of memory.pendingLinks) {
-      const project = projects.find((p) => p.id === link.projectId);
+      if (link.kind === 'placed') {
+        // 작업이 남아 있으면(옮겼어도) 연결을 둔다 — 같은 날 다시 고쳐 저장해도 반영되게
+        if (findTask(link.projectId, link.taskId)) alive.push(link);
+        continue;
+      }
+      if (link.kind === 'project') {
+        const project = projects.find((p) => p.id === link.projectId);
+        if (!project) continue;
+        if (!placement.decided.has(link.repo) && project.name.trim()) repoProjects[link.repo] = project.name.trim();
+        alive.push(link);
+        continue;
+      }
       if (link.kind === 'imported') {
         const record = importedTasks.get(link.recordId);
-        const task = project?.tasks.find((t) => t.id === link.taskId);
+        const task = findTask(link.projectId, link.taskId);
         if (!record) continue;
         if (!task || !task.content.trim()) {
           if (!record.saved) importedTasks.delete(link.recordId);
@@ -366,13 +391,7 @@ export const learnFromSavedReport = (userId: string | null, projects: ReadonlyAr
         alive.push(link);
         continue;
       }
-      if (!project) continue;
-      if (link.kind === 'project') {
-        if (project.name.trim()) repoProjects[link.repo] = project.name.trim();
-        alive.push(link);
-        continue;
-      }
-      const task = project.tasks.find((t) => t.id === link.taskId);
+      const task = findTask(link.projectId, link.taskId);
       if (!task) continue;
       if (link.kind === 'task') {
         if (task.content.trim()) scopeTasks[link.scopeKey] = task.content.trim();
