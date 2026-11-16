@@ -48,24 +48,22 @@ export const buildTodayGoals = (
   const placedKeys = new Set(placed.flatMap((projects) => todayGoalKeys(projects)));
   return source
     .filter(hasProjectContent)
-    .map(
-      (p): Project => ({
-        id: createId(),
-        name: p.name.trim(),
-        tasks: p.tasks
-          .filter((t) => t.content.trim() !== '')
-          .filter((t) => {
-            const key = todayGoalKey(p.name, t.content);
-            return !placedKeys.has(key) && !dismissed?.has(key);
-          })
-          .map((t) => ({
-            ...t,
-            id: createId(),
-            content: t.content.trim(),
-            details: (t.details ?? []).filter((d) => d.content.trim() !== '').map((d) => ({ ...d, id: createId() })),
-          })),
-      })
-    )
+    .map((p): Project => ({
+      id: createId(),
+      name: p.name.trim(),
+      tasks: p.tasks
+        .filter((t) => t.content.trim() !== '')
+        .filter((t) => {
+          const key = todayGoalKey(p.name, t.content);
+          return !placedKeys.has(key) && !dismissed?.has(key);
+        })
+        .map((t) => ({
+          ...t,
+          id: createId(),
+          content: t.content.trim(),
+          details: (t.details ?? []).filter((d) => d.content.trim() !== '').map((d) => ({ ...d, id: createId() })),
+        })),
+    }))
     .filter((p) => p.tasks.length > 0);
 };
 

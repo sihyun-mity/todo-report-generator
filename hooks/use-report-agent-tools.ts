@@ -528,8 +528,7 @@ type ChangeConfirm = {
 };
 
 type ApplyResult =
-  | { status: 'applied'; lines: ReadonlyArray<string> }
-  | { status: 'unchanged' | 'cancelled' | 'stale' };
+  { status: 'applied'; lines: ReadonlyArray<string> } | { status: 'unchanged' | 'cancelled' | 'stale' };
 
 const previewLines = (lines: ReadonlyArray<string>) =>
   [

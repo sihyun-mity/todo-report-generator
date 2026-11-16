@@ -6,8 +6,7 @@ export type AccountDataKind = (typeof ACCOUNT_DATA_KIND_VALUES)[number];
 export type AccountDataSummary = Record<AccountDataKind, number | null>;
 
 export type AccountDataSummaryResult =
-  | { ok: true; summary: AccountDataSummary }
-  | { ok: false; reason: 'members_only' };
+  { ok: true; summary: AccountDataSummary } | { ok: false; reason: 'members_only' };
 
 export type DeleteAccountDataResult =
   | { ok: true; deleted: ReadonlyArray<AccountDataKind> }

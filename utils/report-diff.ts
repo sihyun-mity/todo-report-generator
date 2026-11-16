@@ -61,7 +61,7 @@ const movedKeys = (before: ReadonlyArray<string>, after: ReadonlyArray<string>) 
     for (let j = after.length - 1; j >= 0; j--)
       table[i][j] = before[i] === after[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
   const kept = new Set<number>();
-  for (let i = 0, j = 0; i < before.length && j < after.length; ) {
+  for (let i = 0, j = 0; i < before.length && j < after.length;) {
     if (before[i] === after[j]) {
       kept.add(j);
       i++;

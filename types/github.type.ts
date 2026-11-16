@@ -29,8 +29,7 @@ export type GithubCommitAuthor = {
 };
 
 export type GithubCommitAuthorsResult =
-  | { ok: true; authors: Array<GithubCommitAuthor> }
-  | { ok: false; reason: GithubFailureReason; message: string };
+  { ok: true; authors: Array<GithubCommitAuthor> } | { ok: false; reason: GithubFailureReason; message: string };
 
 export type GithubFailureReason = 'members_only' | 'not_connected' | 'unauthorized' | 'rate_limited' | 'failed';
 
@@ -65,13 +64,7 @@ export type GithubCommitsResult =
 
 // 의도 쿠키가 남은 채 돌아왔을 때 세션의 provider token 을 받아 둔 결과
 export type GithubCaptureResult =
-  | 'connected'
-  | 'no_intent'
-  | 'members_only'
-  | 'account_mismatch'
-  | 'missing_token'
-  | 'missing_scope'
-  | 'github_error';
+  'connected' | 'no_intent' | 'members_only' | 'account_mismatch' | 'missing_token' | 'missing_scope' | 'github_error';
 
 // 커밋 가져오기 연결을 시작할 때 남기는 의도 쿠키 값
 export type GithubImportIntent = {
